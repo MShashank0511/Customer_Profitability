@@ -68,25 +68,35 @@ def average_approval_rate(df):
 # --- UI Layout ---
 st.title("Loan Applications Dashboard")
 
-uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"])
+# File uploaders for Honors and Bureau data
+honors_file = st.file_uploader("Upload Honors Data (CSV or Excel)", type=["csv", "xlsx"])
+bureau_file = st.file_uploader("Upload Bureau Data (CSV or Excel)", type=["csv", "xlsx"])
 
-if uploaded_file is not None:
+if honors_file is not None and bureau_file is not None:
     try:
-        data = load_data(uploaded_file)
-        if data is None:
-            st.error("Error loading the data.")
+        # Load Honors data
+        honors_data = load_data(honors_file)
+        if honors_data is None:
+            st.error("Error loading the Honors data.")
             st.stop()
 
-        # Handle multiple Timestamp columns
-        timestamp_columns = [col for col in data.columns if 'Timestamp' in col]
-        if timestamp_columns:
-            data['Timestamp'] = pd.to_datetime(data[timestamp_columns[0]], errors='coerce')  # Use first Timestamp
-            data = data.dropna(subset=['Timestamp'])
+        # Load Bureau data
+        bureau_data = load_data(bureau_file)
+        if bureau_data is None:
+            st.error("Error loading the Bureau data.")
+            st.stop()
 
-        # --- Feature Summary ---
-        st.header("Feature Summary")
-        with st.expander("View Feature Overview"):
-            data_no_timestamp = data.drop(columns=timestamp_columns)
+        # Handle multiple Timestamp columns for both datasets
+        for dataset, name in [(honors_data, "Honors"), (bureau_data, "Bureau")]:
+            timestamp_columns = [col for col in dataset.columns if 'Timestamp' in col]
+            if timestamp_columns:
+                dataset['Timestamp'] = pd.to_datetime(dataset[timestamp_columns[0]], errors='coerce')  # Use first Timestamp
+                dataset.dropna(subset=['Timestamp'], inplace=True)
+
+        # --- Honors Data Summary ---
+        st.header("Honors Data Summary")
+        with st.expander("View Honors Data Feature Overview"):
+            honors_no_timestamp = honors_data.drop(columns=[col for col in honors_data.columns if 'Timestamp' in col])
 
             def get_most_repeating_value(series):
                 try:
@@ -98,52 +108,54 @@ if uploaded_file is not None:
                     return ''
                 return ''
 
-            feature_summary = pd.DataFrame({
-                "Feature": data_no_timestamp.columns,
-                "Data Type": data_no_timestamp.dtypes.values,
-                "% Missing": data_no_timestamp.isnull().mean().values * 100,
-                "# Distinct Values": data_no_timestamp.nunique().values,
+            honors_summary = pd.DataFrame({
+                "Feature": honors_no_timestamp.columns,
+                "Data Type": honors_no_timestamp.dtypes.values,
+                "% Missing": honors_no_timestamp.isnull().mean().values * 100,
+                "# Distinct Values": honors_no_timestamp.nunique().values,
                 "Most Repeating Value": [
-                    get_most_repeating_value(data_no_timestamp[col]) for col in data_no_timestamp.columns
+                    get_most_repeating_value(honors_no_timestamp[col]) for col in honors_no_timestamp.columns
                 ],
                 "Min": [
-                    data_no_timestamp[col].min() if np.issubdtype(data_no_timestamp[col].dtype, np.number) else '' 
-                    for col in data_no_timestamp.columns
+                    honors_no_timestamp[col].min() if np.issubdtype(honors_no_timestamp[col].dtype, np.number) else '' 
+                    for col in honors_no_timestamp.columns
                 ],
                 "Max": [
-                    data_no_timestamp[col].max() if np.issubdtype(data_no_timestamp[col].dtype, np.number) else '' 
-                    for col in data_no_timestamp.columns
+                    honors_no_timestamp[col].max() if np.issubdtype(honors_no_timestamp[col].dtype, np.number) else '' 
+                    for col in honors_no_timestamp.columns
                 ],
                 "Avg": [
-                    data_no_timestamp[col].mean() if np.issubdtype(data_no_timestamp[col].dtype, np.number) else '' 
-                    for col in data_no_timestamp.columns
+                    honors_no_timestamp[col].mean() if np.issubdtype(honors_no_timestamp[col].dtype, np.number) else '' 
+                    for col in honors_no_timestamp.columns
                 ],
             })
 
-            st.dataframe(feature_summary, height=400)
+            st.dataframe(honors_summary, height=400)
 
+        # --- Bureau Data Insights ---
+        st.header("Bureau Data Insights")
         today = datetime.now().date()
-        today_data = data[data['Timestamp'].dt.date == today - timedelta(days=1)]
+        bureau_today_data = bureau_data[bureau_data['Timestamp'].dt.date == today - timedelta(days=1)]
 
-        # --- Yesterday’s Insights ---
-        st.header("Yesterday’s Loan Insights & Historical Comparison")
+        # Yesterday’s Insights for Bureau Data
+        st.subheader("Yesterday’s Loan Insights & Historical Comparison (Bureau Data)")
         with st.container():
             col1, col2, col3 = st.columns(3)
 
-            total_applications = len(today_data)
+            total_applications = len(bureau_today_data)
             col1.metric("Total Loan Applications Yesterday", total_applications)
 
-            comparison_period = st.selectbox("Compare Approved/Rejected % Against", ['Yesterday', 'Last Week', 'Last Month', 'Last Year'])
+            comparison_period = st.selectbox("Compare Approved/Rejected % Against (Bureau Data)", ['Yesterday', 'Last Week', 'Last Month', 'Last Year'])
             if comparison_period == 'Yesterday':
-                compare_data = data[data['Timestamp'].dt.date == today - timedelta(days=2)]
+                compare_data = bureau_data[bureau_data['Timestamp'].dt.date == today - timedelta(days=2)]
             elif comparison_period == 'Last Week':
-                compare_data = filter_data_by_date(data, today - timedelta(days=8), today - timedelta(days=2))
+                compare_data = filter_data_by_date(bureau_data, today - timedelta(days=8), today - timedelta(days=2))
             elif comparison_period == 'Last Month':
-                compare_data = filter_data_by_date(data, today - timedelta(days=31), today - timedelta(days=2))
+                compare_data = filter_data_by_date(bureau_data, today - timedelta(days=31), today - timedelta(days=2))
             else:
-                compare_data = filter_data_by_date(data, today - timedelta(days=366), today - timedelta(days=2))
+                compare_data = filter_data_by_date(bureau_data, today - timedelta(days=366), today - timedelta(days=2))
 
-            today_approved_pct, today_rejected_pct = today_rates(today_data)
+            today_approved_pct, today_rejected_pct = today_rates(bureau_today_data)
             compare_approved_pct, compare_rejected_pct = average_approval_rate(compare_data)
 
             approved_change = calculate_change(today_approved_pct, compare_approved_pct)
@@ -163,50 +175,69 @@ if uploaded_file is not None:
                 delta_color="normal" if rejected_change >= 0 else "inverse"
             )
 
-        # --- Historical Insights ---
-        st.header("Historical Insights")
+        # Historical Insights for Bureau Data
+        st.subheader("Historical Insights (Bureau Data)")
 
-        hist_start_date = st.date_input("Start Date", today - timedelta(days=30))
-        hist_end_date = st.date_input("End Date", today)
-        historical_data = filter_data_by_date(data, hist_start_date, hist_end_date)
+        hist_start_date = st.date_input("Start Date (Bureau Data)", today - timedelta(days=30))
+        hist_end_date = st.date_input("End Date (Bureau Data)", today)
+        historical_data = filter_data_by_date(bureau_data, hist_start_date, hist_end_date)
 
         if not historical_data.empty:
             chart_type = st.selectbox("Select Feature Type", ["Categorical", "Continuous"])
 
             features = CATEGORICAL_FEATURES if chart_type == "Categorical" else [
-                col for col in data.columns if col not in CATEGORICAL_FEATURES and col not in timestamp_columns and col != 'Loan_Status'
+                col for col in bureau_data.columns if col not in CATEGORICAL_FEATURES and col not in timestamp_columns and col != 'Loan_Status'
             ]
 
             selected_feature = st.selectbox("Select Feature", features)
             col1, col2 = st.columns([3, 2])
 
             if chart_type == "Continuous":
+                # Plot the line chart
                 fig = px.line(historical_data, x='Timestamp', y=selected_feature, title=f"Trend of {selected_feature}")
                 col1.plotly_chart(fig, use_container_width=True)
 
+                # Tabulate statistics
                 stats = historical_data[selected_feature].describe(percentiles=[0.25, 0.5, 0.75])
                 null_pct = historical_data[selected_feature].isnull().mean() * 100
 
+                stats_table = pd.DataFrame({
+                    "Statistic": ["Min", "Max", "Mean", "Null Values %", "25th Percentile", "50th Percentile", "75th Percentile"],
+                    "Value": [
+                        f"{stats['min']:.2f}",
+                        f"{stats['max']:.2f}",
+                        f"{stats['mean']:.2f}",
+                        f"{null_pct:.2f}%",
+                        f"{stats['25%']:.2f}",
+                        f"{stats['50%']:.2f}",
+                        f"{stats['75%']:.2f}"
+                    ]
+                })
+
                 with col2:
                     st.markdown("### Statistics")
-                    st.markdown(f"- **Min**: {stats['min']:.2f}")
-                    st.markdown(f"- **Max**: {stats['max']:.2f}")
-                    st.markdown(f"- **Mean**: {stats['mean']:.2f}")
-                    st.markdown(f"- **Null Values %**: {null_pct:.2f}%")
-                    st.markdown(f"- **25th Percentile**: {stats['25%']:.2f}")
-                    st.markdown(f"- **50th Percentile**: {stats['50%']:.2f}")
-                    st.markdown(f"- **75th Percentile**: {stats['75%']:.2f}")
+                    st.table(stats_table)
 
             else:
-                top_counts = historical_data[selected_feature].value_counts().nlargest(5)
-                fig = px.bar(x=top_counts.index, y=top_counts.values, labels={'x': selected_feature, 'y': 'Count'},
-                             title=f"Top 5 {selected_feature} Frequencies")
+                # Plot the bar chart for top 5 categories
+                top_counts = historical_data[selected_feature].value_counts(normalize=True).nlargest(5) * 100
+                fig = px.bar(
+                    x=top_counts.index,
+                    y=top_counts.values,
+                    labels={'x': selected_feature, 'y': 'Percentage'},
+                    title=f"Top 5 {selected_feature} Frequencies"
+                )
                 col1.plotly_chart(fig, use_container_width=True)
+
+                # Tabulate top 5 counts
+                top_counts_table = pd.DataFrame({
+                    "Category": top_counts.index,
+                    "Percentage": [f"{value:.2f}%" for value in top_counts.values]
+                })
 
                 with col2:
                     st.markdown("### Top 5 Counts")
-                    for cat, count in top_counts.items():
-                        st.markdown(f"- **{cat}**: {count}")
+                    st.table(top_counts_table)
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
