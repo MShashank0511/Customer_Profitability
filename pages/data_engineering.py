@@ -21,12 +21,24 @@ CATEGORICAL_FEATURES = [
 # --- Functions ---
 def load_data(uploaded_file):
     if uploaded_file.name.endswith('.csv'):
-        return pd.read_csv(uploaded_file)
+        data = pd.read_csv(uploaded_file)
     elif uploaded_file.name.endswith('.xlsx'):
-        return pd.read_excel(uploaded_file)
+        data = pd.read_excel(uploaded_file)
     else:
         st.error("Unsupported file format. Please upload a CSV or Excel file.")
         return None
+
+    # Ensure the 'Timestamp' column is in datetime format
+    if 'Timestamp' in data.columns:
+        data['Timestamp'] = pd.to_datetime(data['Timestamp'], errors='coerce')
+        if data['Timestamp'].isnull().all():
+            st.error("The 'Timestamp' column could not be converted to datetime. Please check your data.")
+            return None
+    else:
+        st.error("The dataset does not contain a 'Timestamp' column.")
+        return None
+
+    return data
 
 def filter_data_by_date(df, start_date, end_date):
     mask = (df['Timestamp'] >= pd.to_datetime(start_date)) & (df['Timestamp'] <= pd.to_datetime(end_date))
@@ -65,16 +77,9 @@ def average_approval_rate(df):
 
     return summary['approved_pct'].mean(), summary['rejected_pct'].mean()
 
-# --- UI Layout ---
-st.title("Loan Applications Dashboard")
-
-# File uploaders for Honors and Bureau data
-honors_file = st.file_uploader("Upload Honors Data (CSV or Excel)", type=["csv", "xlsx"])
-bureau_file = st.file_uploader("Upload Bureau Data (CSV or Excel)", type=["csv", "xlsx"])
-
 def display_insights(data, dataset_name):
     """Display insights for a given dataset."""
-    st.header(f"{dataset_name} Data Summary")
+    st.header(f"{dataset_name} Data Feature Summary")
     with st.expander(f"View {dataset_name} Data Feature Overview"):
         data_no_timestamp = data.drop(columns=[col for col in data.columns if 'Timestamp' in col])
 
@@ -164,7 +169,7 @@ def display_insights(data, dataset_name):
         chart_type = st.selectbox(f"Select Feature Type ({dataset_name} Data)", ["Categorical", "Continuous"])
 
         features = CATEGORICAL_FEATURES if chart_type == "Categorical" else [
-            col for col in data.columns if col not in CATEGORICAL_FEATURES and col not in timestamp_columns and col != 'Loan_Status'
+            col for col in data.columns if col not in CATEGORICAL_FEATURES and col not in ['Timestamp', 'Loan_Status']
         ]
 
         selected_feature = st.selectbox(f"Select Feature ({dataset_name} Data)", features)
@@ -217,6 +222,11 @@ def display_insights(data, dataset_name):
                 st.markdown("### Top 5 Counts")
                 st.table(top_counts_table)
 
+# --- Main App ---
+st.sidebar.header("Upload Files")
+honors_file = st.sidebar.file_uploader("Upload Honors File", type=["csv", "xlsx"])
+bureau_file = st.sidebar.file_uploader("Upload Bureau File", type=["csv", "xlsx"])
+
 if honors_file is not None:
     honors_data = load_data(honors_file)
     if honors_data is not None:
@@ -226,6 +236,3 @@ if bureau_file is not None:
     bureau_data = load_data(bureau_file)
     if bureau_data is not None:
         display_insights(bureau_data, "Bureau")
-
-if __name__ == "__main__":
-    pass  # No function named 'show_page' is defined, so this is replaced with a placeholder.
