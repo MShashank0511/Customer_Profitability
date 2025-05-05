@@ -196,13 +196,13 @@ if uploaded_file:
                         shap_values = explainer(X_test)
 
                         # Create two columns for horizontal alignment
-                        col1, col2 = st.columns(2)
+                        col1, col2 = st.columns([1, 1])  # Adjust column widths for better spacing
 
                         # Confusion Matrix
                         with col1:
                             if "Confusion Matrix" in iteration["metrics"]:
                                 st.markdown("#### Confusion Matrix")
-                                fig_cm, ax_cm = plt.subplots(figsize=(3, 3))  # Reduce the size of the confusion matrix
+                                fig_cm, ax_cm = plt.subplots(figsize=(4, 4))  # Slightly increase the size of the confusion matrix
                                 sns.heatmap(iteration["metrics"]["Confusion Matrix"], annot=True, fmt="d", cmap="Blues", ax=ax_cm)
                                 ax_cm.set_xlabel("Predicted")
                                 ax_cm.set_ylabel("Actual")
@@ -213,9 +213,10 @@ if uploaded_file:
                             st.markdown("#### Feature Importance (Top 5 Features)")
                             shap.summary_plot(shap_values, X_test, plot_type="bar", max_display=5, show=False)  # Limit to top 5 features
                             fig_shap_bar = plt.gcf()  # Get the current figure
-                            fig_shap_bar.set_size_inches(4, 3)  # Reduce the size of the bar plot
+                            fig_shap_bar.set_size_inches(5, 4)  # Increase the size of the bar plot for better readability
                             ax = fig_shap_bar.axes[0]  # Get the first axis of the figure
                             ax.set_xlabel("Avg Impact on Model Output", fontsize=10)
+                            ax.tick_params(axis="x", labelrotation=45)  # Rotate x-axis labels to avoid overlaps
                             st.pyplot(fig_shap_bar)  # Pass the figure to st.pyplot()
 
                     except Exception as e:
