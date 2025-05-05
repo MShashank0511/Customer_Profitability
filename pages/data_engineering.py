@@ -224,13 +224,13 @@ def display_insights(data, dataset_name):
 
 # --- Main App ---
 st.sidebar.header("Upload Files")
-honors_file = st.sidebar.file_uploader("Upload Honors File", type=["csv", "xlsx"])
+on_us_file = st.sidebar.file_uploader("Upload On-Us File", type=["csv", "xlsx"])
 bureau_file = st.sidebar.file_uploader("Upload Bureau File", type=["csv", "xlsx"])
 
-if honors_file is not None:
-    honors_data = load_data(honors_file)
-    if honors_data is not None:
-        display_insights(honors_data, "Honors")
+if on_us_file is not None:
+    on_us_data = load_data(on_us_file)
+    if on_us_data is not None:
+        display_insights(on_us_data, "On-Us")
 
 if bureau_file is not None:
     bureau_data = load_data(bureau_file)

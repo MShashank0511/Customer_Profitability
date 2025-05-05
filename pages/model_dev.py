@@ -103,20 +103,14 @@ if uploaded_file:
                     model = model_class(**params)
 
                     # Conditional handling for model-specific requirements
-                    if selected_model == "Logistic Regression":
-                        # Logistic Regression requires y to be 1D
+                    if problem_type == "Classification":
+                        # For classification, encode the target variable if necessary
                         y_train_encoded = y_train.ravel()
                         y_test_encoded = y_test.ravel()
-
-                    elif selected_model == "LGBM Classifier":
-                        # LGBM handles binary classification directly
+                    else:
+                        # For regression, use the original target variable
                         y_train_encoded = y_train
                         y_test_encoded = y_test
-
-                    elif selected_model == "Random Forest Classifier":
-                        # Random Forest requires y to be 1D
-                        y_train_encoded = y_train.ravel()
-                        y_test_encoded = y_test.ravel()
 
                     # Fit the model
                     model.fit(X_train, y_train_encoded)
@@ -126,20 +120,27 @@ if uploaded_file:
 
                     # Metrics
                     metrics = {}
-                    y_proba = model.predict_proba(X_test) if hasattr(model, "predict_proba") else None
-                    metrics = {
-                        "Accuracy": accuracy_score(y_test_encoded, y_pred),
-                        "Precision": precision_score(y_test_encoded, y_pred, average='binary', zero_division=0),
-                        "Recall": recall_score(y_test_encoded, y_pred, average='binary', zero_division=0),
-                        "F1 Score": f1_score(y_test_encoded, y_pred, average='binary', zero_division=0),
-                    }
-                    if y_proba is not None:
-                        metrics["ROC-AUC"] = roc_auc_score(y_test_encoded, y_proba[:, 1])
-                        metrics["Gini Index"] = 2 * metrics["ROC-AUC"] - 1
+                    if problem_type == "Classification":
+                        y_proba = model.predict_proba(X_test) if hasattr(model, "predict_proba") else None
+                        metrics = {
+                            "Accuracy": accuracy_score(y_test_encoded, y_pred),
+                            "Precision": precision_score(y_test_encoded, y_pred, average='binary', zero_division=0),
+                            "Recall": recall_score(y_test_encoded, y_pred, average='binary', zero_division=0),
+                            "F1 Score": f1_score(y_test_encoded, y_pred, average='binary', zero_division=0),
+                        }
+                        if y_proba is not None:
+                            metrics["ROC-AUC"] = roc_auc_score(y_test_encoded, y_proba[:, 1])
+                            metrics["Gini Index"] = 2 * metrics["ROC-AUC"] - 1
 
-                    # Confusion Matrix
-                    cm = confusion_matrix(y_test_encoded, y_pred)
-                    metrics["Confusion Matrix"] = cm
+                        # Confusion Matrix
+                        cm = confusion_matrix(y_test_encoded, y_pred)
+                        metrics["Confusion Matrix"] = cm
+                    else:
+                        # For regression, calculate regression-specific metrics
+                        metrics = {
+                            "Mean Squared Error": mean_squared_error(y_test_encoded, y_pred),
+                            "Root Mean Squared Error": np.sqrt(mean_squared_error(y_test_encoded, y_pred)),
+                        }
 
                     # Append results
                     best_iterations.append({"params": params, "metrics": metrics})
@@ -154,33 +155,42 @@ if uploaded_file:
                     st.json(iteration["params"])
 
                     st.markdown("### 📊 Metrics")
-                    # Align metrics horizontally
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Accuracy", f"{iteration['metrics']['Accuracy']:.4f}")
-                    with col2:
-                        st.metric("Precision", f"{iteration['metrics']['Precision']:.4f}")
-                    with col3:
-                        st.metric("Recall", f"{iteration['metrics']['Recall']:.4f}")
-                    with col4:
-                        st.metric("F1 Score", f"{iteration['metrics']['F1 Score']:.4f}")
+                    if problem_type == "Classification":
+                        # Align classification metrics horizontally
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Accuracy", f"{iteration['metrics']['Accuracy']:.4f}")
+                        with col2:
+                            st.metric("Precision", f"{iteration['metrics']['Precision']:.4f}")
+                        with col3:
+                            st.metric("Recall", f"{iteration['metrics']['Recall']:.4f}")
+                        with col4:
+                            st.metric("F1 Score", f"{iteration['metrics']['F1 Score']:.4f}")
 
-                    # Display additional metrics if available
-                    if "ROC-AUC" in iteration["metrics"]:
-                        col5, col6 = st.columns(2)
-                        with col5:
-                            st.metric("ROC-AUC", f"{iteration['metrics']['ROC-AUC']:.4f}")
-                        with col6:
-                            st.metric("Gini Index", f"{iteration['metrics']['Gini Index']:.4f}")
+                        # Display additional metrics if available
+                        if "ROC-AUC" in iteration["metrics"]:
+                            col5, col6 = st.columns(2)
+                            with col5:
+                                st.metric("ROC-AUC", f"{iteration['metrics']['ROC-AUC']:.4f}")
+                            with col6:
+                                st.metric("Gini Index", f"{iteration['metrics']['Gini Index']:.4f}")
 
-                    # Confusion Matrix
-                    if "Confusion Matrix" in iteration["metrics"]:
-                        st.markdown("#### Confusion Matrix")
-                        fig_cm, ax_cm = plt.subplots(figsize=(5, 3))  # Reduce the size of the heatmap
-                        sns.heatmap(iteration["metrics"]["Confusion Matrix"], annot=True, fmt="d", cmap="Blues", ax=ax_cm)
-                        ax_cm.set_xlabel("Predicted")
-                        ax_cm.set_ylabel("Actual")
-                        st.pyplot(fig_cm)
+                        # Confusion Matrix
+                        if "Confusion Matrix" in iteration["metrics"]:
+                            st.markdown("#### Confusion Matrix")
+                            fig_cm, ax_cm = plt.subplots(figsize=(5, 3))  # Reduce the size of the heatmap
+                            sns.heatmap(iteration["metrics"]["Confusion Matrix"], annot=True, fmt="d", cmap="Blues", ax=ax_cm)
+                            ax_cm.set_xlabel("Predicted")
+                            ax_cm.set_ylabel("Actual")
+                            st.pyplot(fig_cm)
+
+                    elif problem_type == "Regression":
+                        # Display regression metrics
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Mean Squared Error", f"{iteration['metrics']['Mean Squared Error']:.4f}")
+                        with col2:
+                            st.metric("Root Mean Squared Error", f"{iteration['metrics']['Root Mean Squared Error']:.4f}")
 
             # Step 7: Select Final Iteration
             st.subheader("✅ Select Final Iteration")
