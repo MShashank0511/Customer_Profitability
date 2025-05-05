@@ -151,9 +151,11 @@ if uploaded_file:
             # Display Best Iterations
             for i, iteration in enumerate(best_iterations):
                 with st.expander(f"Iteration {i+1}"):
+                    # Hyperparameters
                     st.markdown("### 🔧 Hyperparameters")
                     st.json(iteration["params"])
 
+                    # Metrics
                     st.markdown("### 📊 Metrics")
                     if problem_type == "Classification":
                         # Align classification metrics horizontally
@@ -175,15 +177,6 @@ if uploaded_file:
                             with col6:
                                 st.metric("Gini Index", f"{iteration['metrics']['Gini Index']:.4f}")
 
-                        # Confusion Matrix
-                        if "Confusion Matrix" in iteration["metrics"]:
-                            st.markdown("#### Confusion Matrix")
-                            fig_cm, ax_cm = plt.subplots(figsize=(5, 3))  # Reduce the size of the heatmap
-                            sns.heatmap(iteration["metrics"]["Confusion Matrix"], annot=True, fmt="d", cmap="Blues", ax=ax_cm)
-                            ax_cm.set_xlabel("Predicted")
-                            ax_cm.set_ylabel("Actual")
-                            st.pyplot(fig_cm)
-
                     elif problem_type == "Regression":
                         # Display regression metrics
                         col1, col2 = st.columns(2)
@@ -191,6 +184,38 @@ if uploaded_file:
                             st.metric("Mean Squared Error", f"{iteration['metrics']['Mean Squared Error']:.4f}")
                         with col2:
                             st.metric("Root Mean Squared Error", f"{iteration['metrics']['Root Mean Squared Error']:.4f}")
+
+                    # Feature Importance and Confusion Matrix
+                    st.markdown("### 🔍 Feature Importance and Confusion Matrix")
+                    try:
+                        explainer = shap.Explainer(model, X_train)
+                        shap_values = explainer(X_test)
+
+                        # Create two columns for horizontal alignment
+                        col1, col2 = st.columns(2)
+
+                        # Confusion Matrix
+                        with col1:
+                            if "Confusion Matrix" in iteration["metrics"]:
+                                st.markdown("#### Confusion Matrix")
+                                fig_cm, ax_cm = plt.subplots(figsize=(3, 3))  # Reduce the size of the confusion matrix
+                                sns.heatmap(iteration["metrics"]["Confusion Matrix"], annot=True, fmt="d", cmap="Blues", ax=ax_cm)
+                                ax_cm.set_xlabel("Predicted")
+                                ax_cm.set_ylabel("Actual")
+                                st.pyplot(fig_cm)  # Pass the figure to st.pyplot()
+
+                        # SHAP Bar Plot for Top 5 Features
+                        with col2:
+                            st.markdown("#### Feature Importance (Top 5 Features)")
+                            shap.summary_plot(shap_values, X_test, plot_type="bar", max_display=5, show=False)  # Limit to top 5 features
+                            fig_shap_bar = plt.gcf()  # Get the current figure
+                            fig_shap_bar.set_size_inches(4, 3)  # Reduce the size of the bar plot
+                            ax = fig_shap_bar.axes[0]  # Get the first axis of the figure
+                            ax.set_xlabel("Avg Impact on Model Output", fontsize=10)
+                            st.pyplot(fig_shap_bar)  # Pass the figure to st.pyplot()
+
+                    except Exception as e:
+                        st.warning(f"⚠️ Could not generate SHAP plots: {e}")
 
             # Step 7: Select Final Iteration
             st.subheader("✅ Select Final Iteration")
