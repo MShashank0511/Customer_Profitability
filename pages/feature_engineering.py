@@ -368,6 +368,7 @@ st.markdown("""
     /* Keep dropdown menu permanently visible */
     [data-testid="stVerticalBlock"] > div:has(h3:contains("Multiple Features Transformation")) [data-baseweb="popover"] {
         position: relative !important;
+        
         transform: none !important;
         visibility: visible !important;
         display: block !important;
