@@ -276,3 +276,4 @@ if "final_dataset" in st.session_state and not st.session_state.final_dataset.em
         st.success(f"Target variable '{target_column}' has been selected and added to your dataset. You can now proceed to model development.")
 else:
     st.info("Please select and show your features first to enable target variable selection.")
+    
