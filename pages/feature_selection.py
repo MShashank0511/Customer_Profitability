@@ -51,8 +51,14 @@ all_features = st.session_state.df.columns.tolist() if st.session_state.df is no
 available_optional_features = [feat for feat in all_features if feat not in mandatory_features]
 
 # Add recommended features to available features if they exist
-if "recommended_features" in st.session_state and st.session_state.recommended_features:
-    available_optional_features.extend(st.session_state.recommended_features)
+if "recommended_features" in st.session_state:
+    rf = st.session_state.recommended_features
+    if isinstance(rf, pd.DataFrame):
+        if not rf.empty:
+            available_optional_features.extend(rf.squeeze().tolist())
+    elif isinstance(rf, (list, tuple, set)):
+        if len(rf) > 0:
+            available_optional_features.extend(list(rf))
     # Remove duplicates while preserving order
     available_optional_features = list(dict.fromkeys(available_optional_features))
 
