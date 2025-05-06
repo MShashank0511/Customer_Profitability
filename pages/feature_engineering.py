@@ -4,6 +4,8 @@ import numpy as np
 from typing import List, Dict, Any
 import re
 import uuid # Import uuid for generating unique IDs
+import random
+from datetime import datetime, timedelta
 
 def process_operation_prompt(prompt: str, features: List[str]) -> Dict[str, Any]:
     """
@@ -119,7 +121,7 @@ def generate_operation_code(operation_details: Dict[str, Any]) -> str:
 
 
 # --- Initialize session state ---
-if "df" not in st.session_state:
+if "df" not in st.session_state:    
     st.session_state.df = None
 
 # Define feature lists
@@ -361,141 +363,233 @@ if st.session_state.show_filter:
 # --- Merge Datasets Section ---
 if st.button("🔄 Merge Datasets", key="merge_btn", use_container_width=True):
     st.session_state.show_merge = True
-    st.rerun() # Replaced experimental_rerun
+    st.rerun()
 
 if st.session_state.show_merge:
-    st.markdown("### 🔄 Merge Datasets")
+    st.markdown("### 🔄 Merge Datasets (Advanced)")
 
-    # Show merge blocks
+    # Prepare available tables, including previously merged tables
+    if "merged_tables" not in st.session_state:
+        st.session_state.merged_tables = {}
+
+    # Add original tables
+    available_tables = {
+        "Bureau Data": st.session_state.get("bureau_df", pd.DataFrame({
+            "id": [1, 2, 3],
+            "feature_a": [10, 20, 30],
+            "feature_b": [100, 200, 300]
+        })),
+        "On-Us Data": st.session_state.get("onus_df", pd.DataFrame({
+            "id": [1, 2, 3],
+            "feature_c": [5, 6, 7],
+            "feature_d": [50, 60, 70]
+        })),
+        "Installments Data": st.session_state.get("installments_df", pd.DataFrame({
+            "id": [1, 2, 3],
+            "feature_e": [8, 9, 10],
+            "feature_f": [80, 90, 100]
+        }))
+    }
+    # Add merged tables from previous steps
+    available_tables.update(st.session_state.merged_tables)
+    table_names = list(available_tables.keys())
+
+    # Default suffixes for backend use
+    default_suffixes = ("_x", "_y")
+
     for i, block in enumerate(st.session_state.merge_blocks):
         st.markdown(f"**Merge Operation #{i+1}**")
-        col1, col2, col3, col4, col5 = st.columns([0.5, 2, 2, 2, 2])
+        col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 1, 1])
 
         with col1:
-            # Use unique key for remove button
-            if st.button("❌", key=f"remove_merge_{i}"):
-                st.session_state.merge_blocks.pop(i)
-                st.rerun() # Replaced experimental_rerun
-
-        with col2:
-            # Use unique key for selectbox
             left_table = st.selectbox(
-                "Select Left Table",
-                ["Bureau Data", "On-Us Data", "Installments Data"],
+                "left (Left Table)",
+                table_names,
                 key=f"merge_left_table_{i}",
-                index=["Bureau Data", "On-Us Data", "Installments Data"].index(block.get("left_table", "Bureau Data").replace("Honors", "On-Us"))
+                index=table_names.index(block.get("left_table", table_names[0]))
             )
 
-        with col3:
-            # Use unique key for selectbox
+        with col2:
             right_table = st.selectbox(
-                "Select Right Table",
-                ["Bureau Data", "On-Us Data", "Installments Data"],
+                "right (Right Table)",
+                table_names,
                 key=f"merge_right_table_{i}",
-                index=["Bureau Data", "On-Us Data", "Installments Data"].index(block.get("right_table", "On-Us Data").replace("Honors", "On-Us"))
+                index=table_names.index(block.get("right_table", table_names[1] if len(table_names) > 1 else table_names[0]))
+            )
+
+        # Use sample features if tables are empty
+        left_cols = available_tables[left_table].columns.tolist() if not available_tables[left_table].empty else ["id", "feature_a", "feature_b"]
+        right_cols = available_tables[right_table].columns.tolist() if not available_tables[right_table].empty else ["id", "feature_c", "feature_d"]
+        common_cols = list(set(left_cols) & set(right_cols)) or ["id"]
+
+        with col3:
+            how = st.selectbox(
+                "how (Join Type)",
+                ["inner", "left", "right", "outer", "cross"],
+                key=f"merge_how_{i}",
+                index=["inner", "left", "right", "outer", "cross"].index(block.get("how", "inner"))
             )
 
         with col4:
-            # Use unique key for selectbox
-            join_type = st.selectbox(
-                "Join Type",
-                ["Left Join", "Right Join", "Inner Join", "Outer Join", "Cross Join", "Self Join"],
-                key=f"merge_join_type_{i}",
-                index=["Left Join", "Right Join", "Inner Join", "Outer Join", "Cross Join", "Self Join"].index(block.get("join_type", "Left Join"))
+            valid_on = [v for v in block.get("on", []) if v in common_cols]
+            on = st.multiselect(
+                "on (Columns to join on)",
+                common_cols,
+                default=valid_on if valid_on else (common_cols[:1] if common_cols else []),
+                key=f"merge_on_{i}",
+                help="Columns present in both tables"
             )
 
         with col5:
-            # Generate merged table name based on join operation
-            left_name = left_table.lower().replace(" data", "").replace("-", "").replace(" ", "")
-            right_name = right_table.lower().replace(" data", "").replace("-", "").replace(" ", "")
-            join_type_short = join_type.lower().replace(" join", "")
-            merged_table = f"{left_name}_{right_name}_{join_type_short}"
-
-            # Use unique key for text_input
-            merged_table = st.text_input(
-                "Merged Table",
-                value=block.get("merged_table", merged_table),
-                key=f"merged_table_{i}"
+            valid_left_on = [v for v in block.get("left_on", []) if v in left_cols]
+            left_on = st.multiselect(
+                "left_on (Left columns)",
+                left_cols,
+                default=valid_left_on,
+                key=f"merge_left_on_{i}",
+                help="Columns from left table to join on"
             )
+
+        with col6:
+            valid_right_on = [v for v in block.get("right_on", []) if v in right_cols]
+            right_on = st.multiselect(
+                "right_on (Right columns)",
+                right_cols,
+                default=valid_right_on,
+                key=f"merge_right_on_{i}",
+                help="Columns from right table to join on"
+            )
+
+        # Resulting merged DataFrame name (auto-generated, editable)
+        merged_name = f"{left_table}_merged_{right_table}_{how}"
+        merged_name = st.text_input(
+            "Resulting DataFrame Name",
+            value=block.get("merged_name", merged_name),
+            key=f"merge_merged_name_{i}"
+        )
 
         # Update block in session state
         st.session_state.merge_blocks[i] = {
             "left_table": left_table,
             "right_table": right_table,
-            "join_type": join_type,
-            "merged_table": merged_table
+            "how": how,
+            "on": on,
+            "left_on": left_on,
+            "right_on": right_on,
+            "merged_name": merged_name,
         }
 
-    # Add new merge operation button
     if st.button("➕ Add Merge Operation", key="add_merge"):
+        # By default, use the last merged table as left_table for the next merge
+        last_merged_name = st.session_state.merge_blocks[-1].get("merged_name", table_names[0]) if st.session_state.merge_blocks else table_names[0]
         st.session_state.merge_blocks.append({
-            "left_table": "Bureau Data",
-            "right_table": "On-Us Data",
-            "join_type": "Left Join",
-            "merged_table": "bureau_onus_merged"
+            "left_table": last_merged_name,
+            "right_table": table_names[0],
+            "how": "inner",
+            "on": [],
+            "left_on": [],
+            "right_on": [],
+            "merged_name": f"{last_merged_name}_merged_{table_names[0]}_inner",
         })
-        st.rerun() # Replaced experimental_rerun
+        st.rerun()
 
-    # Apply all merge operations button
-    if st.button("✅ Combine Datasets", key="combine_datasets"):
+    if st.button("✅ Merge Now", key="combine_datasets"):
         try:
-            st.success("Datasets combined successfully!")
-            # Display the merged tables
-            for block in st.session_state.merge_blocks:
-                st.info(f"Merged Table: {block['merged_table']} ({block['left_table']} {block['join_type']} {block['right_table']})")
-            st.session_state.show_merge = False
-            st.rerun() # Replaced experimental_rerun
-        except Exception as e:
-            st.error(f"Error combining datasets: {str(e)}")
+            merged_results = {}
+            for idx, block in enumerate(st.session_state.merge_blocks):
+                left_df = available_tables[block["left_table"]]
+                right_df = available_tables[block["right_table"]]
+                merged = left_df.merge(
+                    right_df,
+                    how=block["how"],
+                    on=block["on"] if block["on"] else None,
+                    left_on=block["left_on"] if block["left_on"] else None,
+                    right_on=block["right_on"] if block["right_on"] else None,
+                    suffixes=default_suffixes,
+                )
+                merged_results[block["merged_name"]] = merged
+                # Make this merged table available for next merges
+                st.session_state.merged_tables[block["merged_name"]] = merged
 
-st.markdown("---")
+            # The final merged DataFrame is the last one created
+            if merged_results:
+                final_merged_name = list(merged_results.keys())[-1]
+                st.session_state.combined_dataset = merged_results[final_merged_name]
+            st.success("All merges completed! The final merged dataset is ready for feature recommendation.")
+            st.session_state.show_merge = False
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error merging datasets: {str(e)}")
 
 # --- Centered Recommend Features Button ---
 col1, col2, col3 = st.columns([0.5, 3, 0.5])  # Adjusted column widths to make the button wider
 with col2:  # Middle column
     if st.button("✨ Recommend Features", key="recommend_features", use_container_width=True):
         try:
-            # Ensure merged data exists
-            if not st.session_state.merge_blocks:
-                st.warning("No merged datasets available. Please merge datasets first.")
+            # Use actual data if available, else fallback to simulated
+            if st.session_state.get("combined_dataset") is not None:
+                df_recommended = st.session_state.combined_dataset
             else:
-                # Use the last merged block for context
-                merged_block = st.session_state.merge_blocks[-1]
-                left_table = merged_block["left_table"]
-                right_table = merged_block["right_table"]
-                features = []
-                if left_table == "Bureau Data":
-                    features += BUREAU_FEATURES
-                elif left_table == "On-Us Data":
-                    features += ONUS_FEATURES
-                elif left_table == "Installments Data":
-                    features += INSTALLMENTS_FEATURES
-                if right_table == "Bureau Data":
-                    features += BUREAU_FEATURES
-                elif right_table == "On-Us Data":
-                    features += ONUS_FEATURES
-                elif right_table == "Installments Data":
-                    features += INSTALLMENTS_FEATURES
-                features = list(dict.fromkeys(features))
-
                 # Simulate a DataFrame with sample data for the recommended features
+                features = BUREAU_FEATURES + ONUS_FEATURES + INSTALLMENTS_FEATURES
                 data = {feature: [np.random.randint(1, 100) for _ in range(5)] for feature in features[:5]}
                 df_recommended = pd.DataFrame(data)
-                st.session_state.recommended_features = df_recommended  # Store the recommended features in session state
-                st.dataframe(df_recommended, use_container_width=True)  # Display the DataFrame without styling
-        except Exception as e:
-            st.warning("Could not generate recommended features automatically. Showing default recommendations.")
-            # Simulate a fallback DataFrame with default features and random data
-            fallback_data = {
-                "CREDIT_ACTIVE": [1, 0, 1, 1, 0],
-                "DAYS_CREDIT": [100, 200, 150, 300, 250],
-                "NAME_CONTRACT_STATUS": ["Approved", "Refused", "Approved", "Approved", "Refused"],
-                "DAYS_DECISION": [10, 20, 15, 30, 25],
-                "AMT_INSTALMENT": [5000, 10000, 7500, 15000, 12500]
+
+            st.session_state.recommended_features = df_recommended
+
+            # Example feature descriptions (extend this for real data)
+            feature_descriptions = {
+                "CREDIT_ACTIVE": "Current credit status",
+                "DAYS_CREDIT": "Days since credit was granted",
+                "AMT_CREDIT_SUM": "Total credit amount",
+                "AMT_CREDIT_SUM_DEBT": "Total debt amount",
+                "NAME_CONTRACT_STATUS": "Contract status",
+                "DAYS_DECISION": "Days since decision",
+                "AMT_APPLICATION": "Applied amount",
+                "AMT_CREDIT": "Credit amount",
+                "NUM_INSTALMENT_VERSION": "Installment version number",
+                "DAYS_INSTALMENT": "Days until installment",
+                "AMT_INSTALMENT": "Installment amount",
+                "AMT_PAYMENT": "Payment amount"
             }
-            df_fallback = pd.DataFrame(fallback_data)
-            st.session_state.recommended_features = df_fallback  # Store fallback data in session state
-            st.dataframe(df_fallback, use_container_width=True)  # Display the fallback DataFrame without styling
+
+            summary = []
+            for col in df_recommended.columns:
+                col_data = df_recommended[col]
+                dtype = str(col_data.dtype)
+                desc = feature_descriptions.get(col, "No description available")
+                if pd.api.types.is_numeric_dtype(col_data):
+                    min_val = col_data.min()
+                    max_val = col_data.max()
+                    mean_val = round(col_data.mean(), 2)
+                else:
+                    min_val = max_val = mean_val = "-"
+                summary.append({
+                    "Feature Name": col,
+                    "Data Type": dtype,
+                    "Description": desc,
+                    "Min": min_val,
+                    "Max": max_val,
+                    "Mean": mean_val
+                })
+            summary_df = pd.DataFrame(summary)
+            st.dataframe(summary_df, use_container_width=True)
+
+            # --- Show message about feature selection completeness ---
+            # Get all features from the dataset (if available)
+            if st.session_state.get("combined_dataset") is not None:
+                all_features = set(st.session_state.combined_dataset.columns)
+            else:
+                all_features = set(BUREAU_FEATURES + ONUS_FEATURES + INSTALLMENTS_FEATURES)
+            recommended_features = set(df_recommended.columns)
+
+            if recommended_features == all_features:
+                st.success("All features are selected from the dataset.")
+            else:
+                st.error("Not all features are selected from the dataset.")
+
+        except Exception as e:
+            st.error(f"Could not generate recommended features: {e}")
 
 # --- Accept Recommended Features Button ---
 if "recommended_features" in st.session_state and isinstance(st.session_state.recommended_features, pd.DataFrame) and not st.session_state.recommended_features.empty:
@@ -529,13 +623,11 @@ if st.session_state.show_popup1:
         col1, col2, col3, col4, col5 = st.columns([0.5, 2, 2, 2, 2])
 
         with col1:
-            # Use unique key for remove button
             if st.button("❌", key=f"remove_single_{i}"):
                 st.session_state.transform_blocks.pop(i)
-                st.rerun() # Replaced experimental_rerun
+                st.rerun()
 
         with col2:
-            # Use unique key for selectbox
             feature = st.selectbox(
                 "Select Feature",
                 BUREAU_FEATURES + ONUS_FEATURES + INSTALLMENTS_FEATURES,
@@ -544,47 +636,71 @@ if st.session_state.show_popup1:
             )
 
         with col3:
-            # Use unique key for selectbox
             operation = st.selectbox(
                 "Operation",
-                ["Addition", "Subtraction", "Multiplication", "Division", "Log", "Square Root", "Power", "Absolute Value"],
+                ["Addition", "Subtraction", "Multiplication", "Division", "Log", "Square Root", "Power", "Absolute Value", "Rename"],
                 key=f"single_operation_{i}",
-                index=["Addition", "Subtraction", "Multiplication", "Division", "Log", "Square Root", "Power", "Absolute Value"].index(block.get("operation", "Addition"))
+                index=["Addition", "Subtraction", "Multiplication", "Division", "Log", "Square Root", "Power", "Absolute Value", "Rename"].index(block.get("operation", "Addition"))
             )
 
         with col4:
-            # Use unique key for number_input
-            if operation in ["Addition", "Subtraction", "Multiplication", "Division", "Power"]:
+            # Operations that should freeze the value input
+            freeze_value_ops = ["Rename", "Log", "Square Root", "Absolute Value"]
+            if operation in freeze_value_ops:
+                # Set a default value for each operation if needed
+                default_val = 0 if operation == "Rename" else 1
+                value = st.number_input(
+                    "Value",
+                    value=default_val,
+                    key=f"single_value_{i}",
+                    disabled=True
+                )
+            elif operation in ["Addition", "Subtraction", "Multiplication", "Division", "Power"]:
                 value = st.number_input(
                     "Value",
                     value=block.get("value", 1.0),
                     key=f"single_value_{i}"
                 )
             else:
-                value = None
+                # Fallback for any other operation (should not occur)
+                value = st.number_input(
+                    "Value",
+                    value=block.get("value", 1.0),
+                    key=f"single_value_{i}"
+                )
 
         with col5:
-            # Generate suggested output name based on operation
-            if value is not None:
-                # Added str() and replace('.', '_') for value in output name
+            # Always suggest output name based on current selections
+            if operation == "Rename":
+                suggested_output = f"{feature}_renamed"
+            elif value is not None:
                 suggested_output = f"{feature}_{operation.replace(' ', '_')}_{str(value).replace('.', '_')}"
             else:
                 suggested_output = f"{feature}_{operation.replace(' ', '_')}"
 
-            # Use unique key for text_input
+            # If the output_name is empty or matches the previous suggestion, update it to the new suggestion
+            prev_suggestion = block.get("prev_suggestion", "")
+            prev_output_name = block.get("output_name", "")
+
+            if not prev_output_name or prev_output_name == prev_suggestion:
+                output_name = suggested_output
+            else:
+                output_name = prev_output_name
+
             output_name = st.text_input(
                 "Output Feature",
-                value=block.get("output_name", suggested_output),
+                value=output_name,
                 key=f"single_output_{i}"
             )
 
-        # Update block in session state
-        st.session_state.transform_blocks[i] = {
-            "feature": feature,
-            "operation": operation,
-            "value": value,
-            "output_name": output_name
-        }
+            # Update block in session state, including the current suggestion for future comparison
+            st.session_state.transform_blocks[i] = {
+                "feature": feature,
+                "operation": operation,
+                "value": value,
+                "output_name": output_name,
+                "prev_suggestion": suggested_output
+            }
 
     # Add new transformation button
     if st.button("➕ Add Transformation", key="add_transform"):
@@ -613,14 +729,6 @@ if st.session_state.show_popup1:
 
     st.markdown("""
         <style>
-        /* Target only multiselect boxes within Multiple Features Transformation section */
-        [data-testid="stVerticalBlock"] > div:has(h3:contains("Multiple Features Transformation")) [data-baseweb="select"] {
-            min-height: 300px !important;  /* Increased from 200px to 300px */
-            max-height: 400px !important;  /* Increased from 300px to 400px */
-        }
-        
-        /* Style container for multiple features section */
-        [data-testid="stVerticalBlock"] > div:has(h3:contains("Multiple Features Transformation")) [data-baseweb="select"] > div:first-child {
             min-height: 300px !important;  /* Increased to match container */
             height: auto !important;
             align-items: flex-start !important;
@@ -760,3 +868,260 @@ if st.session_state.show_popup1:
             st.rerun() # Replaced experimental_rerun # Rerun to hide the popup and update the main view
         except Exception as e:
             st.error(f"Error creating new features: {str(e)}")
+
+
+
+
+### FEATURE SELECTION SECTION ###
+
+
+# Load dummy data if not already present
+if "df" not in st.session_state or st.session_state.df is None:
+    st.session_state.df = pd.DataFrame({
+        "feature1": [1, 2, 3],
+        "feature2": [4, 5, 6],
+        "feature3": [7, 8, 9],
+        "feature4": [10, 11, 12],
+        "feature5": [13, 14, 15],
+        "total_purchases": [20, 25, 30],
+        "avg_order_value": [150, 200, 175],
+        "customer_segment": ["A", "B", "C"]
+    })
+
+# Define mandatory features
+mandatory_features = ["OPB", "interest_rate", "tenure", "credit_score_band", "LTV"]
+
+# Define feature descriptions with more detailed information
+feature_descriptions = {
+    "feature1": "Customer's primary demographic indicator (age, income, etc.)",
+    "feature2": "Customer's secondary demographic indicator (education, occupation, etc.)",
+    "feature3": "Customer's behavioral pattern indicator (frequency of interactions)",
+    "feature4": "Customer's preference indicator (product category preferences)",
+    "feature5": "Customer's risk assessment indicator (credit history, etc.)",
+    "total_purchases": "Total number of transactions made by the customer in the last 12 months",
+    "avg_order_value": "Average monetary value of customer's orders, indicating spending capacity",
+    "customer_segment": "Customer classification based on RFM (Recency, Frequency, Monetary) analysis",
+    "OPB": "Outstanding Principal Balance of the customer's loan",
+    "interest_rate": "Current interest rate applicable to the customer's loan",
+    "tenure": "Duration of the loan in months",
+    "credit_score_band": "Customer's credit score category (Excellent, Good, Fair, Poor)",
+    "LTV": "Loan-to-Value ratio indicating the risk level of the loan"
+}
+
+st.title("🔎 Feature Selection")
+
+# Show mandatory features
+st.subheader("📌 Mandatory Features")
+st.dataframe(pd.DataFrame({"Mandatory Features": mandatory_features}), hide_index=True)
+st.success("All mandatory attributes are available")
+
+st.markdown("---")
+
+# Get all available features from session state
+all_features = st.session_state.df.columns.tolist() if st.session_state.df is not None else []
+available_optional_features = [feat for feat in all_features if feat not in mandatory_features]
+
+# Add recommended features to available features if they exist
+if "recommended_features" in st.session_state:
+    rf = st.session_state.recommended_features
+    if isinstance(rf, pd.DataFrame):
+        if not rf.empty:
+            available_optional_features.extend(rf.squeeze().tolist())
+    elif isinstance(rf, (list, tuple, set)):
+        if len(rf) > 0:
+            available_optional_features.extend(list(rf))
+    # Remove duplicates while preserving order
+    available_optional_features = list(dict.fromkeys(available_optional_features))
+
+# Initialize selected features in session state if not present
+if "selected_features" not in st.session_state:
+    st.session_state.selected_features = []
+
+# Initialize feature checkboxes in session state if not exists
+if "feature_checkboxes" not in st.session_state:
+    st.session_state.feature_checkboxes = {feat: False for feat in available_optional_features}
+
+# Initialize filter state if not exists
+if "show_filter" not in st.session_state:
+    st.session_state.show_filter = False
+if "filtered_features" not in st.session_state:
+    st.session_state.filtered_features = available_optional_features
+if "filter_text" not in st.session_state:
+    st.session_state.filter_text = ""
+
+# Display good-to-have feature selection
+st.subheader("✨ Good-to-Have Features")
+
+# Create a custom CSS for the feature selection table
+st.markdown("""
+    <style>
+    .feature-table {
+        border: 1px solid #e5e7eb;
+        border-radius: 0.375rem;
+        background-color: white;
+    }
+    .feature-table th {
+        background-color: #f9fafb;
+        padding: 0.75rem;
+        text-align: left;
+        font-weight: 600;
+        color: #111827;
+    }
+    .feature-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid #f3f4f6;
+    }
+    .feature-table tr:hover {
+        background-color: #f9fafb;
+    }
+    .feature-name {
+        font-weight: 600;
+        color: #111827;
+    }
+    .feature-desc {
+        color: #6b7280;
+        font-size: 0.875rem;
+    }
+    .checkbox-container {
+        text-align: center;
+    }
+    .filter-container {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .column-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .filter-icon {
+        cursor: pointer;
+        padding: 2px;
+        border-radius: 4px;
+    }
+    .filter-icon:hover {
+        background-color: #f3f4f6;
+    }
+    .popup {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        z-index: 1000;
+    }
+    .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 999;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Create a container for the feature selection
+with st.container():
+    # Create a dataframe for the features
+    features_df = pd.DataFrame({
+        "Feature": available_optional_features,
+        "Description": [feature_descriptions.get(feat, "No description available") for feat in available_optional_features],
+        "Select": [st.session_state.feature_checkboxes.get(feat, False) for feat in available_optional_features]
+    })
+
+    # Display the features in a dataframe with custom styling
+    edited_df = st.data_editor(
+        features_df,
+        column_config={
+            "Feature": st.column_config.TextColumn(
+                "Feature 🔍",
+                width="medium",
+                disabled=True
+            ),
+            "Description": st.column_config.TextColumn(
+                "Description",
+                width="large",
+                disabled=True
+            ),
+            "Select": st.column_config.CheckboxColumn(
+                "Select",
+                width="small",
+                help="Select this feature",
+                default=False,
+            ),
+        },
+        hide_index=True,
+        use_container_width=True,
+        key="feature_editor"
+    )
+
+    # Add filter popup when filter icon is clicked
+    if st.session_state.get("show_filter", False):
+        st.markdown('<div class="overlay"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="popup">', unsafe_allow_html=True)
+        st.markdown("### Filter Features")
+        filter_text = st.text_input("Search features", 
+                                  placeholder="Type to filter features...", 
+                                  value=st.session_state.filter_text,
+                                  key="filter_input")
+        
+        if filter_text != st.session_state.filter_text:
+            st.session_state.filter_text = filter_text
+            st.session_state.filtered_features = [
+                feat for feat in available_optional_features 
+                if filter_text.lower() in feat.lower() or 
+                filter_text.lower() in feature_descriptions.get(feat, "").lower()
+            ]
+            st.rerun()
+        
+        if st.button("Close"):
+            st.session_state.show_filter = False
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.session_state.filtered_features = available_optional_features
+
+    # Update selected features based on checkboxes
+    st.session_state.selected_features = [
+        feature for feature, is_selected in zip(available_optional_features, edited_df["Select"])
+        if is_selected
+    ]
+
+st.markdown("---")
+
+# Combine and preview
+if st.button("📊 Show Selected Attributes"):
+    # Create a summary of all selected features
+    all_features = []
+    feature_types = []
+    
+    # Add mandatory features
+    for feature in mandatory_features:
+        all_features.append(feature)
+        feature_types.append("Mandatory")
+    
+    # Add selected optional features
+    for feature in st.session_state.selected_features:
+        all_features.append(feature)
+        feature_types.append("Selected")
+    
+    # Create and display the summary dataframe
+    summary_df = pd.DataFrame({
+        "Feature": all_features,
+        "Type": feature_types
+    })
+    
+    st.subheader("Selected Features Summary")
+    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+    
+    # Store the final dataset in session state
+    working_df = st.session_state.df.copy()
+    available_features = [f for f in all_features if f in working_df.columns]
+    if available_features:
+        st.session_state.final_dataset = working_df[available_features]
