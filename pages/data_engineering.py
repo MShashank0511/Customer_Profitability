@@ -159,20 +159,103 @@ def display_insights(data, dataset_name):
         )
 
     # Historical Insights
+    display_historical_insights(data, dataset_name)
+
+def display_bureau_insights(data, dataset_name):
+    """Display insights for Bureau dataset."""
+    st.header(f"{dataset_name} Data Feature Summary")
+    with st.expander(f"View {dataset_name} Data Feature Overview"):
+        data_no_timestamp = data.drop(columns=[col for col in data.columns if 'Timestamp' in col])
+
+        # Data Summary Logic (unchanged)
+        data_summary = pd.DataFrame({
+            "Feature": data_no_timestamp.columns,
+            "Data Type": data_no_timestamp.dtypes.values,
+            "% Missing": data_no_timestamp.isnull().mean().values * 100,
+            "# Distinct Values": data_no_timestamp.nunique().values,
+        })
+        st.dataframe(data_summary, height=400)
+
+    # Filters for Start and End Date
+    st.subheader(f"Loan Insights & Metrics ({dataset_name} Data)")
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        start_date = st.date_input(f"Start Date ({dataset_name} Data)", datetime.now().date() - timedelta(days=30))
+    with col2:
+        end_date = st.date_input(f"End Date ({dataset_name} Data)", datetime.now().date())
+
+    # Filter data based on selected dates
+    filtered_data = filter_data_by_date(data, start_date, end_date)
+
+    if not filtered_data.empty:
+        # Calculate percentage of high-risk customers
+        total_customers = len(filtered_data)
+        high_risk_customers = filtered_data[
+            (filtered_data['DEROG_TRDLN_TOTAL'] > 1) &  # More than 1 derogatory account
+            (filtered_data['COLLECTIONS_CUR_BAL_TOTAL'] > 0) &  # Active collections
+            (filtered_data['CREDIT_SCORE_AVG_CALC'] < 550) &  # Credit score under 550
+            (filtered_data['DELINQ_CNT_30_DAY_TOTAL'] > 0)  # History of missed payments
+        ]
+        high_risk_pct = (len(high_risk_customers) / total_customers) * 100
+
+        # Calculate total unpaid balance on derogatory accounts
+        total_unpaid_balance = filtered_data['DEROG_CUR_BAL_TOTAL'].sum()
+
+        # Display metrics as cards next to filters
+        with col3:
+            st.metric(
+                label="High-Risk Customers (%)",
+                value=f"{high_risk_pct:.2f}%"
+            )
+            st.metric(
+                label="Total Unpaid Balance on Derogatory Accounts",
+                value=f"£{total_unpaid_balance / 1_000_000:.1f}M"
+            )
+
+        # Historical Insights Section (unchanged)
+        display_historical_insights(data, dataset_name)
+
+def display_historical_insights(data, dataset_name):
+    """Display historical insights for a given dataset."""
     st.subheader(f"Historical Insights ({dataset_name} Data)")
 
-    hist_start_date = st.date_input(f"Start Date ({dataset_name} Data)", today - timedelta(days=30))
-    hist_end_date = st.date_input(f"End Date ({dataset_name} Data)", today)
+    # Layout: Filters on the left, feature selection on the right
+    col1, col2 = st.columns([1, 2])
+
+    # Filters for Start and End Date
+    with col1:
+        hist_start_date = st.date_input(
+            f"Start Date ({dataset_name} Data)", 
+            datetime.now().date() - timedelta(days=30), 
+            key=f"hist_start_date_{dataset_name}"
+        )
+        hist_end_date = st.date_input(
+            f"End Date ({dataset_name} Data)", 
+            datetime.now().date(), 
+            key=f"hist_end_date_{dataset_name}"
+        )
+
+    # Filter data based on selected dates
     historical_data = filter_data_by_date(data, hist_start_date, hist_end_date)
 
     if not historical_data.empty:
-        chart_type = st.selectbox(f"Select Feature Type ({dataset_name} Data)", ["Categorical", "Continuous"])
+        # Feature selection stacked to the right
+        with col2:
+            chart_type = st.selectbox(
+                f"Select Feature Type ({dataset_name} Data)", 
+                ["Categorical", "Continuous"], 
+                key=f"chart_type_{dataset_name}"
+            )
+            features = CATEGORICAL_FEATURES if chart_type == "Categorical" else [
+                col for col in data.columns if col not in CATEGORICAL_FEATURES and col not in ['Timestamp', 'Loan_Status']
+            ]
+            selected_feature = st.selectbox(
+                f"Select Feature ({dataset_name} Data)", 
+                features, 
+                key=f"selected_feature_{dataset_name}"
+            )
 
-        features = CATEGORICAL_FEATURES if chart_type == "Categorical" else [
-            col for col in data.columns if col not in CATEGORICAL_FEATURES and col not in ['Timestamp', 'Loan_Status']
-        ]
-
-        selected_feature = st.selectbox(f"Select Feature ({dataset_name} Data)", features)
+        # Display insights based on feature type
         col1, col2 = st.columns([3, 2])
 
         if chart_type == "Continuous":
@@ -235,4 +318,4 @@ if on_us_file is not None:
 if bureau_file is not None:
     bureau_data = load_data(bureau_file)
     if bureau_data is not None:
-        display_insights(bureau_data, "Bureau")
+        display_bureau_insights(bureau_data, "Bureau")
