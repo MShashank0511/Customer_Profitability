@@ -254,3 +254,25 @@ if st.button("📊 Show Selected Attributes"):
     available_features = [f for f in all_features if f in working_df.columns]
     if available_features:
         st.session_state.final_dataset = working_df[available_features]
+
+# Target Variable Selection
+if "final_dataset" in st.session_state and not st.session_state.final_dataset.empty:
+    st.subheader("🎯 Target Variable Selection")
+    feature_options = st.session_state.final_dataset.columns.tolist()
+    target_column = st.selectbox("Search Target Variable", feature_options, key="target_column_select")
+
+    if st.button("Add Target Variable to Dataset", key="add_target_btn"):
+        # Add target column to final dataset if not already present
+        if target_column not in st.session_state.final_dataset.columns:
+            st.session_state.final_dataset[target_column] = st.session_state.df[target_column]
+
+        # Store target variable in session state
+        st.session_state.target_column = target_column
+
+        # Convert final dataset (with target) to JSON and store for Model_develop page
+        final_json = st.session_state.final_dataset.to_json(orient="records")
+        st.session_state.final_dataset_json = final_json
+
+        st.success(f"Target variable '{target_column}' has been selected and added to your dataset. You can now proceed to model development.")
+else:
+    st.info("Please select and show your features first to enable target variable selection.")
