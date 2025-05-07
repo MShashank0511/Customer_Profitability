@@ -274,8 +274,11 @@ if feature_columns:
                     try:
                         explainer = shap.Explainer(model, X_train)
                         shap_values = explainer(X_test)
-                        shap.summary_plot(shap_values, X_test, show=False)
-                        st.pyplot(plt.gcf())
+
+                        # Create a new figure for the SHAP summary plot
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        shap.summary_plot(shap_values, X_test, show=False, plot_type="dot", ax=ax)
+                        st.pyplot(fig)
                     except Exception as e:
                         st.warning(f"⚠️ Could not generate SHAP summary plot: {e}")
 
@@ -301,8 +304,11 @@ if feature_columns:
                     try:
                         explainer = shap.Explainer(model, X_train)
                         shap_values = explainer(X_test)
-                        shap.summary_plot(shap_values, X_test, show=False)
-                        st.pyplot(plt.gcf())
+
+                        # Create a new figure for the SHAP summary plot
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        shap.summary_plot(shap_values, X_test, show=False, plot_type="dot", ax=ax)
+                        st.pyplot(fig)
                     except Exception as e:
                         st.warning(f"⚠️ Could not generate SHAP summary plot: {e}")
 
