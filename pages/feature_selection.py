@@ -1430,3 +1430,7 @@ if "final_dataset" in st.session_state and not st.session_state.final_dataset.em
             st.error(f"Error adding target variable: {str(e)}")
 else:
     st.info("Please select and show your features first to enable target variable selection.")
+
+
+
+    
