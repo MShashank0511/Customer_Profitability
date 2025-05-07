@@ -1,4 +1,9 @@
 import numpy as np
+
+# Patch for deprecated np.bool
+if not hasattr(np, 'bool'):
+    np.bool = np.bool_
+
 import plotly.express as px
 import streamlit as st
 import pandas as pd
