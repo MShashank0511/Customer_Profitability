@@ -29,6 +29,10 @@ st.title("🔧 Model Development")
 csv_file_path = "loan_data.csv"  # Replace with the actual path to your CSV file
 df_full = pd.read_csv(csv_file_path)
 
+# Drop 'timestamp' column if it exists, keep 'Timestamp'
+if 'timestamp' in df_full.columns:
+    df_full = df_full.drop(columns=['timestamp'])
+
 # Ensure the target variables exist in the dataset
 target_variables = ["Profitability_GBP", "COF_EVENT_LABEL", "PREPAYMENT_EVENT_LABEL"]
 for target in target_variables:
@@ -134,6 +138,10 @@ st.session_state.model_selections[selected_json] = {
 }
 
 if feature_columns:
+    # Ensure 'Timestamp' is included if present and not already in feature_columns
+    columns_to_include = feature_columns + [target_column]
+    if "Timestamp" in df.columns and "Timestamp" not in columns_to_include:
+        columns_to_include.append("Timestamp")
     X = df[feature_columns]
     y = df[target_column]
     y = y.ravel()
@@ -300,7 +308,6 @@ if feature_columns:
 
     # Step 7: Select Iteration and Save JSON
     best_iterations = st.session_state.get(f"best_iterations_{target_column}", [])
-    # --- Restore previously selected iteration if available ---
     prev_iter = model_state.get("selected_iteration", 0)
     if best_iterations:
         selected_iteration = st.selectbox(
@@ -313,8 +320,14 @@ if feature_columns:
             iteration_index = int(selected_iteration.split(" ")[1]) - 1
             iteration_details = best_iterations[iteration_index]
 
-            # Include target column value in each record
-            dataset_records = df[feature_columns + [target_column]].to_dict(orient="records")
+            # Always include target, Timestamp (if exists), and TERM_OF_LOAN (if exists)
+            columns_to_include = feature_columns + [target_column]
+            if "Timestamp" in df.columns and "Timestamp" not in columns_to_include:
+                columns_to_include.append("Timestamp")
+            if "TERM_OF_LOAN" in df.columns and "TERM_OF_LOAN" not in columns_to_include:
+                columns_to_include.append("TERM_OF_LOAN")
+
+            dataset_records = df[columns_to_include].to_dict(orient="records")
 
             json_data = {
                 "dataset": dataset_records,
