@@ -1,4 +1,5 @@
 import numpy as np
+import os
 
 # Patch for deprecated np.bool
 if not hasattr(np, 'bool'):
@@ -45,12 +46,23 @@ datasets = [
 if "selected_iterations" not in st.session_state:
     st.session_state.selected_iterations = {}
 
-# Step 1: Dropdown for Dataset Selection
+# --- Helper to remove old JSON file if exists ---
+def remove_old_json(model_key):
+    old_json = st.session_state.selected_iterations.get(model_key)
+    if old_json and os.path.exists(old_json):
+        os.remove(old_json)
+
+# --- Session state initialization for each model ---
+if "model_selections" not in st.session_state:
+    st.session_state.model_selections = {}
+
+# Step 1: Dropdown for Model Selection
+model_options = [d["name"].replace("Dataset", "Model") for d in datasets]
 selected_json = st.selectbox(
-    "Select Dataset to Work On",
-    [d["name"] for d in datasets]
+    "Select Model to Work On",
+    model_options
 )
-current_dataset = next(d for d in datasets if d["name"] == selected_json)
+current_dataset = next(d for d in datasets if d["name"].replace("Dataset", "Model") == selected_json)
 target_column = current_dataset["target"]
 
 # Work on a copy of the full dataframe
@@ -58,7 +70,12 @@ df = df_full.copy()
 
 # Step 2: Sub-sampling
 st.subheader("🔍 Sub-sampling")
-sample_frac = st.slider("Select sub-sample fraction", 0.1, 1.0, 1.0, key=f"sample_frac_{target_column}")
+# --- Restore previous selections if available ---
+model_state = st.session_state.model_selections.get(selected_json, {})
+sample_frac = st.slider(
+    "Select sub-sample fraction", 0.1, 1.0, 
+    model_state.get("sample_frac", 1.0), key=f"sample_frac_{target_column}"
+)
 df = df.sample(frac=sample_frac, random_state=42).reset_index(drop=True)
 
 # Step 3: Target Variable Selection & Distribution
@@ -98,8 +115,23 @@ else:
 
 # Step 4: Train/Test Split
 st.subheader("🧪 Train/Test Split")
-test_size = st.slider("Select test size", 0.1, 0.5, 0.2, key=f"test_size_{target_column}")
-feature_columns = st.multiselect("📊 Select Features", [col for col in df.columns if col != target_column], key=f"features_{target_column}")
+test_size = st.slider(
+    "Select test size", 0.1, 0.5, 
+    model_state.get("test_size", 0.2), key=f"test_size_{target_column}"
+)
+feature_columns = st.multiselect(
+    "📊 Select Features", 
+    [col for col in df.columns if col != target_column], 
+    default=model_state.get("feature_columns", []), 
+    key=f"features_{target_column}"
+)
+
+# Save current selections to session state
+st.session_state.model_selections[selected_json] = {
+    "sample_frac": sample_frac,
+    "test_size": test_size,
+    "feature_columns": feature_columns,
+}
 
 if feature_columns:
     X = df[feature_columns]
@@ -131,7 +163,14 @@ if feature_columns:
     else:
         models = {"Linear Regression": LinearRegression}
 
-    selected_model = st.selectbox("Select Model", list(models.keys()), key=f"model_{target_column}")
+    # Restore model selection if available
+    selected_model = st.selectbox(
+        "Select Model", 
+        list(models.keys()), 
+        index=list(models.keys()).index(model_state.get("selected_model", list(models.keys())[0])),
+        key=f"model_{target_column}"
+    )
+    st.session_state.model_selections[selected_json]["selected_model"] = selected_model
     model_class = models[selected_model]
 
     # Step 6: Run Model
@@ -261,31 +300,43 @@ if feature_columns:
 
     # Step 7: Select Iteration and Save JSON
     best_iterations = st.session_state.get(f"best_iterations_{target_column}", [])
+    # --- Restore previously selected iteration if available ---
+    prev_iter = model_state.get("selected_iteration", 0)
     if best_iterations:
         selected_iteration = st.selectbox(
             f"Select Iteration for {selected_json}",
             [f"Iteration {i+1}" for i in range(len(best_iterations))],
+            index=prev_iter,
             key=f"iteration_select_{target_column}"
         )
         if st.button(f"Confirm Selection for {selected_json}", key=f"confirm_{target_column}"):
             iteration_index = int(selected_iteration.split(" ")[1]) - 1
             iteration_details = best_iterations[iteration_index]
+
+            # Include target column value in each record
+            dataset_records = df[feature_columns + [target_column]].to_dict(orient="records")
+
             json_data = {
-                "dataset": df[feature_columns].to_dict(orient="records"),
+                "dataset": dataset_records,
                 "target_variable": target_column,
                 "model_name": selected_model,
                 "model_code": f"{model_class.__name__}(**{iteration_details['params']})",
                 "hyperparameters": iteration_details["params"],
             }
             json_file_name = f"{selected_model}_{target_column}.json"
+            # Remove old JSON if exists
+            remove_old_json(selected_json)
+            # Save new JSON
             with open(json_file_name, "w") as json_file:
                 json.dump(json_data, json_file, indent=4)
+            # Store the filename in session state for this model
             st.session_state.selected_iterations[selected_json] = json_file_name
+            st.session_state.model_selections[selected_json]["selected_iteration"] = iteration_index
             st.success(f"✅ {selected_iteration} selected for {selected_json}! JSON file created: {json_file_name}")
 
 # Step 8: Proceed to Next Page
 if len(st.session_state.selected_iterations) == len(datasets):
     if st.button("Proceed to Next Page"):
-        st.success("✅ All datasets have been processed! You can proceed to the next page.")
+        st.success("✅ All models have been processed! You can proceed to the next page.")
 else:
-    st.info("Please complete the selection for all datasets before proceeding.")
+    st.info("Please complete the selection for all models before proceeding.")
