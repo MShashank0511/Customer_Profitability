@@ -6,6 +6,232 @@ import re
 import uuid
 import random
 from datetime import datetime, timedelta
+import json
+import os
+
+def save_model_state(model_name):
+    """Save the current model's state to the backend."""
+    try:
+        # Create a directory for model states if it doesn't exist
+        if not os.path.exists("model_states"):
+            os.makedirs("model_states")
+            
+        # Save all model-specific state variables
+        model_state = {
+            # Main state
+            "loan_data": st.session_state[f"{model_name}_state"]["loan_data"].to_json(orient="records"),
+            "bureau_data": st.session_state[f"{model_name}_state"]["bureau_data"].to_json(orient="records"),
+            "onus_data": st.session_state[f"{model_name}_state"]["onus_data"].to_json(orient="records"),
+            "installments_data": st.session_state[f"{model_name}_state"]["installments_data"].to_json(orient="records"),
+            "show_popup1": st.session_state[f"{model_name}_state"]["show_popup1"],
+            "transform_blocks": st.session_state[f"{model_name}_state"]["transform_blocks"],
+            "multi_transform_blocks": st.session_state[f"{model_name}_state"]["multi_transform_blocks"],
+            "final_transformed_features": st.session_state[f"{model_name}_state"]["final_transformed_features"].to_json(orient="records"),
+            "recommended_features": st.session_state[f"{model_name}_state"]["recommended_features"].to_json(orient="records"),
+            "final_dataset": st.session_state[f"{model_name}_state"]["final_dataset"].to_json(orient="records"),
+            "selected_features": st.session_state[f"{model_name}_state"]["selected_features"],
+            "feature_checkboxes": st.session_state[f"{model_name}_state"]["feature_checkboxes"],
+            "show_filter": st.session_state[f"{model_name}_state"]["show_filter"],
+            "filtered_features": st.session_state[f"{model_name}_state"]["filtered_features"],
+            "filter_text": st.session_state[f"{model_name}_state"]["filter_text"],
+            "merge_blocks": st.session_state[f"{model_name}_state"]["merge_blocks"],
+            "merged_tables": st.session_state[f"{model_name}_state"]["merged_tables"],
+            "combined_dataset": st.session_state[f"{model_name}_state"]["combined_dataset"].to_json(orient="records") if st.session_state[f"{model_name}_state"]["combined_dataset"] is not None else None,
+            # Other state variables
+            "operations_complete": st.session_state.get(f"{model_name}_operations_complete", {}),
+            "show_filter_data": st.session_state.get(f"{model_name}_show_filter_data", False),
+            "show_merge": st.session_state.get(f"{model_name}_show_merge", False),
+            "single_transform_success": st.session_state.get(f"{model_name}_single_transform_success", None),
+            "multi_transform_success": st.session_state.get(f"{model_name}_multi_transform_success", None),
+            "recommended_features_state": st.session_state.get(f"{model_name}_recommended_features", pd.DataFrame()).to_json(orient="records"),
+            "final_dataset_state": st.session_state.get(f"{model_name}_final_dataset", pd.DataFrame()).to_json(orient="records"),
+            "selected_features_state": st.session_state.get(f"{model_name}_selected_features", []),
+            "feature_checkboxes_state": st.session_state.get(f"{model_name}_feature_checkboxes", {}),
+            "filter_blocks_state": st.session_state.get(f"{model_name}_filter_blocks", []),
+            "target_column": st.session_state.get(f"{model_name}_target_column", None),
+            "target_feature": st.session_state.get(f"{model_name}_target_feature", None),
+            "final_dataset_json": st.session_state.get(f"{model_name}_final_dataset_json", None)
+        }
+        
+        # Save to a single file
+        state_file = f"model_states/{model_name}_state.json"
+        with open(state_file, 'w') as f:
+            json.dump(model_state, f)
+            
+    except Exception as e:
+        st.error(f"Error saving model state: {str(e)}")
+
+def load_model_state(model_name):
+    """Load a model's state from the backend."""
+    try:
+        state_file = f"model_states/{model_name}_state.json"
+        if os.path.exists(state_file):
+            with open(state_file, 'r') as f:
+                model_state = json.load(f)
+                
+            # Initialize main state
+            st.session_state[f"{model_name}_state"] = {
+                "loan_data": pd.read_json(model_state["loan_data"], orient="records"),
+                "bureau_data": pd.read_json(model_state["bureau_data"], orient="records"),
+                "onus_data": pd.read_json(model_state["onus_data"], orient="records"),
+                "installments_data": pd.read_json(model_state["installments_data"], orient="records"),
+                "show_popup1": model_state["show_popup1"],
+                "transform_blocks": model_state["transform_blocks"],
+                "multi_transform_blocks": model_state["multi_transform_blocks"],
+                "final_transformed_features": pd.read_json(model_state["final_transformed_features"], orient="records"),
+                "recommended_features": pd.read_json(model_state["recommended_features"], orient="records"),
+                "final_dataset": pd.read_json(model_state["final_dataset"], orient="records"),
+                "selected_features": model_state["selected_features"],
+                "feature_checkboxes": model_state["feature_checkboxes"],
+                "show_filter": model_state["show_filter"],
+                "filtered_features": model_state["filtered_features"],
+                "filter_text": model_state["filter_text"],
+                "merge_blocks": model_state["merge_blocks"],
+                "merged_tables": model_state["merged_tables"],
+                "combined_dataset": pd.read_json(model_state["combined_dataset"], orient="records") if model_state["combined_dataset"] is not None else None
+            }
+            
+            # Load other state variables with default values if not present
+            st.session_state[f"{model_name}_operations_complete"] = model_state.get("operations_complete", {
+                "merge": False,
+                "recommend": False,
+                "accept": False
+            })
+            st.session_state[f"{model_name}_show_filter_data"] = model_state.get("show_filter_data", False)
+            st.session_state[f"{model_name}_show_merge"] = model_state.get("show_merge", False)
+            st.session_state[f"{model_name}_single_transform_success"] = model_state.get("single_transform_success", None)
+            st.session_state[f"{model_name}_multi_transform_success"] = model_state.get("multi_transform_success", None)
+            st.session_state[f"{model_name}_recommended_features"] = pd.read_json(model_state.get("recommended_features_state", pd.DataFrame().to_json(orient="records")), orient="records")
+            st.session_state[f"{model_name}_final_dataset"] = pd.read_json(model_state.get("final_dataset_state", pd.DataFrame().to_json(orient="records")), orient="records")
+            st.session_state[f"{model_name}_selected_features"] = model_state.get("selected_features_state", [])
+            st.session_state[f"{model_name}_feature_checkboxes"] = model_state.get("feature_checkboxes_state", {})
+            st.session_state[f"{model_name}_filter_blocks"] = model_state.get("filter_blocks_state", [{
+                "dataset": "Bureau Data",
+                "feature": "",
+                "operation": "Greater Than",
+                "value": 0,
+                "output_name": ""
+            }])
+            st.session_state[f"{model_name}_target_column"] = model_state.get("target_column", None)
+            st.session_state[f"{model_name}_target_feature"] = model_state.get("target_feature", None)
+            st.session_state[f"{model_name}_final_dataset_json"] = model_state.get("final_dataset_json", None)
+                        
+    except Exception as e:
+        st.error(f"Error loading model state: {str(e)}")
+        # Initialize with default values if loading fails
+        initialize_new_model_state(model_name)
+
+def initialize_new_model_state(model_name):
+    """Initialize a fresh state for a new model."""
+    # Initialize main state
+    st.session_state[f"{model_name}_state"] = {
+        "loan_data": pd.read_csv("loan_data.csv"),
+        "bureau_data": pd.read_csv("loan_data.csv").copy(),
+        "onus_data": pd.read_csv("loan_data.csv").copy(),
+        "installments_data": pd.read_csv("loan_data.csv").copy(),
+        "show_popup1": False,
+        "transform_blocks": [{
+            "feature": "",
+            "operation": "Addition",
+            "value": 1.0,
+            "output_name": ""
+        }],
+        "multi_transform_blocks": [{
+            "features": [],
+            "operation": "",
+            "output_name": ""
+        }],
+        "final_transformed_features": pd.DataFrame(),
+        "recommended_features": pd.DataFrame(),
+        "final_dataset": pd.DataFrame(),
+        "selected_features": [],
+        "feature_checkboxes": {},
+        "show_filter": False,
+        "filtered_features": [],
+        "filter_text": "",
+        "merge_blocks": [{
+            "left_table": "Bureau Data",
+            "right_table": "On-Us Data",
+            "how": "inner",
+            "on": [],
+            "left_on": [],
+            "right_on": [],
+            "merged_name": "Merged_1",
+        }],
+        "merged_tables": {},
+        "combined_dataset": None,
+    }
+    
+    # Initialize other state variables
+    st.session_state[f"{model_name}_operations_complete"] = {
+        "merge": False,
+        "recommend": False,
+        "accept": False
+    }
+    st.session_state[f"{model_name}_show_filter_data"] = False
+    st.session_state[f"{model_name}_show_merge"] = False
+    st.session_state[f"{model_name}_single_transform_success"] = None
+    st.session_state[f"{model_name}_multi_transform_success"] = None
+    st.session_state[f"{model_name}_recommended_features"] = pd.DataFrame()
+    st.session_state[f"{model_name}_final_dataset"] = pd.DataFrame()
+    st.session_state[f"{model_name}_selected_features"] = []
+    st.session_state[f"{model_name}_feature_checkboxes"] = {}
+    st.session_state[f"{model_name}_filter_blocks"] = [{
+        "dataset": "Bureau Data",
+        "feature": "",
+        "operation": "Greater Than",
+        "value": 0,
+        "output_name": ""
+    }]
+    st.session_state[f"{model_name}_target_column"] = None
+    st.session_state[f"{model_name}_target_feature"] = None
+    st.session_state[f"{model_name}_final_dataset_json"] = None
+
+def add_new_model():
+    """Add a new model with fresh state."""
+    try:
+        # Save the current model's state before creating a new one
+        current_model = st.session_state.active_model
+        save_model_state(current_model)
+        
+        # Create new model name
+        new_model_name = f"Model {len(st.session_state.models) + 1}"
+        st.session_state.models.append(new_model_name)
+        
+        # Initialize fresh state for the new model
+        initialize_new_model_state(new_model_name)
+        
+        # Switch to the new model
+        st.session_state.active_model = new_model_name
+        
+        # Save the new model's initial state
+        save_model_state(new_model_name)
+        
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error creating new model: {str(e)}")
+
+def switch_model(model_name):
+    """Switch to a different model, saving current state and loading the new model's state."""
+    try:
+        # Save the current model's state before switching
+        current_model = st.session_state.active_model
+        save_model_state(current_model)
+        
+        # Switch to the new model
+        st.session_state.active_model = model_name
+        
+        # Try to load existing state from backend
+        load_model_state(model_name)
+        
+        # If no saved state exists, initialize with default values
+        if f"{model_name}_state" not in st.session_state:
+            initialize_new_model_state(model_name)
+            save_model_state(model_name)
+        
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error switching models: {str(e)}")
 
 # Add caching decorators for expensive operations
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -160,214 +386,130 @@ if "models" not in st.session_state:
     st.session_state.models = ["Model 1"]  # Start with Model 1
 if "active_model" not in st.session_state:
     st.session_state.active_model = "Model 1"  # Default active model
-if "operations_complete" not in st.session_state:
-    st.session_state.operations_complete = {
-        "merge": False,
-        "recommend": False,
-        "accept": False
-    }
+if "single_transform_success" not in st.session_state:
+    st.session_state.single_transform_success = None  # Initialize single_transform_success
+if "multi_transform_success" not in st.session_state:
+    st.session_state.multi_transform_success = None  # Initialize multi_transform_success
 
-# Function to switch_model
-def switch_model(model_name):
-    st.session_state.active_model = model_name
-    # Always reset state when switching models
-    st.session_state[f"{model_name}_state"] = {
-        "loan_data": pd.read_csv("loan_data.csv"),
-        "bureau_data": pd.read_csv("loan_data.csv").copy(),
-        "onus_data": pd.read_csv("loan_data.csv").copy(),
-        "installments_data": pd.read_csv("loan_data.csv").copy(),
-        "show_popup1": False,
-        "transform_blocks": [{
+# Model Selection Section
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    # Create a row for dropdown and button
+    dropdown_col, button_col = st.columns([1.2, 1])
+    with dropdown_col:
+        # Model selection dropdown
+        selected_model = st.selectbox(
+            "Select Model",
+            st.session_state.models,
+            index=st.session_state.models.index(st.session_state.active_model),
+            key="model_selector"
+        )
+    with button_col:
+        # Create new model button
+        if st.button("➕ Create New Model", key="add_model_btn", use_container_width=True):
+            add_new_model()
+
+# Switch model if selection changed
+if selected_model != st.session_state.active_model:
+    switch_model(selected_model)
+
+# Initialize state for Model 1 if it doesn't exist
+if "Model 1_state" not in st.session_state:
+    # Try to load existing state from backend
+    load_model_state("Model 1")
+    
+    # If no saved state exists, initialize with default values
+    if "Model 1_state" not in st.session_state:
+        st.session_state["Model 1_state"] = {
+            "loan_data": pd.read_csv("loan_data.csv"),
+            "bureau_data": pd.read_csv("loan_data.csv").copy(),
+            "onus_data": pd.read_csv("loan_data.csv").copy(),
+            "installments_data": pd.read_csv("loan_data.csv").copy(),
+            "show_popup1": False,
+            "transform_blocks": [],
+            "multi_transform_blocks": [],
+            "final_transformed_features": pd.DataFrame(),
+            "recommended_features": pd.DataFrame(),
+            "final_dataset": pd.DataFrame(),
+            "selected_features": [],
+            "feature_checkboxes": {},
+            "show_filter": False,
+            "filtered_features": [],
+            "filter_text": "",
+            "merge_blocks": [{
+                "left_table": "Bureau Data",
+                "right_table": "On-Us Data",
+                "how": "inner",
+                "on": [],
+                "left_on": [],
+                "right_on": [],
+                "merged_name": "Merged_1",
+            }],
+            "merged_tables": {},
+            "combined_dataset": None,
+        }
+        st.session_state["Model 1_operations_complete"] = {
+            "merge": False,
+            "recommend": False,
+            "accept": False
+        }
+        st.session_state["Model 1_show_filter_data"] = False
+        st.session_state["Model 1_show_merge"] = False
+        st.session_state["Model 1_single_transform_success"] = None
+        st.session_state["Model 1_multi_transform_success"] = None
+        st.session_state["Model 1_recommended_features"] = pd.DataFrame()
+        st.session_state["Model 1_final_dataset"] = pd.DataFrame()
+        st.session_state["Model 1_selected_features"] = []
+        st.session_state["Model 1_feature_checkboxes"] = {}
+        st.session_state["Model 1_filter_blocks"] = [{
+            "dataset": "Bureau Data",
             "feature": "",
-            "operation": "Addition",
-            "value": 1.0,
+            "operation": "Greater Than",
+            "value": 0,
             "output_name": ""
-        }],
-        "multi_transform_blocks": [{
-            "features": [],
-            "operation": "",
-            "output_name": ""
-        }],
-        "final_transformed_features": pd.DataFrame(),
-        "recommended_features": pd.DataFrame(),
-        "final_dataset": pd.DataFrame(),
-        "selected_features": [],
-        "feature_checkboxes": {},
-        "show_filter": False,
-        "filtered_features": [],
-        "filter_text": "",
-        "merge_blocks": [{
-            "left_table": "Bureau Data",
-            "right_table": "On-Us Data",
-            "how": "inner",
-            "on": [],
-            "left_on": [],
-            "right_on": [],
-            "merged_name": "Merged_1",
-        }],
-        "merged_tables": {},
-        "combined_dataset": None,
-    }
-    
-    # Reset operations state for the model
-    st.session_state[f"{model_name}_operations_complete"] = {
-        "merge": False,
-        "recommend": False,
-        "accept": False
-    }
-    
-    # Reset other session state variables for the model
-    st.session_state[f"{model_name}_show_filter_data"] = False
-    st.session_state[f"{model_name}_show_merge"] = False
-    st.session_state[f"{model_name}_single_transform_success"] = None
-    st.session_state[f"{model_name}_multi_transform_success"] = None
-    st.session_state[f"{model_name}_recommended_features"] = pd.DataFrame()
-    st.session_state[f"{model_name}_final_dataset"] = pd.DataFrame()
-    st.session_state[f"{model_name}_selected_features"] = []
-    st.session_state[f"{model_name}_feature_checkboxes"] = {}
-    
-    st.rerun()
+        }]
+        st.session_state["Model 1_target_column"] = None
+        st.session_state["Model 1_target_feature"] = None
+        st.session_state["Model 1_final_dataset_json"] = None
 
-# Function to add a new model
-def add_new_model():
-    new_model_name = f"Model {len(st.session_state.models) + 1}"
-    st.session_state.models.append(new_model_name)
-    st.session_state.active_model = new_model_name
-    # Reset all state for the new model
-    st.session_state[f"{new_model_name}_state"] = {
-        "loan_data": pd.read_csv("loan_data.csv"),
-        "bureau_data": pd.read_csv("loan_data.csv").copy(),
-        "onus_data": pd.read_csv("loan_data.csv").copy(),
-        "installments_data": pd.read_csv("loan_data.csv").copy(),
-        "show_popup1": False,
-        "transform_blocks": [],
-        "multi_transform_blocks": [],
-        "final_transformed_features": pd.DataFrame(),
-        "recommended_features": pd.DataFrame(),
-        "final_dataset": pd.DataFrame(),
-        "selected_features": [],
-        "feature_checkboxes": {},
-        "show_filter": False,
-        "filtered_features": [],
-        "filter_text": "",
-        "merge_blocks": [{
-            "left_table": "Bureau Data",
-            "right_table": "On-Us Data",
-            "how": "inner",
-            "on": [],
-            "left_on": [],
-            "right_on": [],
-            "merged_name": "Merged_1",
-        }],
-        "merged_tables": {},
-        "combined_dataset": None,
-    }
-    
-    # Initialize operations state for new model
-    st.session_state[f"{new_model_name}_operations_complete"] = {
-        "merge": False,
-        "recommend": False,
-        "accept": False
-    }
-    
-    # Initialize other session state variables for new model
-    st.session_state[f"{new_model_name}_show_filter_data"] = False
-    st.session_state[f"{new_model_name}_show_merge"] = False
-    st.session_state[f"{new_model_name}_single_transform_success"] = None
-    st.session_state[f"{new_model_name}_multi_transform_success"] = None
-    st.session_state[f"{new_model_name}_recommended_features"] = pd.DataFrame()
-    st.session_state[f"{new_model_name}_final_dataset"] = pd.DataFrame()
-    st.session_state[f"{new_model_name}_selected_features"] = []
-    st.session_state[f"{new_model_name}_feature_checkboxes"] = {}
-    
-    st.rerun()
-
-# --- Display model buttons at the top ---
-# Create a row of columns for model buttons
-cols = st.columns(len(st.session_state.models) + 1)  # +1 for the add button
-
-# Display model buttons in a row
-for i, model_name in enumerate(st.session_state.models):
-    with cols[i]:
-        if st.button(model_name, key=f"btn_{model_name}", use_container_width=True):
-            switch_model(model_name)
-
-# Add button in the last column
-with cols[-1]:
-    if st.button("➕", key="add_model_btn", use_container_width=True):
-        add_new_model()
-
-st.markdown("---")  # Add a separator after the model buttons
-
-# Initialize model state if it doesn't exist
+# Get the active model and its state
 active_model = st.session_state.active_model
-if f"{active_model}_state" not in st.session_state:
-    st.session_state[f"{active_model}_state"] = {
-        "loan_data": pd.read_csv("loan_data.csv"),
-        "bureau_data": pd.read_csv("loan_data.csv").copy(),
-        "onus_data": pd.read_csv("loan_data.csv").copy(),
-        "installments_data": pd.read_csv("loan_data.csv").copy(),
-        "show_popup1": False,
-        "transform_blocks": [],
-        "multi_transform_blocks": [],
-        "final_transformed_features": pd.DataFrame(),
-        "recommended_features": pd.DataFrame(),
-        "final_dataset": pd.DataFrame(),
-        "selected_features": [],
-        "feature_checkboxes": {},
-        "show_filter": False,
-        "filtered_features": [],
-        "filter_text": "",
-        "merge_blocks": [{
-            "left_table": "Bureau Data",
-            "right_table": "On-Us Data",
-            "how": "inner",
-            "on": [],
-            "left_on": [],
-            "right_on": [],
-            "merged_name": "Merged_1",
-        }],
-        "merged_tables": {},
-        "combined_dataset": None,
-    }
-
-# Use the active model's state for all operations
 model_state = st.session_state[f"{active_model}_state"]
 
-# Get model-specific session state variables
+# Use model-specific operations complete state
 operations_complete = st.session_state.get(f"{active_model}_operations_complete", {
     "merge": False,
     "recommend": False,
     "accept": False
 })
+
+# Use model-specific filter and merge states
 show_filter_data = st.session_state.get(f"{active_model}_show_filter_data", False)
 show_merge = st.session_state.get(f"{active_model}_show_merge", False)
+
+# Use model-specific transform success states
 single_transform_success = st.session_state.get(f"{active_model}_single_transform_success", None)
 multi_transform_success = st.session_state.get(f"{active_model}_multi_transform_success", None)
 
-# --- Initialize session state ---
-if "loan_data" not in model_state:
-    model_state["loan_data"] = pd.read_csv("loan_data.csv")
+# Use model-specific feature states
+recommended_features = st.session_state.get(f"{active_model}_recommended_features", pd.DataFrame())
+final_dataset = st.session_state.get(f"{active_model}_final_dataset", pd.DataFrame())
+selected_features = st.session_state.get(f"{active_model}_selected_features", [])
+feature_checkboxes = st.session_state.get(f"{active_model}_feature_checkboxes", {})
 
-loan_data = model_state["loan_data"]  # Initial load
+# Use model-specific filter blocks
+filter_blocks = st.session_state.get(f"{active_model}_filter_blocks", [{
+    "dataset": "Bureau Data",
+    "feature": "",
+    "operation": "Greater Than",
+    "value": 0,
+    "output_name": ""
+}])
 
-# --- Initialize the datasets in session state if they don't exist ---
-if "bureau_data" not in model_state:
-    model_state["bureau_data"] = loan_data.copy()  # Initialize with a copy of loan_data
-if "onus_data" not in model_state:
-    model_state["onus_data"] = loan_data.copy()  # Initialize with a copy of loan_data
-if "installments_data" not in model_state:
-    model_state["installments_data"] = loan_data.copy()  # Initialize with a copy of loan_data
-
-# --- Initialize Session State ---
-if "show_popup1" not in model_state:
-    model_state["show_popup1"] = False  # Default to False
-if "transform_blocks" not in model_state:
-    model_state["transform_blocks"] = []  # Initialize as an empty list
-if "multi_transform_blocks" not in model_state:
-    model_state["multi_transform_blocks"] = []  # Initialize as an empty list
-if "final_transformed_features" not in model_state:
-    model_state["final_transformed_features"] = pd.DataFrame()  # Initialize as an empty DataFrame
+# Use model-specific target variable states
+target_column = st.session_state.get(f"{active_model}_target_column", None)
+target_feature = st.session_state.get(f"{active_model}_target_feature", None)
+final_dataset_json = st.session_state.get(f"{active_model}_final_dataset_json", None)
 
 # --- Dataset Selection Section ---
 col1, col2, col3 = st.columns(3)
@@ -740,7 +882,9 @@ if st.session_state.show_merge:
     if st.button("✅ Merge Now", key="execute_merges", use_container_width=True):
         try:
             # Set merge operation as complete immediately
-            st.session_state.operations_complete["merge"] = True
+            if f"{active_model}_operations_complete" not in st.session_state:
+                st.session_state[f"{active_model}_operations_complete"] = {}
+            st.session_state[f"{active_model}_operations_complete"]["merge"] = True
             st.success("✅ Merge operations completed successfully!")
         except Exception as e:
             st.error(f"Error during merge operations: {str(e)}")
@@ -839,14 +983,16 @@ with col2:
             # Store in session state
             st.session_state.recommended_features = sample_data
             st.session_state.feature_info = feature_info
-            st.session_state.operations_complete["recommend"] = True
+            if f"{active_model}_operations_complete" not in st.session_state:
+                st.session_state[f"{active_model}_operations_complete"] = {}
+            st.session_state[f"{active_model}_operations_complete"]["recommend"] = True
             st.rerun()
             
         except Exception as e:
             st.error(f"Error recommending features: {str(e)}")
 
 # Display recommended features if they exist
-if st.session_state.operations_complete.get("recommend", False) and hasattr(st.session_state, 'feature_info'):
+if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and hasattr(st.session_state, 'feature_info'):
     st.markdown("### Recommended Features")
     # Create a dataframe for the features with the same styling as good-to-have section
     features_df = pd.DataFrame({
@@ -899,7 +1045,7 @@ if st.session_state.operations_complete.get("recommend", False) and hasattr(st.s
     )
 
 # --- Accept Recommended Features Button ---
-if st.session_state.operations_complete.get("recommend", False):
+if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False):
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("✅ Accept Recommended Features", key="accept_recommended_features", use_container_width=True):
@@ -915,12 +1061,13 @@ if st.session_state.operations_complete.get("recommend", False):
                     recommended_features.to_csv("recommended_features.csv", index=False)
                     
                     # Store in model state for transformations
-                    active_model = st.session_state.active_model
                     model_state = st.session_state[f"{active_model}_state"]
                     model_state["recommended_features"] = recommended_features.copy()
                     
                     # Update state
-                    st.session_state.operations_complete["accept"] = True
+                    if f"{active_model}_operations_complete" not in st.session_state:
+                        st.session_state[f"{active_model}_operations_complete"] = {}
+                    st.session_state[f"{active_model}_operations_complete"]["accept"] = True
                     
                     # Store success message in session state
                     st.session_state.accept_success = True
@@ -953,22 +1100,16 @@ with col2:  # Middle column
 if model_state["show_popup1"]:
     st.markdown("### 🔧 Single Feature Transformation")
 
-    # Initialize success message in session state if not exists
-    if "single_transform_success" not in st.session_state:
-        st.session_state.single_transform_success = None
-    if "multi_transform_success" not in st.session_state:
-        st.session_state.multi_transform_success = None
-
     # Get the recommended features as input for single feature transformations
     if "recommended_features" in st.session_state and not st.session_state.recommended_features.empty:
         input_features = st.session_state.recommended_features.columns.tolist()
     else:
         input_features = []
 
-    # Initialize transform_blocks if empty
+    # Initialize transform blocks if empty
     if not model_state["transform_blocks"]:
         model_state["transform_blocks"] = [{
-            "feature": "",
+            "feature": input_features[0] if input_features else "",
             "operation": "Addition",
             "value": 1.0,
             "output_name": ""
@@ -1135,7 +1276,7 @@ if model_state["show_popup1"]:
     # --- Multi-Feature Transformation Section ---
     st.markdown("### 🔧 Multiple Features Transformation")
 
-    # Initialize multi_transform_blocks if empty
+    # Initialize multi transform blocks if empty
     if not model_state["multi_transform_blocks"]:
         model_state["multi_transform_blocks"] = [{
             "features": [],
@@ -1143,6 +1284,7 @@ if model_state["show_popup1"]:
             "output_name": ""
         }]
 
+    # Show transformation blocks
     for i, block in enumerate(model_state["multi_transform_blocks"]):
         st.markdown(f"**Transformation #{i+1}**")
         col1, col2, col3, col4 = st.columns([0.5, 2, 2, 2])
@@ -1381,56 +1523,56 @@ if st.button("📊 Show Selected Attributes"):
         st.session_state.final_dataset = working_df[available_features]
 
 # Target Variable Selection
-if "final_dataset" in st.session_state and not st.session_state.final_dataset.empty:
-    st.subheader("🎯 Target Variable Selection")
-    
-    # Define the target variable options and their corresponding feature names
-    target_variable_mapping = {
-        "Profitability": "Profitability_GBP",
-        "Charge-Off": "COF_EVENT_LABEL",
-        "Prepayment": "PREPAYMENT_EVENT_LABEL"
-    }
-    
-    # Allow the user to select a target variable
-    target_column = st.selectbox("Select Target Variable", list(target_variable_mapping.keys()), key="target_column_select")
+st.subheader("🎯 Target Variable Selection")
 
-    if st.button("Add Target Variable to Dataset", key="add_target_btn"):
+# Define the target variable options and their corresponding feature names
+target_variable_mapping = {
+    "Profitability": "Profitability_GBP",
+    "Charge-Off": "COF_EVENT_LABEL",
+    "Prepayment": "PREPAYMENT_EVENT_LABEL"
+}
+
+# Get the final dataset from session state
+final_dataset = st.session_state.get("final_dataset", pd.DataFrame())
+
+if not final_dataset.empty:
+    # Allow the user to select a target variable
+    target_column = st.selectbox("Select Target Variable", list(target_variable_mapping.keys()), key=f"target_column_select_{active_model}")
+
+    if st.button("Add Target Variable to Dataset", key=f"add_target_btn_{active_model}"):
         try:
             # Get the target feature name from the mapping
             target_feature = target_variable_mapping[target_column]
             
             # Create a copy of the final dataset
-            model_dataset = st.session_state.final_dataset.copy()
+            model_dataset = final_dataset.copy()
             
             # Add target column to final dataset if not already present
             if target_feature not in model_dataset.columns:
-                # Try to get the target feature from the original data
-                if target_feature in st.session_state.recommended_features.columns:
-                    model_dataset[target_feature] = st.session_state.recommended_features[target_feature]
+                if "recommended_features" in st.session_state and not st.session_state.recommended_features.empty:
+                    if target_feature in st.session_state.recommended_features.columns:
+                        model_dataset[target_feature] = st.session_state.recommended_features[target_feature]
+                    else:
+                        model_dataset[target_feature] = 0
                 else:
-                    # For demo purposes, add a dummy column
                     model_dataset[target_feature] = 0
 
-            # Store target variable in session state
-            st.session_state.target_column = target_column
-            st.session_state.target_feature = target_feature
+            # Store target variable in model-specific session state
+            st.session_state[f"{active_model}_target_column"] = target_column
+            st.session_state[f"{active_model}_target_feature"] = target_feature
 
             # Convert final dataset (with target) to JSON and store for Model_develop page
             final_json = model_dataset.to_json(orient="records")
-            st.session_state.final_dataset_json = final_json
+            st.session_state[f"{active_model}_final_dataset_json"] = final_json
 
             # Save the JSON file to the backend with model name and target variable
             file_name = f"{active_model}{target_column.replace(' ', '')}.json"
-            with open(file_name, "w") as f:
+            with open(file_name, 'w') as f:
                 f.write(final_json)
-
-            st.success(f"✅ Target variable '{target_column}' has been added to your dataset.")
+            
+            st.success(f"Target variable {target_column} added successfully!")
             
         except Exception as e:
             st.error(f"Error adding target variable: {str(e)}")
 else:
     st.info("Please select and show your features first to enable target variable selection.")
-
-
-
-    
