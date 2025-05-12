@@ -4,7 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score, mean_squared_error
 
-from back import process_models_from_session  # <-- Use the session-state-based function
+from back import process_models_from_session  # <-- Use this function
 
 st.set_page_config(layout="wide")
 st.title("Model Prediction Monitoring: Profitability, Charge-Off, Prepayment")
@@ -14,10 +14,10 @@ def main():
     """
     Main function to run the Streamlit application.
     """
-    processed_dataframes = process_models_from_session()  # <-- Get data from session state
+    processed_dataframes = process_models_from_session()  # <-- Use this function
 
-    if not processed_dataframes:
-        st.error("No model predictions found. Please complete Model Development first.")
+    if processed_dataframes is None or not processed_dataframes:
+        st.error("Failed to retrieve data from the processing step.")
         return
 
     # --- 1. Data Source Selection ---
@@ -261,3 +261,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+ 
+
