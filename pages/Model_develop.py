@@ -366,7 +366,7 @@ if feature_columns:
             }
             st.session_state.selected_iterations[selected_json] = model_info
             st.session_state.model_selections[selected_json]["selected_iteration"] = iteration_index
-            st.success(f"✅ {selected_iteration} selected for {selected_json}! Model info stored in session.")
+            st.success(f"✅ {selected_iteration} selected for {selected_json}! ")
 
 # Step 8: Proceed to Next Page
 if len(st.session_state.selected_iterations) == len(datasets):
