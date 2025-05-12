@@ -319,3 +319,8 @@ if bureau_file is not None:
     bureau_data = load_data(bureau_file)
     if bureau_data is not None:
         display_bureau_insights(bureau_data, "Bureau")
+
+# At the end of your data engineering logic, before moving to the next page:
+if on_us_file is not None and on_us_data is not None:
+    st.session_state["final_df"] = on_us_data
+

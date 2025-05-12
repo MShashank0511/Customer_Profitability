@@ -25,9 +25,11 @@ import json
 st.set_page_config(page_title="Model Development", layout="wide")
 st.title("🔧 Model Development")
 
-# Load the CSV file
-csv_file_path = "loan_data.csv"  # Replace with the actual path to your CSV file
-df_full = pd.read_csv(csv_file_path)
+# Use the DataFrame from session state:
+df_full = st.session_state.get("final_df")
+if df_full is None:
+    st.error("No data found. Please complete the Data Engineering step first.")
+    st.stop()
 
 # Drop 'timestamp' column if it exists, keep 'Timestamp'
 if 'timestamp' in df_full.columns:
@@ -123,19 +125,32 @@ test_size = st.slider(
     "Select test size", 0.1, 0.5, 
     model_state.get("test_size", 0.2), key=f"test_size_{target_column}"
 )
+
+# In the feature selection section, replace the multiselect with checkboxes for each feature
+st.subheader("📊 Select Features")
+
+# Exclude 'Timestamp' from selectable features
+selectable_features = [col for col in df.columns if col != target_column and col != "Timestamp"]
+
+# Restore previously selected features if available
+selected_features = model_state.get("feature_columns", [])
+
+# Use multiselect for dropdown with checkboxes
 feature_columns = st.multiselect(
-    "📊 Select Features", 
-    [col for col in df.columns if col != target_column], 
-    default=model_state.get("feature_columns", []), 
+    "Select features to include in the model",
+    options=selectable_features,
+    default=selected_features,
     key=f"features_{target_column}"
 )
 
+# Ensure the model_selections entry exists for the selected model
+if selected_json not in st.session_state.model_selections:
+    st.session_state.model_selections[selected_json] = {}
+
 # Save current selections to session state
-st.session_state.model_selections[selected_json] = {
-    "sample_frac": sample_frac,
-    "test_size": test_size,
-    "feature_columns": feature_columns,
-}
+st.session_state.model_selections[selected_json]["sample_frac"] = sample_frac
+st.session_state.model_selections[selected_json]["test_size"] = test_size
+st.session_state.model_selections[selected_json]["feature_columns"] = feature_columns
 
 if feature_columns:
     # Ensure 'Timestamp' is included if present and not already in feature_columns
@@ -183,7 +198,7 @@ if feature_columns:
 
     # Step 6: Run Model
     if st.button("Run Model", key=f"run_{target_column}"):
-        st.subheader("🏆 Best 5 Iterations")
+        st.subheader("🏆 Best Iterations")
         param_dist = {
             "Logistic Regression": {"C": [0.1, 1.0, 10.0], "solver": ["liblinear"]},
             "LGBM Classifier": {"n_estimators": [50, 100, 150], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2]},
@@ -264,7 +279,7 @@ if feature_columns:
                     if "Confusion Matrix" in iteration["metrics"]:
                         st.markdown("#### Confusion Matrix")
                         fig_cm, ax_cm = plt.subplots(figsize=(4, 4))
-                        sns.heatmap(iteration["metrics"]["Confusion Matrix"], annot=True, fmt="d", cmap="Blues", ax=ax_cm)
+                        sns.heatmap(iteration["metrics"]["Confusion Matrix"], ax=ax_cm, annot=True, fmt="d", cmap="Blues")
                         ax_cm.set_xlabel("Predicted")
                         ax_cm.set_ylabel("Actual")
                         st.pyplot(fig_cm)
@@ -272,10 +287,13 @@ if feature_columns:
                     # SHAP Summary Plot
                     st.markdown("#### SHAP Summary Plot")
                     try:
+                        plt.clf()  # Clear the current figure context
+                        fig, ax = plt.subplots(figsize=(8, 4))  # Create a new figure and axis
                         explainer = shap.Explainer(model, X_train)
                         shap_values = explainer(X_test)
                         shap.summary_plot(shap_values, X_test, show=False)
-                        st.pyplot(plt.gcf())
+                        st.pyplot(plt.gcf())  # Show the current figure
+                        plt.close(fig)  # Close the figure to free memory
                     except Exception as e:
                         st.warning(f"⚠️ Could not generate SHAP summary plot: {e}")
 
@@ -299,10 +317,13 @@ if feature_columns:
                     # SHAP Summary Plot
                     st.markdown("#### SHAP Summary Plot")
                     try:
+                        plt.clf()  # Clear the current figure context
+                        fig, ax = plt.subplots(figsize=(8, 4))  # Create a new figure and axis
                         explainer = shap.Explainer(model, X_train)
                         shap_values = explainer(X_test)
                         shap.summary_plot(shap_values, X_test, show=False)
-                        st.pyplot(plt.gcf())
+                        st.pyplot(plt.gcf())  # Show the current figure
+                        plt.close(fig)  # Close the figure to free memory
                     except Exception as e:
                         st.warning(f"⚠️ Could not generate SHAP summary plot: {e}")
 
@@ -329,23 +350,17 @@ if feature_columns:
 
             dataset_records = df[columns_to_include].to_dict(orient="records")
 
-            json_data = {
+            # Store all info in session state instead of JSON file
+            model_info = {
                 "dataset": dataset_records,
                 "target_variable": target_column,
                 "model_name": selected_model,
                 "model_code": f"{model_class.__name__}(**{iteration_details['params']})",
                 "hyperparameters": iteration_details["params"],
             }
-            json_file_name = f"{selected_model}_{target_column}.json"
-            # Remove old JSON if exists
-            remove_old_json(selected_json)
-            # Save new JSON
-            with open(json_file_name, "w") as json_file:
-                json.dump(json_data, json_file, indent=4)
-            # Store the filename in session state for this model
-            st.session_state.selected_iterations[selected_json] = json_file_name
+            st.session_state.selected_iterations[selected_json] = model_info
             st.session_state.model_selections[selected_json]["selected_iteration"] = iteration_index
-            st.success(f"✅ {selected_iteration} selected for {selected_json}! JSON file created: {json_file_name}")
+            st.success(f"✅ {selected_iteration} selected for {selected_json}! Model info stored in session.")
 
 # Step 8: Proceed to Next Page
 if len(st.session_state.selected_iterations) == len(datasets):
