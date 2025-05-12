@@ -1447,4 +1447,4 @@ if st.button("📊 Show Selected Attributes"):
             st.success("✅ Feature Selection is Complete. You can move to Model Development Page")
             
         except Exception as e:
-            st.error(f"Error saving dataset: {str(e)}") 
+            st.error(f"Error saving dataset: {str(e)}")   
