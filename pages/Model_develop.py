@@ -316,16 +316,22 @@ if feature_columns:
 
                     # SHAP Summary Plot
                     st.markdown("#### SHAP Summary Plot")
+                    
                     try:
-                        plt.clf()  # Clear the current figure context
-                        fig, ax = plt.subplots(figsize=(8, 4))  # Create a new figure and axis
+                        plt.clf()  # Clear current figure context
                         explainer = shap.Explainer(model, X_train)
                         shap_values = explainer(X_test)
-                        shap.summary_plot(shap_values, X_test, show=False)
-                        st.pyplot(plt.gcf())  # Show the current figure
-                        plt.close(fig)  # Close the figure to free memory
+
+                        # Generate SHAP summary plot without 'ax' to avoid legacy error
+                        shap.summary_plot(shap_values, X_test, show=False, color_bar=False)
+
+                        fig = plt.gcf()  # Get the current figure after SHAP plot is generated
+                        st.pyplot(fig)
+                        plt.close(fig)
+
                     except Exception as e:
                         st.warning(f"⚠️ Could not generate SHAP summary plot: {e}")
+
 
     # Step 7: Select Iteration and Save JSON
     best_iterations = st.session_state.get(f"best_iterations_{target_column}", [])
