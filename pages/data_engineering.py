@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from datetime import datetime, timedelta
+import os
 
 st.set_page_config(page_title="Loan Applications Dashboard", layout="wide")
 
@@ -322,5 +323,19 @@ if bureau_file is not None:
 
 # At the end of your data engineering logic, before moving to the next page:
 if on_us_file is not None and on_us_data is not None:
-    st.session_state["final_df"] = on_us_data
+    # Create or update a registry in session state
+    if "data_registry" not in st.session_state:
+        st.session_state["data_registry"] = {}
+    st.session_state["data_registry"]["on_us_data"] = on_us_data
+    st.success("DataFrame registered in session state registry as 'on_us_data'.")
+
+if on_us_file is not None and on_us_data is not None:
+    save_dir = "data_registry"
+    os.makedirs(save_dir, exist_ok=True)
+    data_path = os.path.join(save_dir, "on_us_data.parquet")
+    on_us_data.to_parquet(data_path, index=False)
+
+    # Store the path in session state
+    st.session_state["on_us_data_path"] = data_path
+    st.success(f"DataFrame saved to {data_path} and path registered in session state.")
 

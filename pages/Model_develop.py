@@ -25,11 +25,16 @@ import json
 st.set_page_config(page_title="Model Development", layout="wide")
 st.title("🔧 Model Development")
 
-# Use the DataFrame from session state:
-df_full = st.session_state.get("final_df")
-if df_full is None:
-    st.error("No data found. Please complete the Data Engineering step first.")
+import streamlit as st
+import pandas as pd
+import os
+
+data_path = st.session_state.get("on_us_data_path")
+if not data_path or not os.path.exists(data_path):
+    st.error("No registered data file found. Please upload and register data in the Data Engineering step first.")
     st.stop()
+
+df_full = pd.read_parquet(data_path)
 
 # Drop 'timestamp' column if it exists, keep 'Timestamp'
 if 'timestamp' in df_full.columns:
