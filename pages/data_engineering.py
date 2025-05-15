@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 import shutil  # Import shutil for directory cleanup
 
-st.set_page_config(page_title="Loan Applications Dashboard", layout="wide")
+
 
 # Fixed list of categorical features
 CATEGORICAL_FEATURES = [
