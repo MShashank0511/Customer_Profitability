@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 from datetime import datetime, timedelta
 import os
+import shutil  # Import shutil for directory cleanup
 
 st.set_page_config(page_title="Loan Applications Dashboard", layout="wide")
 
@@ -18,6 +19,17 @@ CATEGORICAL_FEATURES = [
     "TOTAL_DOWN_CONTRACT_PERCENT",
     "PREPAYMENT_EVENT_LABEL"
 ]
+
+# Clear the data_registry directory at the start of a new session
+def clear_data_registry():
+    save_dir = "data_registry"
+    if os.path.exists(save_dir):
+        # Delete all files and subdirectories in the data_registry directory
+        shutil.rmtree(save_dir)
+    os.makedirs(save_dir, exist_ok=True)  # Recreate the directory
+
+# Call the function to clear the data_registry
+clear_data_registry()
 
 # --- Functions ---
 def load_data(uploaded_file):
@@ -338,4 +350,3 @@ if on_us_file is not None and on_us_data is not None:
     # Store the path in session state
     st.session_state["on_us_data_path"] = data_path
     st.success(f"DataFrame saved to {data_path} and path registered in session state.")
-

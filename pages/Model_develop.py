@@ -1,9 +1,20 @@
 import numpy as np
 import os
+import json
+import shutil # Added for potential directory cleanup
+import streamlit as st
+# --- Streamlit Page Configuration ---
 
-# Patch for deprecated np.bool
-if not hasattr(np, 'bool'):
-    np.bool = np.bool_
+
+# Patch for deprecated np.bool - Use np.bool_ directly if possible
+# In modern NumPy versions, np.bool is deprecated. Use np.bool_
+# Removing the patch as it seems unnecessary based on the code's usage
+# If you encounter issues with older libraries requiring np.bool,
+# you might need a more specific compatibility handling depending on the library.
+# For now, let's assume np.bool_ is available and sufficient.
+# if not hasattr(np, 'bool'):
+#     np.bool = np.bool_
+
 from xgboost import XGBClassifier
 import plotly.express as px
 import streamlit as st
@@ -16,172 +27,216 @@ from sklearn.ensemble import RandomForestClassifier
 from lightgbm import LGBMClassifier
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
-    roc_auc_score, confusion_matrix, mean_squared_error
+    roc_auc_score, confusion_matrix, mean_squared_error, mean_absolute_percentage_error
 )
 from sklearn.preprocessing import LabelEncoder
 import shap
-import json
+import joblib # To potentially save the model itself if needed later
 
-st.set_page_config(page_title="Model Development", layout="wide")
 st.title("🔧 Model Development")
 
-import streamlit as st
-import pandas as pd
-import os
-
+# --- Data Loading from Session State ---
 data_path = st.session_state.get("on_us_data_path")
 if not data_path or not os.path.exists(data_path):
     st.error("No registered data file found. Please upload and register data in the Data Engineering step first.")
     st.stop()
 
-df_full = pd.read_parquet(data_path)
+try:
+    df_full = pd.read_parquet(data_path)
+except Exception as e:
+    st.error(f"Error loading data from {data_path}: {e}")
+    st.stop()
 
 # Drop 'timestamp' column if it exists, keep 'Timestamp'
 if 'timestamp' in df_full.columns:
     df_full = df_full.drop(columns=['timestamp'])
 
-# Ensure the target variables exist in the dataset
-target_variables = ["Profitability_GBP", "COF_EVENT_LABEL", "PREPAYMENT_EVENT_LABEL"]
-for target in target_variables:
+# Define target variables and check their existence
+target_variables_list = ["Profitability_GBP", "COF_EVENT_LABEL", "PREPAYMENT_EVENT_LABEL"]
+for target in target_variables_list:
     if target not in df_full.columns:
-        raise ValueError(f"Target variable '{target}' not found in the dataset.")
+        st.error(f"Target variable '{target}' not found in the dataset. Please check your data in the Data Engineering step.")
+        st.stop()
 
-# List of datasets
-datasets = [
-    {"name": "Dataset 1 (Profitability_GBP)", "target": "Profitability_GBP"},
-    {"name": "Dataset 2 (COF_EVENT_LABEL)", "target": "COF_EVENT_LABEL"},
-    {"name": "Dataset 3 (PREPAYMENT_EVENT_LABEL)", "target": "PREPAYMENT_EVENT_LABEL"},
+# List of modeling tasks
+modeling_tasks = [
+    {"name": "Model 1 (Profitability_GBP)", "target": "Profitability_GBP"},
+    {"name": "Model 2 (COF_EVENT_LABEL)", "target": "COF_EVENT_LABEL"},
+    {"name": "Model 3 (PREPAYMENT_EVENT_LABEL)", "target": "PREPAYMENT_EVENT_LABEL"},
 ]
 
-# Session state for selected iterations
-if "selected_iterations" not in st.session_state:
-    st.session_state.selected_iterations = {}
+# --- Session State Initialization ---
+# This will store the selections made for each model task within this page
+if "model_development_state" not in st.session_state:
+    st.session_state.model_development_state = {}
 
-# --- Helper to remove old JSON file if exists ---
-def remove_old_json(model_key):
-    old_json = st.session_state.selected_iterations.get(model_key)
-    if old_json and os.path.exists(old_json):
-        os.remove(old_json)
+# This will store the *final confirmed* output (data path and model metadata) for each task
+if "confirmed_model_outputs" not in st.session_state:
+    st.session_state.confirmed_model_outputs = {}
 
-# --- Session state initialization for each model ---
-if "model_selections" not in st.session_state:
-    st.session_state.model_selections = {}
+# --- Setup Output Directory ---
+# Directory to save the selected test data subsets
+output_data_dir = "data_registry/selected_iteration_data"
+os.makedirs(output_data_dir, exist_ok=True)
 
-# Step 1: Dropdown for Model Selection
-model_options = [d["name"].replace("Dataset", "Model") for d in datasets]
-selected_json = st.selectbox(
-    "Select Model to Work On",
-    model_options
+# --- Step 1: Dropdown for Model Selection ---
+model_task_options = [task["name"] for task in modeling_tasks]
+selected_model_task_name = st.selectbox(
+    "Select Model Task to Work On",
+    model_task_options
 )
-current_dataset = next(d for d in datasets if d["name"].replace("Dataset", "Model") == selected_json)
-target_column = current_dataset["target"]
+current_task_config = next(task for task in modeling_tasks if task["name"] == selected_model_task_name)
+target_column = current_task_config["target"]
+task_key = selected_model_task_name # Use the full name as the key for session state
+
+# Load state for the current task
+current_task_state = st.session_state.model_development_state.get(task_key, {})
 
 # Work on a copy of the full dataframe
 df = df_full.copy()
 
-# Step 2: Sub-sampling
+# --- Step 2: Sub-sampling ---
 st.subheader("🔍 Sub-sampling")
-# --- Restore previous selections if available ---
-model_state = st.session_state.model_selections.get(selected_json, {})
 sample_frac = st.slider(
-    "Select sub-sample fraction", 0.1, 1.0, 
-    model_state.get("sample_frac", 1.0), key=f"sample_frac_{target_column}"
+    "Select sub-sample fraction", 0.01, 1.0, # Allow smaller fractions
+    current_task_state.get("sample_frac", 1.0), key=f"sample_frac_{task_key}"
 )
-df = df.sample(frac=sample_frac, random_state=42).reset_index(drop=True)
-
-# Step 3: Target Variable Selection & Distribution
-st.subheader("🎯 Target Variable Selection")
-if df[target_column].nunique() < 10:
-    target_type = "Categorical"
+if sample_frac < 1.0:
+    df = df.sample(frac=sample_frac, random_state=42).reset_index(drop=True)
+    st.info(f"Using a {sample_frac:.2f} fraction of the data ({len(df)} rows).")
 else:
-    target_type = "Continuous"
-st.markdown(f"**Target Variable:** {target_column}")
-st.markdown(f"**Target Variable Type:** {target_type}")
+     st.info("Using the full dataset.")
 
-if target_type == "Continuous":
+
+# --- Step 3: Target Variable Selection & Distribution ---
+st.subheader("🎯 Target Variable Analysis")
+# Check for typical classification data types and number of unique values
+if df[target_column].nunique() < 10 and df[target_column].dtype in ['int64', 'float64', 'object', 'category', 'bool']:
+    target_type = "Classification"
+    # Ensure target is numeric for classification metrics and model training
+    if df[target_column].dtype == 'object' or df[target_column].dtype == 'category' or df[target_column].dtype == 'bool':
+         try:
+             # Attempt to convert to numeric (binary 0/1 or multi-class)
+             original_values = df[target_column].unique()
+             if len(original_values) <= 2: # Binary classification - encode to 0 and 1
+                  le = LabelEncoder()
+                  df[target_column] = le.fit_transform(df[target_column])
+                  st.info(f"Encoded categorical target '{target_column}' using LabelEncoder.")
+                  st.write(f"Mapping: {dict(zip(le.classes_, le.transform(le.classes_)))}")
+             else: # Multi-class - encode if not numeric
+                  st.warning(f"Multi-class classification target '{target_column}' detected. Some metrics and SHAP plots may behave differently.")
+                  if not pd.api.types.is_numeric_dtype(df[target_column]):
+                       le = LabelEncoder()
+                       df[target_column] = le.fit_transform(df[target_column])
+
+         except Exception as e:
+              st.error(f"Could not encode target variable '{target_column}': {e}")
+              st.stop() # Stop if target cannot be processed for classification
+
+else:
+    target_type = "Regression"
+
+st.markdown(f"**Target Variable:** {target_column}")
+st.markdown(f"**Inferred Problem Type:** {target_type}")
+
+if target_type == "Regression":
     fig, ax = plt.subplots(figsize=(8, 4))
     sns.histplot(df[target_column], kde=True, ax=ax, color="blue")
     ax.set_title(f"Distribution of {target_column}")
     ax.set_xlabel(target_column)
     st.pyplot(fig)
-else:
-    event_rate = (df[target_column].value_counts(normalize=True) * 100).to_dict()
-    st.metric(
-        label="Event Rate (%)",
-        value=f"{event_rate.get(1, 0):.2f}%" if 1 in event_rate else "N/A",
-        help="Percentage of positive events in the target variable."
-    )
-    frequency_df = df[target_column].value_counts().reset_index()
-    frequency_df.columns = [target_column, "count"]
-    fig = px.bar(
-        frequency_df,
-        x=target_column,
-        y="count",
-        text="count",
-        labels={target_column: target_column, "count": "Frequency"},
-        title=f"Frequency of {target_column}"
-    )
-    fig.update_traces(textposition="inside")
-    st.plotly_chart(fig, use_container_width=True)
+    plt.close(fig) # Close figure
+else: # Classification
+    try:
+        # Ensure target is 0 and 1 for binary classification metrics where applicable
+        unique_targets = df[target_column].unique()
+        if len(unique_targets) == 2:
+             # Calculate event rate for the positive class (assuming 1 after encoding)
+             event_rate_value = df[target_column].value_counts(normalize=True).get(1, 0) * 100
+             st.metric(
+                 label="Event Rate (%)",
+                 value=f"{event_rate_value:.2f}%",
+                 help="Percentage of positive events (class 1) in the target variable."
+             )
+        else:
+             st.info(f"Target '{target_column}' has {len(unique_targets)} unique values. Displaying frequency.")
 
-# Step 4: Train/Test Split
-st.subheader("🧪 Train/Test Split")
-test_size = st.slider(
-    "Select test size", 0.1, 0.5, 
-    model_state.get("test_size", 0.2), key=f"test_size_{target_column}"
-)
 
-# In the feature selection section, replace the multiselect with checkboxes for each feature
+        frequency_df = df[target_column].value_counts().reset_index()
+        frequency_df.columns = [target_column, "count"]
+        fig = px.bar(
+            frequency_df,
+            x=target_column,
+            y="count",
+            text="count",
+            labels={target_column: target_column, "count": "Frequency"},
+            title=f"Frequency of {target_column}"
+        )
+        fig.update_traces(textposition="inside")
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error displaying target distribution: {e}")
+
+
+# --- Step 4: Feature Selection & Train/Test Split ---
 st.subheader("📊 Select Features")
 
-# Exclude 'Timestamp' from selectable features
-selectable_features = [col for col in df.columns if col != target_column and col != "Timestamp"]
+# Exclude target, Timestamp, and TERM_OF_LOAN from selectable features but keep them for data export
+excluded_cols_from_features = target_variables_list + ["Timestamp", "TERM_OF_LOAN"]
+selectable_features = [col for col in df.columns if col not in excluded_cols_from_features]
 
-# Restore previously selected features if available
-selected_features = model_state.get("feature_columns", [])
+# Restore previously selected features if available, default to all selectable
+selected_features = current_task_state.get("feature_columns", selectable_features)
 
-# Use multiselect for dropdown with checkboxes
 feature_columns = st.multiselect(
     "Select features to include in the model",
     options=selectable_features,
     default=selected_features,
-    key=f"features_{target_column}"
+    key=f"features_{task_key}"
 )
 
-# Ensure the model_selections entry exists for the selected model
-if selected_json not in st.session_state.model_selections:
-    st.session_state.model_selections[selected_json] = {}
+# Ensure the current state is saved
+current_task_state["feature_columns"] = feature_columns
+st.session_state.model_development_state[task_key] = current_task_state
 
-# Save current selections to session state
-st.session_state.model_selections[selected_json]["sample_frac"] = sample_frac
-st.session_state.model_selections[selected_json]["test_size"] = test_size
-st.session_state.model_selections[selected_json]["feature_columns"] = feature_columns
 
-if feature_columns:
-    # Ensure 'Timestamp' is included if present and not already in feature_columns
-    columns_to_include = feature_columns + [target_column]
-    if "Timestamp" in df.columns and "Timestamp" not in columns_to_include:
-        columns_to_include.append("Timestamp")
+if not feature_columns:
+    st.warning("Please select at least one feature to proceed.")
+else:
+    test_size = st.slider(
+        "Select test size", 0.01, 0.5, # Allow smaller test sizes
+        current_task_state.get("test_size", 0.2), key=f"test_size_{task_key}"
+    )
+    current_task_state["test_size"] = test_size
+    st.session_state.model_development_state[task_key] = current_task_state
+
     X = df[feature_columns]
     y = df[target_column]
-    y = y.ravel()
 
-    # Determine problem type
-    if len(np.unique(y)) < 3:
-        problem_type = "Classification"
-    else:
-        problem_type = "Regression"
-    st.markdown(f"**Problem Type:** {problem_type}")
+    # Check if target is suitable for stratification
+    stratify_y = None
+    if target_type == "Classification":
+         unique_classes, counts = np.unique(y, return_counts=True)
+         # Stratify only if there's more than one class and each class has at least 2 samples (required by stratify)
+         if len(unique_classes) > 1 and np.min(counts) >= 2:
+              stratify_y = y
+         elif len(unique_classes) > 1:
+             st.warning(f"Stratification skipped: Some classes in target '{target_column}' have fewer than 2 samples.")
 
-    # Encode target for classification
-    if problem_type == "Classification" and y.dtype == 'object':
-        y = LabelEncoder().fit_transform(y)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
+    # Store original indices to retrieve test set rows later
+    indices = df.index
+    X_train, X_test, y_train, y_test, train_indices, test_indices = train_test_split(
+        X, y, indices, test_size=test_size, random_state=42, stratify=stratify_y
+    )
 
-    # Step 5: Model Selection
+    st.info(f"Train set size: {len(X_train)} rows")
+    st.info(f"Test set size: {len(X_test)} rows")
+
+
+    # --- Step 5: Model Selection ---
     st.subheader("📚 Select Model")
-    if problem_type == "Classification":
+    if target_type == "Classification":
         models = {
             "Logistic Regression": LogisticRegression,
             "LGBM Classifier": LGBMClassifier,
@@ -191,191 +246,380 @@ if feature_columns:
     else:
         models = {"Linear Regression": LinearRegression}
 
-    # Restore model selection if available
     selected_model = st.selectbox(
-        "Select Model", 
-        list(models.keys()), 
-        index=list(models.keys()).index(model_state.get("selected_model", list(models.keys())[0])),
-        key=f"model_{target_column}"
+        "Select Model",
+        list(models.keys()),
+        index=list(models.keys()).index(current_task_state.get("selected_model", list(models.keys())[0])),
+        key=f"model_{task_key}"
     )
-    st.session_state.model_selections[selected_json]["selected_model"] = selected_model
+    current_task_state["selected_model"] = selected_model
+    st.session_state.model_development_state[task_key] = current_task_state
     model_class = models[selected_model]
 
-    # Step 6: Run Model
-    if st.button("Run Model", key=f"run_{target_column}"):
-        st.subheader("🏆 Best Iterations")
+    # --- Step 6: Run Model & Hyperparameter Tuning ---
+    if st.button(f"Run Model for {selected_model_task_name}", key=f"run_{task_key}"):
+        st.subheader("🏆 Hyperparameter Iterations")
         param_dist = {
-            "Logistic Regression": {"C": [0.1, 1.0, 10.0], "solver": ["liblinear"]},
-            "LGBM Classifier": {"n_estimators": [50, 100, 150], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2]},
-            "Random Forest Classifier": {"n_estimators": [50, 100, 150], "max_depth": [3, 5, 7]},
-            "XGBoost Classifier": {"n_estimators": [50, 100, 150], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.1, 0.2]},
+            "Logistic Regression": {"C": [0.01, 0.1, 1.0, 10.0], "solver": ["liblinear"]}, # Added 0.01
+            "LGBM Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, 9], "learning_rate": [0.01, 0.05, 0.1, 0.2]}, # Added 200, 9, 0.05
+            "Random Forest Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, 9]}, # Added 200, 9
+            "XGBoost Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, 9], "learning_rate": [0.01, 0.05, 0.1, 0.2], 'use_label_encoder': [False], 'eval_metric': ['logloss'] if target_type == 'Classification' else ['rmse']}, # Added 200, 9, 0.05
             "Linear Regression": {"fit_intercept": [True, False]}
         }
-        sampled_params = list(ParameterSampler(param_dist[selected_model], n_iter=5, random_state=42))
-        best_iterations = []
+
+        if selected_model not in param_dist:
+             st.error(f"Parameter distribution not defined for {selected_model}")
+             # Clear previous results if model selection changes and run button is hit
+             if f"iteration_results_{task_key}" in st.session_state:
+                  del st.session_state[f"iteration_results_{task_key}"]
+             st.stop()
+
+        # Number of iterations to sample
+        n_iterations = 5 # Can be adjusted
+        try:
+            sampled_params = list(ParameterSampler(param_dist[selected_model], n_iter=n_iterations, random_state=42))
+        except ValueError as e:
+             st.error(f"Error sampling parameters: {e}. Check your parameter distribution ranges and n_iter.")
+             # Clear previous results
+             if f"iteration_results_{task_key}" in st.session_state:
+                  del st.session_state[f"iteration_results_{task_key}"]
+             st.stop()
+
+        iteration_results = []
+
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
         for i, params in enumerate(sampled_params):
+            status_text.text(f"Running iteration {i+1}/{n_iterations}...")
+            progress_bar.progress((i + 1) / n_iterations)
+
             try:
                 model = model_class(**params)
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_test)
                 metrics = {}
-                if problem_type == "Classification":
-                    y_proba = model.predict_proba(X_test) if hasattr(model, "predict_proba") else None
+
+                if target_type == "Classification":
+                    # Ensure y_test is binary (0 or 1) for binary metrics
+                    unique_test_classes = np.unique(y_test)
+                    if len(unique_test_classes) == 2:
+                         # Binary Classification Metrics
+                         y_proba = None
+                         if hasattr(model, "predict_proba"):
+                              try:
+                                   y_proba = model.predict_proba(X_test)
+                                   # predict_proba output shape is (n_samples, n_classes).
+                                   # We need the probability of the positive class (usually index 1 after Label Encoding)
+                                   # Check if y_test contains both classes before computing ROC/Gini
+                                   if len(unique_test_classes) == 2:
+                                        y_proba_positive = y_proba[:, 1]
+                                        metrics["ROC-AUC"] = roc_auc_score(y_test, y_proba_positive)
+                                        metrics["Gini Index"] = 2 * metrics["ROC-AUC"] - 1
+                                   else:
+                                        st.info("ROC-AUC/Gini not computable: Test set contains only one class.")
+                                        metrics["ROC-AUC"] = "N/A (Single Class)"
+                                        metrics["Gini Index"] = "N/A (Single Class)"
+
+                              except Exception as proba_e:
+                                   st.warning(f"Could not compute probabilities for ROC/Gini: {proba_e}")
+                                   metrics["ROC-AUC"] = "N/A (Error)"
+                                   metrics["Gini Index"] = "N/A (Error)"
+                         else:
+                              st.info("Model does not have predict_proba method for ROC/Gini.")
+                              metrics["ROC-AUC"] = "N/A (No Proba)"
+                              metrics["Gini Index"] = "N/A (No Proba)"
+
+                         # Compute binary classification metrics (y_pred must be 0 or 1)
+                         try:
+                              metrics["Accuracy"] = accuracy_score(y_test, y_pred)
+                              metrics["Precision"] = precision_score(y_test, y_pred, average='binary', zero_division=0)
+                              metrics["Recall"] = recall_score(y_test, y_pred, average='binary', zero_division=0)
+                              metrics["F1 Score"] = f1_score(y_test, y_pred, average='binary', zero_division=0)
+                              metrics["Confusion Matrix"] = confusion_matrix(y_test, y_pred)
+                         except Exception as bin_metrics_e:
+                              st.warning(f"Could not compute binary metrics: {bin_metrics_e}")
+                              metrics["Accuracy"] = metrics["Precision"] = metrics["Recall"] = metrics["F1 Score"] = "Error"
+                              metrics["Confusion Matrix"] = [[0,0],[0,0]] # Placeholder
+
+
+                    else: # Multi-class or other classification type
+                         # Multi-class Metrics
+                         metrics["Accuracy"] = accuracy_score(y_test, y_pred)
+                         # Add other multi-class metrics if needed (e.g., macro/weighted average)
+                         st.info("Multi-class target detected. Displaying Accuracy (Weighted Precision, Recall, F1).")
+                         try:
+                              metrics["Precision (Weighted)"] = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+                              metrics["Recall (Weighted)"] = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+                              metrics["F1 Score (Weighted)"] = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+                         except Exception as multi_metrics_e:
+                              st.warning(f"Could not compute weighted multi-class metrics: {multi_metrics_e}")
+                              metrics["Precision (Weighted)"] = metrics["Recall (Weighted)"] = metrics["F1 Score (Weighted)"] = "Error"
+
+
+                         metrics["ROC-AUC"] = "N/A (Multi-class)"
+                         metrics["Gini Index"] = "N/A (Multi-class)"
+                         try:
+                            metrics["Confusion Matrix"] = confusion_matrix(y_test, y_pred)
+                         except Exception as cm_e:
+                             st.warning(f"Could not compute Confusion Matrix: {cm_e}")
+                             metrics["Confusion Matrix"] = "Error"
+
+
+                else: # Regression
                     metrics = {
-                        "Accuracy": accuracy_score(y_test, y_pred),
-                        "Precision": precision_score(y_test, y_pred, average='binary', zero_division=0),
-                        "Recall": recall_score(y_test, y_pred, average='binary', zero_division=0),
-                        "F1 Score": f1_score(y_test, y_pred, average='binary', zero_division=0),
+                        "Mean Squared Error (MSE)": mean_squared_error(y_test, y_pred),
+                        "Root Mean Squared Error (RMSE)": np.sqrt(mean_squared_error(y_test, y_pred)),
                     }
-                    if y_proba is not None:
-                        metrics["ROC-AUC"] = roc_auc_score(y_test, y_proba[:, 1])
-                        metrics["Gini Index"] = 2 * metrics["ROC-AUC"] - 1
-                    metrics["Confusion Matrix"] = confusion_matrix(y_test, y_pred)
-                else:
-                    metrics = {
-                        "Mean Squared Error": mean_squared_error(y_test, y_pred),
-                        "Root Mean Squared Error": np.sqrt(mean_squared_error(y_test, y_pred)),
-                    }
-                best_iterations.append({"params": params, "metrics": metrics})
+                    try:
+                         # Calculate MAPE, handle division by zero if actuals contain zero
+                         # Add a small epsilon to avoid division by zero
+                         mape = np.mean(np.abs((y_test - y_pred) / (y_test + 1e-8))) * 100 # Added epsilon
+                         if np.isfinite(mape):
+                              metrics["Mean Absolute Percentage Error (MAPE)"] = mape
+                         else:
+                              metrics["Mean Absolute Percentage Error (MAPE)"] = "Inf/NaN (Actuals include zero)"
+                    except Exception as mape_e:
+                         metrics["Mean Absolute Percentage Error (MAPE)"] = f"Error: {mape_e}"
+
+
+                iteration_results.append({"params": params, "metrics": metrics, "model": model, "test_indices": test_indices})
+
             except Exception as e:
-                st.warning(f"⚠️ Skipping iteration due to error: {e}")
-
-        st.session_state[f"best_iterations_{target_column}"] = best_iterations
-
-        # Display Best Iterations
-        for i, iteration in enumerate(best_iterations):
-            with st.expander(f"Iteration {i+1}"):
-                st.markdown("### 🔧 Hyperparameters")
-                st.json(iteration["params"])
-
-                st.markdown("### 📊 Metrics")
-
-                if target_type == "Categorical":
-                    # Metrics for Categorical Targets
-                    col1, col2, col3, col4, col5, col6 = st.columns(6)
-
-                    col1.metric(
-                        "Accuracy",
-                        f"{iteration['metrics'].get('Accuracy', 'N/A'):.4f}" if isinstance(iteration['metrics'].get('Accuracy'), (int, float)) else iteration['metrics'].get('Accuracy', 'N/A')
-                    )
-                    col2.metric(
-                        "Precision",
-                        f"{iteration['metrics'].get('Precision', 'N/A'):.4f}" if isinstance(iteration['metrics'].get('Precision'), (int, float)) else iteration['metrics'].get('Precision', 'N/A')
-                    )
-                    col3.metric(
-                        "Recall",
-                        f"{iteration['metrics'].get('Recall', 'N/A'):.4f}" if isinstance(iteration['metrics'].get('Recall'), (int, float)) else iteration['metrics'].get('Recall', 'N/A')
-                    )
-                    col4.metric(
-                        "F1 Score",
-                        f"{iteration['metrics'].get('F1 Score', 'N/A'):.4f}" if isinstance(iteration['metrics'].get('F1 Score'), (int, float)) else iteration['metrics'].get('F1 Score', 'N/A')
-                    )
-                    col5.metric(
-                        "ROC-AUC",
-                        f"{iteration['metrics'].get('ROC-AUC', 'N/A'):.4f}" if isinstance(iteration['metrics'].get('ROC-AUC'), (int, float)) else iteration['metrics'].get('ROC-AUC', 'N/A')
-                    )
-                    col6.metric(
-                        "Gini Index",
-                        f"{iteration['metrics'].get('Gini Index', 'N/A'):.4f}" if isinstance(iteration['metrics'].get('Gini Index'), (int, float)) else iteration['metrics'].get('Gini Index', 'N/A')
-                    )
-
-                    # Confusion Matrix
-                    if "Confusion Matrix" in iteration["metrics"]:
-                        st.markdown("#### Confusion Matrix")
-                        fig_cm, ax_cm = plt.subplots(figsize=(4, 4))
-                        sns.heatmap(iteration["metrics"]["Confusion Matrix"], ax=ax_cm, annot=True, fmt="d", cmap="Blues")
-                        ax_cm.set_xlabel("Predicted")
-                        ax_cm.set_ylabel("Actual")
-                        st.pyplot(fig_cm)
-
-                    # SHAP Summary Plot
-                    st.markdown("#### SHAP Summary Plot")
-                    try:
-                        plt.clf()  # Clear the current figure context
-                        fig, ax = plt.subplots(figsize=(8, 4))  # Create a new figure and axis
-                        explainer = shap.Explainer(model, X_train)
-                        shap_values = explainer(X_test)
-                        shap.summary_plot(shap_values, X_test, show=False)
-                        st.pyplot(plt.gcf())  # Show the current figure
-                        plt.close(fig)  # Close the figure to free memory
-                    except Exception as e:
-                        st.warning(f"⚠️ Could not generate SHAP summary plot: {e}")
-
-                elif target_type == "Continuous":
-                    # Metrics for Continuous Targets
-                    col1, col2, col3 = st.columns(3)
-
-                    col1.metric(
-                        "Root Mean Squared Error (RMSE)",
-                        f"{iteration['metrics'].get('Root Mean Squared Error', 'N/A'):.4f}" if isinstance(iteration['metrics'].get('Root Mean Squared Error'), (int, float)) else iteration['metrics'].get('Root Mean Squared Error', 'N/A')
-                    )
-                    col2.metric(
-                        "Mean Squared Error (MSE)",
-                        f"{iteration['metrics'].get('Mean Squared Error', 'N/A'):.4f}" if isinstance(iteration['metrics'].get('Mean Squared Error'), (int, float)) else iteration['metrics'].get('Mean Squared Error', 'N/A')
-                    )
-                    col3.metric(
-                        "Mean Absolute Percentage Error (MAPE)",
-                        f"{iteration['metrics'].get('MAPE', 'N/A'):.4f}" if isinstance(iteration['metrics'].get('MAPE'), (int, float)) else iteration['metrics'].get('MAPE', 'N/A')
-                    )
-
-                    # SHAP Summary Plot
-                    st.markdown("#### SHAP Summary Plot")
-                    
-                    try:
-                        plt.clf()  # Clear current figure context
-                        explainer = shap.Explainer(model, X_train)
-                        shap_values = explainer(X_test)
-
-                        # Generate SHAP summary plot without 'ax' to avoid legacy error
-                        shap.summary_plot(shap_values, X_test, show=False, color_bar=False)
-
-                        fig = plt.gcf()  # Get the current figure after SHAP plot is generated
-                        st.pyplot(fig)
-                        plt.close(fig)
-
-                    except Exception as e:
-                        st.warning(f"⚠️ Could not generate SHAP summary plot: {e}")
+                st.warning(f"⚠️ Skipping iteration {i+1} due to error: {e}")
+                iteration_results.append({"params": params, "metrics": {"Error": str(e)}, "model": None, "test_indices": None})
 
 
-    # Step 7: Select Iteration and Save JSON
-    best_iterations = st.session_state.get(f"best_iterations_{target_column}", [])
-    prev_iter = model_state.get("selected_iteration", 0)
-    if best_iterations:
-        selected_iteration = st.selectbox(
-            f"Select Iteration for {selected_json}",
-            [f"Iteration {i+1}" for i in range(len(best_iterations))],
-            index=prev_iter,
-            key=f"iteration_select_{target_column}"
-        )
-        if st.button(f"Confirm Selection for {selected_json}", key=f"confirm_{target_column}"):
-            iteration_index = int(selected_iteration.split(" ")[1]) - 1
-            iteration_details = best_iterations[iteration_index]
+        st.session_state[f"iteration_results_{task_key}"] = iteration_results
+        status_text.text("Model iterations complete.")
+        progress_bar.empty()
 
-            # Always include target, Timestamp (if exists), and TERM_OF_LOAN (if exists)
-            columns_to_include = feature_columns + [target_column]
-            if "Timestamp" in df.columns and "Timestamp" not in columns_to_include:
-                columns_to_include.append("Timestamp")
-            if "TERM_OF_LOAN" in df.columns and "TERM_OF_LOAN" not in columns_to_include:
-                columns_to_include.append("TERM_OF_LOAN")
+        # Display Results
+        st.subheader("📊 Iteration Results")
+        if not iteration_results:
+             st.info("No model iterations were run.")
+        else:
+             for i, iteration in enumerate(iteration_results):
+                 with st.expander(f"Iteration {i+1}"):
+                     if "Error" in iteration["metrics"]:
+                         st.error(f"This iteration failed: {iteration['metrics']['Error']}")
+                         continue
 
-            dataset_records = df[columns_to_include].to_dict(orient="records")
+                     st.markdown("### 🔧 Hyperparameters")
+                     st.json(iteration["params"])
 
-            # Store all info in session state instead of JSON file
-            model_info = {
-                "dataset": dataset_records,
-                "target_variable": target_column,
-                "model_name": selected_model,
-                "model_code": f"{model_class.__name__}(**{iteration_details['params']})",
-                "hyperparameters": iteration_details["params"],
-            }
-            st.session_state.selected_iterations[selected_json] = model_info
-            st.session_state.model_selections[selected_json]["selected_iteration"] = iteration_index
-            st.success(f"✅ {selected_iteration} selected for {selected_json}! ")
+                     st.markdown("### 📊 Metrics")
 
-# Step 8: Proceed to Next Page
-if len(st.session_state.selected_iterations) == len(datasets):
+                     if target_type == "Classification":
+                         # Display classification metrics
+                         metrics_cols = st.columns(6)
+                         metrics_to_display = ["Accuracy", "Precision", "Recall", "F1 Score", "ROC-AUC", "Gini Index"]
+                         for j, metric_name in enumerate(metrics_to_display):
+                             value = iteration['metrics'].get(metric_name, 'N/A')
+                             # Format only if it's a number, otherwise display as is
+                             display_value = f"{value:.4f}" if isinstance(value, (int, float, np.float_)) else value
+                             metrics_cols[j].metric(metric_name, display_value)
+
+                         # Confusion Matrix
+                         if isinstance(iteration["metrics"].get("Confusion Matrix"), np.ndarray):
+                             st.markdown("#### Confusion Matrix")
+                             try:
+                                 fig_cm, ax_cm = plt.subplots(figsize=(4, 4))
+                                 sns.heatmap(iteration["metrics"]["Confusion Matrix"], ax=ax_cm, annot=True, fmt="d", cmap="Blues")
+                                 ax_cm.set_xlabel("Predicted")
+                                 ax_cm.set_ylabel("Actual")
+                                 st.pyplot(fig_cm)
+                                 plt.close(fig_cm)
+                             except Exception as cm_plot_e:
+                                  st.warning(f"Could not plot Confusion Matrix: {cm_plot_e}")
+
+
+                         # SHAP Summary Plot
+                         st.markdown("#### SHAP Summary Plot")
+                         # SHAP for tree models and linear models is supported
+                         if iteration["model"] is not None and selected_model in ["LGBM Classifier", "Random Forest Classifier", "XGBoost Classifier", "Logistic Regression"]:
+                             try:
+                                # Use a subset of the test data for SHAP to speed up calculation
+                                # Ensure the subset size is not larger than the test set size
+                                shap_sample_size = min(500, X_test.shape[0])
+                                if shap_sample_size > 0:
+                                    # Use random.choice for indices to handle potential non-contiguous index
+                                    shap_indices_sample = np.random.choice(X_test.index, shap_sample_size, replace=False)
+                                    X_test_shap = X_test.loc[shap_indices_sample]
+
+
+                                    plt.clf()  # Clear the current figure context
+                                    explainer = shap.Explainer(iteration["model"], X_test_shap) # Explain on sample
+                                    shap_values = explainer(X_test_shap) # Calculate on sample
+
+                                    # Handle SHAP values structure for binary vs multi-class
+                                    if target_type == "Classification" and len(np.unique(y_test)) == 2 and isinstance(shap_values, list) and len(shap_values) > 1:
+                                         # For binary classification, summary_plot often expects values for one class
+                                         # Assuming class 1 is the positive class after encoding
+                                         shap_values = shap_values[1]
+                                    elif target_type == "Classification" and len(np.unique(y_test)) > 2 and isinstance(shap_values, list):
+                                         # For multi-class, you might plot values for a specific class,
+                                         # or loop through classes. Default summary plot can handle list.
+                                         pass # Use the list of SHAP values
+
+
+                                    shap.summary_plot(shap_values, X_test_shap, show=False)
+                                    fig = plt.gcf() # Get the current figure after SHAP plot is generated
+                                    st.pyplot(fig)
+                                    plt.close(fig) # Close the figure to free memory
+                                else:
+                                     st.info("Test set is too small to generate SHAP plot.")
+                             except Exception as shap_e:
+                                 st.warning(f"⚠️ Could not generate SHAP summary plot for this iteration: {shap_e}")
+                         else:
+                              st.info(f"SHAP summary plot not standard or available for {selected_model}.")
+
+
+                     elif target_type == "Regression":
+                         # Display regression metrics
+                         metrics_cols = st.columns(3)
+                         metrics_to_display = ["Mean Squared Error (MSE)", "Root Mean Squared Error (RMSE)", "Mean Absolute Percentage Error (MAPE)"]
+                         for j, metric_name in enumerate(metrics_to_display):
+                              value = iteration['metrics'].get(metric_name, 'N/A')
+                              display_value = f"{value:.4f}" if isinstance(value, (int, float, np.float_)) else value
+                              metrics_cols[j].metric(metric_name, display_value)
+
+
+                         # SHAP Summary Plot
+                         st.markdown("#### SHAP Summary Plot")
+                         if iteration["model"] is not None and selected_model in ["LGBM Classifier", "Random Forest Classifier", "XGBoost Classifier", "Linear Regression"]:
+                             try:
+                                plt.clf()  # Clear current figure context
+                                # Use a subset of the test data for SHAP
+                                shap_sample_size = min(500, X_test.shape[0])
+                                if shap_sample_size > 0:
+                                    shap_indices_sample = np.random.choice(X_test.index, shap_sample_size, replace=False)
+                                    X_test_shap = X_test.loc[shap_indices_sample]
+
+                                    explainer = shap.Explainer(iteration["model"], X_test_shap)
+                                    shap_values = explainer(X_test_shap)
+
+                                    shap.summary_plot(shap_values, X_test_shap, show=False, color_bar=True) # Added color_bar for regression
+                                    fig = plt.gcf()  # Get the current figure after SHAP plot is generated
+                                    st.pyplot(fig)
+                                    plt.close(fig)
+                                else:
+                                     st.info("Test set is too small to generate SHAP plot.")
+                             except Exception as shap_e:
+                                 st.warning(f"⚠️ Could not generate SHAP summary plot for this iteration: {shap_e}")
+                         else:
+                             st.info(f"SHAP summary plot not standard or available for {selected_model}.")
+
+
+    # --- Step 7: Select Iteration and Save Data/Metadata ---
+    iteration_results = st.session_state.get(f"iteration_results_{task_key}", [])
+    if iteration_results:
+        # Filter out failed iterations for selection
+        successful_iterations = [i for i, res in enumerate(iteration_results) if "Error" not in res["metrics"]]
+
+        if successful_iterations:
+            iteration_options = [f"Iteration {i+1}" for i in successful_iterations]
+            # Get previously selected index relative to successful_iterations
+            prev_selected_idx_global = current_task_state.get("selected_iteration_index", successful_iterations[0] if successful_iterations else 0) # Default to first successful
+            try:
+                 # Find the index in the *filtered* list that corresponds to the previously selected global index
+                 prev_selected_idx_filtered = successful_iterations.index(prev_selected_idx_global)
+            except ValueError:
+                 # If previous index is no longer valid, default to first successful
+                 prev_selected_idx_filtered = 0
+
+
+            selected_iteration_option = st.selectbox(
+                f"Select Best Iteration for {selected_model_task_name}",
+                iteration_options,
+                index=prev_selected_idx_filtered,
+                key=f"iteration_select_{task_key}"
+            )
+
+            # Get the original index of the selected iteration from the full list
+            # The option is "Iteration X", so split and convert X-1
+            selected_iteration_global_index = int(selected_iteration_option.split(" ")[1]) - 1
+            iteration_details = iteration_results[selected_iteration_global_index]
+
+            if st.button(f"Confirm Selection for {selected_model_task_name}", key=f"confirm_{task_key}"):
+                 if "Error" in iteration_details["metrics"]:
+                      st.error("Cannot confirm selection for a failed iteration.")
+                 else:
+                      # Get the test set indices for this iteration's split
+                      test_indices_for_iteration = iteration_details["test_indices"]
+
+                      if test_indices_for_iteration is None or len(test_indices_for_iteration) == 0:
+                           st.error("Could not retrieve test set data for this iteration.")
+                      else:
+                           # Create the DataFrame slice for the test set based on selected features + essentials
+                           columns_to_save = list(feature_columns) + [target_column] # Make a copy of feature_columns
+                           if "Timestamp" in df_full.columns and "Timestamp" not in columns_to_save:
+                               columns_to_save.append("Timestamp")
+                           if "TERM_OF_LOAN" in df_full.columns and "TERM_OF_LOAN" not in columns_to_save:
+                               columns_to_save.append("TERM_OF_LOAN")
+
+                           # Select rows from the *original sampled* DataFrame (`df`) using test indices
+                           # This ensures we get Timestamp and TERM_OF_LOAN even if not features
+                           try:
+                               df_test_slice = df.loc[test_indices_for_iteration, columns_to_save].copy()
+
+                               # Define the output file path
+                               # Using a consistent naming convention
+                               output_file_name = f"{target_column}_test_data.parquet"
+                               output_file_path = os.path.join(output_data_dir, output_file_name)
+
+                               # Save the test data slice to a Parquet file
+                               df_test_slice.to_parquet(output_file_path, index=False)
+                               st.success(f"✅ Test data for {selected_model_task_name} saved to: {output_file_path}")
+
+                               # Store the confirmed configuration in session state for the next page
+                               st.session_state.confirmed_model_outputs[task_key] = {
+                                   "task_name": selected_model_task_name,
+                                   "target_variable": target_column,
+                                   "selected_features": feature_columns, # Store features list explicitly
+                                   "model_name": selected_model,
+                                   "hyperparameters": iteration_details["params"],
+                                   "test_data_path": output_file_path,
+                                   # Optionally store key metrics for quick display on the next page
+                                   "key_metrics": {k: v for k, v in iteration_details["metrics"].items() if not (isinstance(v, np.ndarray) or k == "Error")} # Exclude arrays like Confusion Matrix
+                               }
+
+                               # Update the development state to remember which iteration was selected
+                               current_task_state["selected_iteration_index"] = selected_iteration_global_index
+                               st.session_state.model_development_state[task_key] = current_task_state
+
+                               st.success(f"✅ Configuration for {selected_model_task_name} (Iteration {selected_iteration_global_index + 1}) confirmed and saved!")
+
+                           except Exception as save_e:
+                               st.error(f"Error creating/saving test data or updating session state: {save_e}")
+
+        else:
+             st.info("No successful iterations available to select.")
+
+
+# --- Step 8: Finalize and Proceed ---
+st.markdown("---")
+st.subheader("Finalize and Proceed")
+
+# Check if all modeling tasks have a confirmed output
+# Count how many tasks have an entry in confirmed_model_outputs
+confirmed_count = len(st.session_state.confirmed_model_outputs)
+all_tasks_count = len(modeling_tasks)
+
+if confirmed_count == all_tasks_count:
+    st.success(f"✅ All {all_tasks_count} model tasks have a confirmed selection. You can now proceed to the next page.")
+    # You would typically have a button here to navigate, managed by your multi-page app structure
+    # For demonstration, a placeholder button:
     if st.button("Proceed to Next Page"):
-        st.success("✅ All models have been processed! You can proceed to the next page.")
+         # In a multi-page app, this button would trigger the page change
+         st.info("Proceeding to the next page...")
+         # Example of setting a state variable to indicate readiness
+         st.session_state["model_development_complete"] = True
+         # Logic to navigate to the next page would go here, e.g., st.switch_page("pages/back.py")
 else:
-    st.info("Please complete the selection for all models before proceeding.")
+    st.info(f"Please confirm a selected iteration for all {all_tasks_count} model tasks ({confirmed_count}/{all_tasks_count} confirmed) before proceeding.")
+    # Optional: Display confirmed tasks for user
+    # if confirmed_count > 0:
+    #      st.write("Confirmed Tasks:")
+    #      for task_name in st.session_state.confirmed_model_outputs.keys():
+    #           st.write(f"- {task_name}")

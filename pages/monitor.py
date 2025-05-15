@@ -3,6 +3,9 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score, mean_squared_error
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from back import process_models_from_session  # <-- Use this function
 
@@ -263,4 +266,3 @@ if __name__ == "__main__":
     main()
 
  
-
