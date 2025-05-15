@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from back import process_models_from_session  # <-- Use this function
 
-st.set_page_config(layout="wide")
+
 st.title("Model Prediction Monitoring: Profitability, Charge-Off, Prepayment")
 
 # --- Main App ---
