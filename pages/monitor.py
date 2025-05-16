@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from back import process_models_from_session  # <-- Use this function
+from backend import process_models_from_session  # <-- Use this function
 
 
 st.title("Model Prediction Monitoring: Profitability, Charge-Off, Prepayment")
