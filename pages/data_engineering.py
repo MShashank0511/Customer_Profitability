@@ -6,7 +6,24 @@ from datetime import datetime, timedelta
 import os
 import shutil  # Import shutil for directory cleanup
 
+# Path to the default data directory
+DEFAULT_DATA_DIR = "default_data"
 
+# Function to load default data if session state is empty
+def load_default_data():
+    default_files = {
+        "on_us_data": os.path.join(DEFAULT_DATA_DIR, "default_on_us_data.parquet"),
+    }
+
+    for key, file_path in default_files.items():
+        if os.path.exists(file_path):
+            try:
+                st.session_state[key] = pd.read_parquet(file_path)
+                
+            except Exception as e:
+                st.error(f"Error loading default data for '{key}' from {file_path}: {e}")
+        else:
+            st.warning(f"Default file for '{key}' not found at {file_path}. Please check the default_data directory.")
 
 # Fixed list of categorical features
 CATEGORICAL_FEATURES = [
@@ -350,3 +367,28 @@ if on_us_file is not None and on_us_data is not None:
     # Store the path in session state
     st.session_state["on_us_data_path"] = data_path
     st.success(f"DataFrame saved to {data_path} and path registered in session state.")
+
+# --- Main Logic ---
+st.title("Data Engineering")
+
+# Check if 'on_us_data' is in session state or load default data
+if "on_us_data" not in st.session_state:
+    st.info("No session data found. Attempting to load default data...")
+    load_default_data()
+
+# Removed the display of "Loaded On-Us Data" and its overview
+# The data is still loaded into session state for use in subsequent steps
+
+# At the end of your data engineering logic, before moving to the next page:
+if "on_us_data" in st.session_state:
+    on_us_data = st.session_state["on_us_data"]
+    save_dir = "data_registry"
+    os.makedirs(save_dir, exist_ok=True)
+    data_path = os.path.join(save_dir, "on_us_data.parquet")
+    on_us_data.to_parquet(data_path, index=False)
+
+    # Store the path in session state
+    st.session_state["on_us_data_path"] = data_path
+   
+else:
+    st.error("No data available. Please upload a file or ensure default data is available.")
