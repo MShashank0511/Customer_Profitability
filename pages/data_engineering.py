@@ -356,7 +356,7 @@ if on_us_file is not None and on_us_data is not None:
     if "data_registry" not in st.session_state:
         st.session_state["data_registry"] = {}
     st.session_state["data_registry"]["on_us_data"] = on_us_data
-    st.success("DataFrame registered in session state registry as 'on_us_data'.")
+    
 
 if on_us_file is not None and on_us_data is not None:
     save_dir = "data_registry"
@@ -366,10 +366,9 @@ if on_us_file is not None and on_us_data is not None:
 
     # Store the path in session state
     st.session_state["on_us_data_path"] = data_path
-    st.success(f"DataFrame saved to {data_path} and path registered in session state.")
-
+    
 # --- Main Logic ---
-st.title("Data Engineering")
+
 
 # Check if 'on_us_data' is in session state or load default data
 if "on_us_data" not in st.session_state:
