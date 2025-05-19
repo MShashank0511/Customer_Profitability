@@ -39,8 +39,6 @@ def main():
         data_engineering_page()
     elif st.session_state.current_page == "Feature Engineering":
         feature_engineering_page()
-    elif st.session_state.current_page == "Feature Selection":
-        feature_selection_page()
     elif st.session_state.current_page == "Model Development":
         model_dev_page()
     elif st.session_state.current_page == "Results":

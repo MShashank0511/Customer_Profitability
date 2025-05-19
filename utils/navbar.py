@@ -39,10 +39,6 @@ def create_sidebar():
             st.session_state.current_page = "Feature Engineering"
             st.rerun()
             
-        if st.button("📊 Feature Selection", key="feature_sel_btn"):
-            st.session_state.current_page = "Feature Selection"
-            st.rerun()
-            
         if st.button("🤖 Model Development", key="model_dev_btn"):
             st.session_state.current_page = "Model Development"
             st.rerun()
