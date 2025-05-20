@@ -48,137 +48,149 @@ def load_data_from_data_engineering(model_name):
             st.error(f"An error occurred while loading fallback CSV data: {e}")
             return None
 
+# --- Model Definitions ---
+MODEL_NAMES = ["Default Model", "Charge-Off Model", "Prepayment Model", "Churn Model", "Extrapolation Model"]
+
 def save_model_state(model_name):
-    """Save the current model's state to the backend."""
+    """
+    Saves the complete state for a given model to a JSON file.
+    Handles serialization of DataFrames and nested dictionaries containing DataFrames.
+    """
+    model_states_dir = "model_states"
+    os.makedirs(model_states_dir, exist_ok=True)
+    file_path = os.path.join(model_states_dir, f"{model_name}.json")
+
+    state_to_save = {}
+
+    # List all session state keys that belong to this model
+    all_model_session_keys = [key for key in st.session_state.keys() if key.startswith(f"{model_name}_")]
+
+    for session_key in all_model_session_keys:
+        value = st.session_state[session_key]
+
+        if session_key == f"{model_name}_state":
+            # Handle the main model_state dictionary, which contains nested DataFrames
+            serializable_main_state = {}
+            for sub_key, sub_value in value.items():
+                if isinstance(sub_value, pd.DataFrame):
+                    serializable_main_state[sub_key] = sub_value.to_json(orient='split', date_format='iso')
+                elif isinstance(sub_value, dict): # e.g., raw_datasets, filtered_datasets, merged_tables
+                    serializable_nested_dict = {}
+                    for nested_key, nested_df_value in sub_value.items():
+                        if isinstance(nested_df_value, pd.DataFrame):
+                            serializable_nested_dict[nested_key] = nested_df_value.to_json(orient='split', date_format='iso')
+                        else:
+                            serializable_nested_dict[nested_key] = nested_df_value
+                    serializable_main_state[sub_key] = serializable_nested_dict
+                else:
+                    serializable_main_state[sub_key] = sub_value
+            state_to_save[session_key] = serializable_main_state
+        elif isinstance(value, pd.DataFrame):
+            state_to_save[session_key] = value.to_json(orient='split', date_format='iso')
+        else:
+            state_to_save[session_key] = value
+
     try:
-        # Create a directory for model states if it doesn't exist
-        if not os.path.exists("model_states"):
-            os.makedirs("model_states")
-
-        # Save all model-specific state variables
-        model_state = {
-            # Main state
-            "loan_data": st.session_state[f"{model_name}_state"]["loan_data"].to_json(orient="records") if "loan_data" in st.session_state[f"{model_name}_state"] else None,
-            "bureau_data": st.session_state[f"{model_name}_state"]["bureau_data"].to_json(orient="records") if "bureau_data" in st.session_state[f"{model_name}_state"] else None,
-            "onus_data": st.session_state[f"{model_name}_state"]["onus_data"].to_json(orient="records") if "onus_data" in st.session_state[f"{model_name}_state"] else None,
-            "installments_data": st.session_state[f"{model_name}_state"]["installments_data"].to_json(orient="records") if "installments_data" in st.session_state[f"{model_name}_state"] else None,
-            "show_popup1": st.session_state[f"{model_name}_state"]["show_popup1"],
-            "transform_blocks": st.session_state[f"{model_name}_state"]["transform_blocks"],
-            "multi_transform_blocks": st.session_state[f"{model_name}_state"]["multi_transform_blocks"],
-            "final_transformed_features": st.session_state[f"{model_name}_state"]["final_transformed_features"].to_json(orient="records") if "final_transformed_features" in st.session_state[f"{model_name}_state"] else None,
-            "recommended_features": st.session_state[f"{model_name}_state"]["recommended_features"].to_json(orient="records") if "recommended_features" in st.session_state[f"{model_name}_state"] else None,
-            "final_dataset": st.session_state[f"{model_name}_state"]["final_dataset"].to_json(orient="records") if "final_dataset" in st.session_state[f"{model_name}_state"] else None,
-            "selected_features": st.session_state[f"{model_name}_state"]["selected_features"],
-            "feature_checkboxes": st.session_state[f"{model_name}_state"]["feature_checkboxes"],
-            "show_filter": st.session_state[f"{model_name}_state"]["show_filter"],
-            "filtered_features": st.session_state[f"{model_name}_state"]["filtered_features"],
-            "filter_text": st.session_state[f"{model_name}_state"]["filter_text"],
-            "merge_blocks": st.session_state[f"{model_name}_state"]["merge_blocks"],
-            "merged_tables": st.session_state[f"{model_name}_state"]["merged_tables"],
-            "combined_dataset": st.session_state[f"{model_name}_state"]["combined_dataset"].to_json(orient="records") if "combined_dataset" in st.session_state[f"{model_name}_state"] and st.session_state[f"{model_name}_state"]["combined_dataset"] is not None else None,
-            # Other state variables
-            "operations_complete": st.session_state.get(f"{model_name}_operations_complete", {}),
-            "show_filter_data": st.session_state.get(f"{model_name}_show_filter_data", False),
-            "show_merge": st.session_state.get(f"{model_name}_show_merge", False),
-            "single_transform_success": st.session_state.get(f"{model_name}_single_transform_success", None),
-            "multi_transform_success": st.session_state.get(f"{model_name}_multi_transform_success", None),
-            "recommended_features_state": st.session_state.get(f"{model_name}_recommended_features", pd.DataFrame()).to_json(orient="records"),
-            "final_dataset_state": st.session_state.get(f"{model_name}_final_dataset", pd.DataFrame()).to_json(orient="records"),
-            "selected_features_state": st.session_state.get(f"{model_name}_selected_features", []),
-            "feature_checkboxes_state": st.session_state.get(f"{model_name}_feature_checkboxes", {}),
-            "filter_blocks_state": st.session_state.get(f"{model_name}_filter_blocks", []),
-            "target_column": st.session_state.get(f"{model_name}_target_column", None),
-            "target_feature": st.session_state.get(f"{model_name}_target_feature", None),
-            "final_dataset_json": st.session_state.get(f"{model_name}_final_dataset_json", None)
-        }
-
-        # Save to a single file
-        state_file = f"model_states/{model_name}_state.json"
-        with open(state_file, 'w') as f:
-            json.dump(model_state, f)
-
+        with open(file_path, "w") as f:
+            json.dump(state_to_save, f, indent=4) # Use indent for readability
+        print(f"State for model '{model_name}' saved to {file_path}")
     except Exception as e:
-        st.error(f"Error saving model state: {str(e)}")
+        st.error(f"Error saving state for model '{model_name}': {e}")
+
 
 def load_model_state(model_name):
-    """Load a model's state from the backend."""
-    try:
-        state_file = f"model_states/{model_name}_state.json"
-        if os.path.exists(state_file):
-            with open(state_file, 'r') as f:
-                model_state = json.load(f)
+    """
+    Loads the complete state for a given model from a JSON file.
+    Handles deserialization of DataFrames and nested dictionaries containing DataFrames.
+    If no saved state is found, it initializes a new one.
+    """
+    model_states_dir = "model_states"
+    file_path = os.path.join(model_states_dir, f"{model_name}.json")
 
-            # Initialize main state
-            st.session_state[f"{model_name}_state"] = {
-                "loan_data": pd.read_json(model_state["loan_data"], orient="records") if model_state.get("loan_data") else None,
-                "bureau_data": pd.read_json(model_state["bureau_data"], orient="records") if model_state.get("bureau_data") else None,
-                "onus_data": pd.read_json(model_state["onus_data"], orient="records") if model_state.get("onus_data") else None,
-                "installments_data": pd.read_json(model_state["installments_data"], orient="records") if model_state.get("installments_data") else None,
-                "show_popup1": model_state["show_popup1"],
-                "transform_blocks": model_state["transform_blocks"],
-                "multi_transform_blocks": model_state["multi_transform_blocks"],
-                "final_transformed_features": pd.read_json(model_state["final_transformed_features"], orient="records") if model_state.get("final_transformed_features") else None,
-                "recommended_features": pd.read_json(model_state["recommended_features"], orient="records") if model_state.get("recommended_features") else None,
-                "final_dataset": pd.read_json(model_state["final_dataset"], orient="records") if model_state.get("final_dataset") else None,
-                "selected_features": model_state["selected_features"],
-                "feature_checkboxes": model_state["feature_checkboxes"],
-                "show_filter": model_state["show_filter"],
-                "filtered_features": model_state["filtered_features"],
-                "filter_text": model_state["filter_text"],
-                "merge_blocks": model_state["merge_blocks"],
-                "merged_tables": model_state["merged_tables"],
-                "combined_dataset": pd.read_json(model_state["combined_dataset"], orient="records") if model_state.get("combined_dataset") else None
-            }
+    # Clear all existing model-specific keys from session state
+    # This ensures a clean slate before loading new state or initializing
+    for key in list(st.session_state.keys()): # Create a list to iterate over as you modify dict
+        if key.startswith(f"{model_name}_"):
+            del st.session_state[key]
 
-            # Load other state variables with default values if not present
-            st.session_state[f"{model_name}_operations_complete"] = model_state.get("operations_complete", {
-                "merge": False,
-                "recommend": False,
-                "accept": False
-            })
-            st.session_state[f"{model_name}_show_filter_data"] = model_state.get("show_filter_data", False)
-            st.session_state[f"{model_name}_show_merge"] = model_state.get("show_merge", False)
-            st.session_state[f"{model_name}_single_transform_success"] = model_state.get("single_transform_success", None)
-            st.session_state[f"{model_name}_multi_transform_success"] = model_state.get("multi_transform_success", None)
-            st.session_state[f"{model_name}_recommended_features"] = pd.read_json(model_state.get("recommended_features_state", pd.DataFrame().to_json(orient="records")), orient="records")
-            st.session_state[f"{model_name}_final_dataset"] = pd.read_json(model_state.get("final_dataset_state", pd.DataFrame().to_json(orient="records")), orient="records")
-            st.session_state[f"{model_name}_selected_features"] = model_state.get("selected_features_state", [])
-            st.session_state[f"{model_name}_feature_checkboxes"] = model_state.get("feature_checkboxes_state", {})
-            st.session_state[f"{model_name}_filter_blocks"] = model_state.get("filter_blocks_state", [{
-                "dataset": "Bureau Data",
-                "feature": "",
-                "operation": "Greater Than",
-                "value": 0,
-                "output_name": ""
-            }])
-            st.session_state[f"{model_name}_target_column"] = model_state.get("target_column", None)
-            st.session_state[f"{model_name}_target_feature"] = model_state.get("target_feature", None)
-            st.session_state[f"{model_name}_final_dataset_json"] = model_state.get("final_dataset_json", None)
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r") as f:
+                loaded_data = json.load(f)
 
-    except Exception as e:
-        st.error(f"Error loading model state: {str(e)}")
-        # Initialize with default values if loading fails
+            for session_key, value in loaded_data.items():
+                if session_key == f"{model_name}_state":
+                    # Handle the main model_state dictionary
+                    deserialized_main_state = {}
+                    for sub_key, sub_value in value.items():
+                        if isinstance(sub_value, str) and (
+                            "df" in sub_key.lower() or "dataset" in sub_key.lower() or # General check for DataFrames
+                            sub_key in ["loan_data", "bureau_data", "onus_data", "installments_data",
+                                        "filtered_data_loan", "filtered_data_bureau", "filtered_data_onus",
+                                        "filtered_data_installments", "merged_dataframe", "selected_features_df",
+                                        "final_transformed_features", "recommended_features", "final_dataset",
+                                        "transformation_output_df"]
+                        ):
+                            try:
+                                deserialized_main_state[sub_key] = pd.read_json(sub_value, orient='split') if sub_value else pd.DataFrame()
+                            except Exception as inner_df_err:
+                                print(f"Warning: Error deserializing DataFrame '{sub_key}' within main state: {inner_df_err}. Setting to empty DataFrame.")
+                                deserialized_main_state[sub_key] = pd.DataFrame()
+                        elif isinstance(sub_value, dict) and (sub_key in ["raw_datasets", "filtered_datasets", "merged_tables"]):
+                            # Handle nested dictionaries of DataFrames
+                            deserialized_nested_dict = {}
+                            for nested_key, nested_json_df_str in sub_value.items():
+                                try:
+                                    deserialized_nested_dict[nested_key] = pd.read_json(nested_json_df_str, orient='split') if nested_json_df_str else pd.DataFrame()
+                                except Exception as nested_df_err:
+                                    print(f"Warning: Error deserializing nested DataFrame '{nested_key}' in '{sub_key}': {nested_df_err}. Setting to empty DataFrame.")
+                                    deserialized_nested_dict[nested_key] = pd.DataFrame()
+                            deserialized_main_state[sub_key] = deserialized_nested_dict
+                        else:
+                            deserialized_main_state[sub_key] = sub_value
+                    st.session_state[session_key] = deserialized_main_state
+                elif isinstance(value, str) and (
+                    "df" in session_key.lower() or "dataset" in session_key.lower() or # General check for DataFrames
+                    session_key in [f"{model_name}_recommended_features", f"{model_name}_final_dataset"] # Explicit direct DFs
+                ):
+                    try:
+                        st.session_state[session_key] = pd.read_json(value, orient='split') if value else pd.DataFrame()
+                    except Exception as direct_df_err:
+                        print(f"Warning: Error deserializing direct DataFrame '{session_key}': {direct_df_err}. Setting to empty DataFrame.")
+                        st.session_state[session_key] = pd.DataFrame()
+                else:
+                    st.session_state[session_key] = value
+
+            print(f"State for model '{model_name}' loaded from {file_path}")
+            return True
+        except Exception as e:
+            st.error(f"Error loading state for model '{model_name}': {e}. Initializing new state.")
+            initialize_new_model_state(model_name)
+            return False
+    else:
+        print(f"No saved state found for model '{model_name}'. Initializing new state.")
         initialize_new_model_state(model_name)
+        return False
 
 def initialize_new_model_state(model_name):
     """Initialize a fresh state for a new model."""
     # Load the primary dataset (parquet or CSV)
-    primary_df = load_data_from_data_engineering(model_name)
+    primary_df = load_data_from_data_engineering(model_name) # Ensure load_data_from_data_engineering is defined
 
     # Initialize raw_datasets and filtered_datasets dictionaries
     raw_datasets = {
-        "Loan Data": primary_df.copy() if primary_df is not None else pd.DataFrame(),  # Use primary_df if available
-        "Bureau Data": primary_df.copy() if primary_df is not None else pd.read_parquet(data_path).copy(),
+        "Loan Data": primary_df.copy() if primary_df is not None else pd.DataFrame(),
+        "Bureau Data": primary_df.copy() if primary_df is not None else pd.read_parquet(data_path).copy(), # Ensure data_path is accessible
         "On-Us Data": primary_df.copy() if primary_df is not None else pd.read_parquet(data_path).copy(),
         "Installments Data": primary_df.copy() if primary_df is not None else pd.read_parquet(data_path).copy(),
     }
     filtered_datasets = {}
 
-    # Initialize main state
+    # Initialize main state for the model
     st.session_state[f"{model_name}_state"] = {
         "raw_datasets": raw_datasets,
         "filtered_datasets": filtered_datasets,
-        "loan_data": raw_datasets["Loan Data"],  # Use data from raw_datasets
+        "loan_data": raw_datasets["Loan Data"],
         "bureau_data": raw_datasets["Bureau Data"],
         "onus_data": raw_datasets["On-Us Data"],
         "installments_data": raw_datasets["Installments Data"],
@@ -216,7 +228,7 @@ def initialize_new_model_state(model_name):
         "final_dataset_json": None,
     }
 
-    # Initialize other state variables
+    # Initialize other direct model-specific state variables
     st.session_state[f"{model_name}_operations_complete"] = {
         "merge": False,
         "recommend": False,
@@ -240,6 +252,9 @@ def initialize_new_model_state(model_name):
     st.session_state[f"{model_name}_target_column"] = None
     st.session_state[f"{model_name}_target_feature"] = None
     st.session_state[f"{model_name}_final_dataset_json"] = None
+
+    print(f"New state initialized for model: {model_name}")
+
 
 def add_new_model():
     """Add a new model (page) with fresh state."""
@@ -448,129 +463,59 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Initialize Session State ---
-if "models" not in st.session_state:
-    # Change initial model name
-    st.session_state.models = ["Feature Transformation Page 1"]  # Start with Feature Transformation Page 1
-if "active_model" not in st.session_state:
-    # Default active model
-    st.session_state.active_model = "Feature Transformation Page 1"
 if "single_transform_success" not in st.session_state:
     st.session_state.single_transform_success = None  # Initialize single_transform_success
 if "multi_transform_success" not in st.session_state:
     st.session_state.multi_transform_success = None  # Initialize multi_transform_success
 
-# Model Selection Section
-col1, col2, col3 = st.columns([1, 5, 1])
-with col2:
-    # Create a row for dropdown and button
-    dropdown_col, button_col = st.columns([2, 1.2])
-    with dropdown_col:
-        # Model selection dropdown
-        selected_model = st.selectbox(
-            "Select Page", # Change label
-            st.session_state.models,
-            index=st.session_state.models.index(st.session_state.active_model),
-            key="model_selector"
-        )
-    with button_col:
-        st.text("") # Add this line for vertical alignment
-        # Create new model button - Change button text
-        if st.button("➕ Create New Page", key="add_model_btn", use_container_width=True):
-            add_new_model()
+# --- Model Selection (Replace your existing Model Selection section) ---
+st.sidebar.title("Model Selection")
 
-# Switch model if selection changed
-if selected_model != st.session_state.active_model: 
-    switch_model(selected_model)
+# Initialize 'active_model' in session state if not already present
+if "active_model" not in st.session_state:
+    st.session_state.active_model = MODEL_NAMES[0] # Set 'Default Model' as the initial active model
 
-# Initialize state for the first page if it doesn't exist
-first_model_name = "Feature Transformation Page 1"
-if f"{first_model_name}_state" not in st.session_state:
-    # Try to load existing state from backend
-    load_model_state(first_model_name)
+# Get the current active model to set the initial value of the selectbox
+current_active_model_index = MODEL_NAMES.index(st.session_state.active_model) if st.session_state.active_model in MODEL_NAMES else 0
 
-    # If no saved state exists, initialize with default values
-        
-    if f"{first_model_name}_state" not in st.session_state:
-        # import pdb; pdb.set_trace()
-        st.session_state[f"{first_model_name}_state"] = {
-            # --- Add raw_datasets and filtered_datasets dictionaries here ---
-            "raw_datasets": {
-                "Loan Data": pd.read_parquet(data_path).copy() , # Assuming loan_data.csv contains all initial data
-                "Bureau Data": pd.read_parquet(data_path).copy(), # Assuming loan_data.csv contains all initial data
-                "On-Us Data": pd.read_parquet(data_path).copy(),
-                "Installments Data": pd.read_parquet(data_path).copy(),
-            },
-            "filtered_datasets": {}, # Initialize as an empty dictionary to store filtered results
+def on_model_select_callback():
+    # This callback is triggered when the selectbox value changes.
 
-            # Your existing state variables follow (consider removing individual dataframes later for cleaner state):
-            "loan_data": pd.read_parquet(data_path).copy(),
-            "bureau_data": pd.read_parquet(data_path).copy(),
-            "onus_data": pd.read_parquet(data_path).copy(),
-            "installments_data": pd.read_parquet(data_path).copy(),
+    # 1. Save the state of the *currently active* model BEFORE switching
+    if st.session_state.get("active_model"): # Ensure active_model exists to prevent error on initial load
+        print(f"Saving state for current active model: {st.session_state.active_model}")
+        save_model_state(st.session_state.active_model)
 
-            "show_popup1": False,
-            "transform_blocks": [],
-            "multi_transform_blocks": [],
-            "final_transformed_features": pd.DataFrame(),
-            "recommended_features": pd.DataFrame(),
-            "final_dataset": pd.DataFrame(),
-            "selected_features": [],
-            "feature_checkboxes": {},
-            "show_filter": False,
-            "filtered_features": [],
-            "filter_text": "",
-            "merge_blocks": [{
-                "left_table": "Bureau Data", # You might want to update these default names
-                "right_table": "On-Us Data",  # to refer to the keys in raw_datasets
-                "how": "inner",
-                "on": [],
-                "left_on": [],
-                "right_on": [],
-                "merged_name": "Merged_1",
-            }],
-            "merged_tables": {},
-            "combined_dataset": None,
+    # 2. Update 'active_model' in session state to the newly selected model
+    st.session_state.active_model = st.session_state.selected_model_dropdown_value
 
-            # --- Update filter_blocks initialization within the main state ---
-            "filter_blocks": [{
-                "dataset": "Bureau Data",  # You might want to update this default name
-                "feature": "",
-                "operation": feat_engg_backend.get_filter_operations()[0], # Default operation from feat_engg_backend
-                "value": None, # Initialize value as None
-                "output_name": ""
-            }],
-            # --- Add target column/feature initialization ---
-            "target_column": None,
-            "target_feature": None,
-            "final_dataset_json": None,
-        }
-        # --- Initialize other session state variables for the first page (outside the main state dict) ---
-        st.session_state[f"{first_model_name}_operations_complete"] = {
-            "merge": False,
-            "recommend": False,
-            "accept": False
-        }
-        st.session_state[f"{first_model_name}_show_filter_data"] = False
-        st.session_state[f"{first_model_name}_show_merge"] = False
-        st.session_state[f"{first_model_name}_single_transform_success"] = None
-        st.session_state[f"{first_model_name}_multi_transform_success"] = None
-        st.session_state[f"{first_model_name}_recommended_features"] = pd.DataFrame()
-        st.session_state[f"{first_model_name}_final_dataset"] = pd.DataFrame()
-        st.session_state[f"{first_model_name}_selected_features"] = []
-        st.session_state[f"{first_model_name}_feature_checkboxes"] = {}
-        # --- Update the separate Model 1_filter_blocks initialization ---
-        st.session_state[f"{first_model_name}_filter_blocks"] = [{
-            "dataset": "Bureau Data", # You might want to update this default name
-            "feature": "",
-            "operation": feat_engg_backend.get_filter_operations()[0], # Default operation from feat_engg_backend
-            "value": None, # Default value
-            "output_name": ""
-        }]
-        # --- Initialize other Model 1 specific state variables ---
-        st.session_state[f"{first_model_name}_target_column"] = None
-        st.session_state[f"{first_model_name}_target_feature"] = None
-        st.session_state[f"{first_model_name}_final_dataset_json"] = None
+    # 3. Load the state for the *newly active* model
+    # The load_model_state function will handle initializing if no saved state exists
+    print(f"Loading state for new active model: {st.session_state.active_model}")
+    load_model_state(st.session_state.active_model)
 
+    # 4. Rerun the Streamlit app to reflect the loaded/initialized state
+    st.rerun()
+
+# Streamlit Selectbox for model selection
+selected_model = st.sidebar.selectbox(
+    "Select Model",
+    MODEL_NAMES,
+    index=current_active_model_index,
+    key="selected_model_dropdown_value", # Unique key for the selectbox value
+    on_change=on_model_select_callback,
+)
+
+# Display the current active model at the top of the main content area
+st.markdown(f"### Current Model: {st.session_state.active_model}")
+
+# --- Initial/First-Load Setup for the Active Model ---
+# This block ensures that the state for the currently active model is loaded or initialized
+# when the app first starts or after a rerun from the callback.
+# It checks if the model's main state dictionary is present in st.session_state.
+if f"{st.session_state.active_model}_state" not in st.session_state:
+    print(f"Initial setup: State for '{st.session_state.active_model}' not found in session. Attempting to load or initialize.")
+    load_model_state(st.session_state.active_model) # This will initialize if no saved state exists
 
 # Get the active model and its state
 active_model = st.session_state.active_model
@@ -1364,13 +1309,13 @@ if model_state.get("show_merge", False): # Check the show_merge state within the
         except ValueError as ve:
             st.error(f"Merge configuration error: {ve}")
             # Reset merge complete state on error in model-specific state
-            model_state["operations_complete"]["merge"] = False
+            st.session_state[f"{active_model}_operations_complete"]["merge"] = False
             st.session_state[f"{active_model}_state"] = model_state # Update session state
 
         except Exception as e:
             st.error(f"Error during merge operations: {str(e)}")
             # Reset merge complete state on error in model-specific state
-            model_state["operations_complete"]["merge"] = False
+            st.session_state[f"{active_model}_operations_complete"]["merge"] = False
             st.session_state[f"{active_model}_state"] = model_state # Update session state
 
 
