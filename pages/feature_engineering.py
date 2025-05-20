@@ -10,6 +10,44 @@ import json
 import os
 import feat_engg_backend
 
+data_path = st.session_state.get("on_us_data_path")
+
+def load_data_from_data_engineering(model_name):
+    """
+    Loads the 'on_us_data' parquet file saved by data_engineering.py.
+    If the parquet file is not found, loads 'loan_data.csv' as a fallback.
+
+    Returns:
+        pd.DataFrame: The loaded DataFrame, or None if an error occurs.
+    """
+    data_path = st.session_state.get("on_us_data_path")  # Access from session_state
+
+    if data_path and os.path.exists(data_path):
+        print(st.session_state)
+        try:
+            df = pd.read_parquet(data_path)
+            # import pdb; pdb.set_trace()
+            st.success(f"Data successfully loaded from: {data_path}")
+            return df
+        except Exception as e:
+            st.error(f"An error occurred while loading parquet data: {e}. Loading loan_data.csv as fallback.")
+            try:
+                df = pd.read_csv("loan_data.csv")
+                st.success("Fallback: loan_data.csv loaded successfully.")
+                return df
+            except Exception as e2:
+                st.error(f"An error occurred while loading fallback CSV data: {e2}")
+                return None
+    else:
+        st.warning("No parquet data path found or file does not exist. Loading loan_data.csv as fallback.")
+        try:
+            df = pd.read_csv("loan_data.csv")
+            st.success("Fallback: loan_data.csv loaded successfully.")
+            return df
+        except Exception as e:
+            st.error(f"An error occurred while loading fallback CSV data: {e}")
+            return None
+
 def save_model_state(model_name):
     """Save the current model's state to the backend."""
     try:
@@ -20,16 +58,16 @@ def save_model_state(model_name):
         # Save all model-specific state variables
         model_state = {
             # Main state
-            "loan_data": st.session_state[f"{model_name}_state"]["loan_data"].to_json(orient="records"),
-            "bureau_data": st.session_state[f"{model_name}_state"]["bureau_data"].to_json(orient="records"),
-            "onus_data": st.session_state[f"{model_name}_state"]["onus_data"].to_json(orient="records"),
-            "installments_data": st.session_state[f"{model_name}_state"]["installments_data"].to_json(orient="records"),
+            "loan_data": st.session_state[f"{model_name}_state"]["loan_data"].to_json(orient="records") if "loan_data" in st.session_state[f"{model_name}_state"] else None,
+            "bureau_data": st.session_state[f"{model_name}_state"]["bureau_data"].to_json(orient="records") if "bureau_data" in st.session_state[f"{model_name}_state"] else None,
+            "onus_data": st.session_state[f"{model_name}_state"]["onus_data"].to_json(orient="records") if "onus_data" in st.session_state[f"{model_name}_state"] else None,
+            "installments_data": st.session_state[f"{model_name}_state"]["installments_data"].to_json(orient="records") if "installments_data" in st.session_state[f"{model_name}_state"] else None,
             "show_popup1": st.session_state[f"{model_name}_state"]["show_popup1"],
             "transform_blocks": st.session_state[f"{model_name}_state"]["transform_blocks"],
             "multi_transform_blocks": st.session_state[f"{model_name}_state"]["multi_transform_blocks"],
-            "final_transformed_features": st.session_state[f"{model_name}_state"]["final_transformed_features"].to_json(orient="records"),
-            "recommended_features": st.session_state[f"{model_name}_state"]["recommended_features"].to_json(orient="records"),
-            "final_dataset": st.session_state[f"{model_name}_state"]["final_dataset"].to_json(orient="records"),
+            "final_transformed_features": st.session_state[f"{model_name}_state"]["final_transformed_features"].to_json(orient="records") if "final_transformed_features" in st.session_state[f"{model_name}_state"] else None,
+            "recommended_features": st.session_state[f"{model_name}_state"]["recommended_features"].to_json(orient="records") if "recommended_features" in st.session_state[f"{model_name}_state"] else None,
+            "final_dataset": st.session_state[f"{model_name}_state"]["final_dataset"].to_json(orient="records") if "final_dataset" in st.session_state[f"{model_name}_state"] else None,
             "selected_features": st.session_state[f"{model_name}_state"]["selected_features"],
             "feature_checkboxes": st.session_state[f"{model_name}_state"]["feature_checkboxes"],
             "show_filter": st.session_state[f"{model_name}_state"]["show_filter"],
@@ -37,7 +75,7 @@ def save_model_state(model_name):
             "filter_text": st.session_state[f"{model_name}_state"]["filter_text"],
             "merge_blocks": st.session_state[f"{model_name}_state"]["merge_blocks"],
             "merged_tables": st.session_state[f"{model_name}_state"]["merged_tables"],
-            "combined_dataset": st.session_state[f"{model_name}_state"]["combined_dataset"].to_json(orient="records") if st.session_state[f"{model_name}_state"]["combined_dataset"] is not None else None,
+            "combined_dataset": st.session_state[f"{model_name}_state"]["combined_dataset"].to_json(orient="records") if "combined_dataset" in st.session_state[f"{model_name}_state"] and st.session_state[f"{model_name}_state"]["combined_dataset"] is not None else None,
             # Other state variables
             "operations_complete": st.session_state.get(f"{model_name}_operations_complete", {}),
             "show_filter_data": st.session_state.get(f"{model_name}_show_filter_data", False),
@@ -72,16 +110,16 @@ def load_model_state(model_name):
 
             # Initialize main state
             st.session_state[f"{model_name}_state"] = {
-                "loan_data": pd.read_json(model_state["loan_data"], orient="records"),
-                "bureau_data": pd.read_json(model_state["bureau_data"], orient="records"),
-                "onus_data": pd.read_json(model_state["onus_data"], orient="records"),
-                "installments_data": pd.read_json(model_state["installments_data"], orient="records"),
+                "loan_data": pd.read_json(model_state["loan_data"], orient="records") if model_state.get("loan_data") else None,
+                "bureau_data": pd.read_json(model_state["bureau_data"], orient="records") if model_state.get("bureau_data") else None,
+                "onus_data": pd.read_json(model_state["onus_data"], orient="records") if model_state.get("onus_data") else None,
+                "installments_data": pd.read_json(model_state["installments_data"], orient="records") if model_state.get("installments_data") else None,
                 "show_popup1": model_state["show_popup1"],
                 "transform_blocks": model_state["transform_blocks"],
                 "multi_transform_blocks": model_state["multi_transform_blocks"],
-                "final_transformed_features": pd.read_json(model_state["final_transformed_features"], orient="records"),
-                "recommended_features": pd.read_json(model_state["recommended_features"], orient="records"),
-                "final_dataset": pd.read_json(model_state["final_dataset"], orient="records"),
+                "final_transformed_features": pd.read_json(model_state["final_transformed_features"], orient="records") if model_state.get("final_transformed_features") else None,
+                "recommended_features": pd.read_json(model_state["recommended_features"], orient="records") if model_state.get("recommended_features") else None,
+                "final_dataset": pd.read_json(model_state["final_dataset"], orient="records") if model_state.get("final_dataset") else None,
                 "selected_features": model_state["selected_features"],
                 "feature_checkboxes": model_state["feature_checkboxes"],
                 "show_filter": model_state["show_filter"],
@@ -89,7 +127,7 @@ def load_model_state(model_name):
                 "filter_text": model_state["filter_text"],
                 "merge_blocks": model_state["merge_blocks"],
                 "merged_tables": model_state["merged_tables"],
-                "combined_dataset": pd.read_json(model_state["combined_dataset"], orient="records") if model_state["combined_dataset"] is not None else None
+                "combined_dataset": pd.read_json(model_state["combined_dataset"], orient="records") if model_state.get("combined_dataset") else None
             }
 
             # Load other state variables with default values if not present
@@ -124,35 +162,29 @@ def load_model_state(model_name):
 
 def initialize_new_model_state(model_name):
     """Initialize a fresh state for a new model."""
+    # Load the primary dataset (parquet or CSV)
+    primary_df = load_data_from_data_engineering(model_name)
+
+    # Initialize raw_datasets and filtered_datasets dictionaries
+    raw_datasets = {
+        "Loan Data": primary_df.copy() if primary_df is not None else pd.DataFrame(),  # Use primary_df if available
+        "Bureau Data": primary_df.copy() if primary_df is not None else pd.read_parquet(data_path).copy(),
+        "On-Us Data": primary_df.copy() if primary_df is not None else pd.read_parquet(data_path).copy(),
+        "Installments Data": primary_df.copy() if primary_df is not None else pd.read_parquet(data_path).copy(),
+    }
+    filtered_datasets = {}
+
     # Initialize main state
     st.session_state[f"{model_name}_state"] = {
-        # --- Add raw_datasets and filtered_datasets dictionaries here ---
-        "raw_datasets": {
-            "Loan Data": pd.read_csv("loan_data.csv"),
-            "Bureau Data": pd.read_csv("loan_data.csv").copy(), # Assuming loan_data.csv contains all initial data
-            "On-Us Data": pd.read_csv("loan_data.csv").copy(),
-            "Installments Data": pd.read_csv("loan_data.csv").copy(),
-        },
-        "filtered_datasets": {}, # Initialize as an empty dictionary to store filtered results
-
-        # Your existing state variables follow (consider removing individual dataframes later for cleaner state):
-        "loan_data": pd.read_csv("loan_data.csv"),
-        "bureau_data": pd.read_csv("loan_data.csv").copy(),
-        "onus_data": pd.read_csv("loan_data.csv").copy(),
-        "installments_data": pd.read_csv("loan_data.csv").copy(),
-
+        "raw_datasets": raw_datasets,
+        "filtered_datasets": filtered_datasets,
+        "loan_data": raw_datasets["Loan Data"],  # Use data from raw_datasets
+        "bureau_data": raw_datasets["Bureau Data"],
+        "onus_data": raw_datasets["On-Us Data"],
+        "installments_data": raw_datasets["Installments Data"],
         "show_popup1": False,
-        "transform_blocks": [{
-            "feature": "",
-            "operation": "Addition",
-            "value": 1.0,
-            "output_name": ""
-        }],
-        "multi_transform_blocks": [{
-            "features": [],
-            "operation": "",
-            "output_name": ""
-        }],
+        "transform_blocks": [],
+        "multi_transform_blocks": [],
         "final_transformed_features": pd.DataFrame(),
         "recommended_features": pd.DataFrame(),
         "final_dataset": pd.DataFrame(),
@@ -162,8 +194,8 @@ def initialize_new_model_state(model_name):
         "filtered_features": [],
         "filter_text": "",
         "merge_blocks": [{
-            "left_table": "Bureau Data", # You might want to update these default names
-            "right_table": "On-Us Data",  # to refer to the keys in raw_datasets
+            "left_table": "Bureau Data",
+            "right_table": "On-Us Data",
             "how": "inner",
             "on": [],
             "left_on": [],
@@ -172,9 +204,19 @@ def initialize_new_model_state(model_name):
         }],
         "merged_tables": {},
         "combined_dataset": None,
+        "filter_blocks": [{
+            "dataset": "Bureau Data",
+            "feature": "",
+            "operation": "Greater Than",
+            "value": None,
+            "output_name": ""
+        }],
+        "target_column": None,
+        "target_feature": None,
+        "final_dataset_json": None,
     }
 
-    # Initialize other state variables (these seem to be outside the main model_state dict)
+    # Initialize other state variables
     st.session_state[f"{model_name}_operations_complete"] = {
         "merge": False,
         "recommend": False,
@@ -189,10 +231,10 @@ def initialize_new_model_state(model_name):
     st.session_state[f"{model_name}_selected_features"] = []
     st.session_state[f"{model_name}_feature_checkboxes"] = {}
     st.session_state[f"{model_name}_filter_blocks"] = [{
-        "dataset": "Bureau Data", # You might want to update this default name
+        "dataset": "Bureau Data",
         "feature": "",
         "operation": "Greater Than",
-        "value": 0,
+        "value": None,
         "output_name": ""
     }]
     st.session_state[f"{model_name}_target_column"] = None
@@ -247,9 +289,9 @@ def switch_model(model_name):
 
 # Add caching decorators for expensive operations
 @st.cache_data(ttl=3600)  # Cache for 1 hour
-def load_data(file_path: str) -> pd.DataFrame:
+def load_data(data_path: str) -> pd.DataFrame:
     """Load and optimize a DataFrame from CSV."""
-    df = pd.read_csv(file_path)
+    df = pd.read_parquet(data_path)
     return optimize_dataframe(df)
 
 @st.cache_data(ttl=3600)
@@ -447,22 +489,24 @@ if f"{first_model_name}_state" not in st.session_state:
     load_model_state(first_model_name)
 
     # If no saved state exists, initialize with default values
+        
     if f"{first_model_name}_state" not in st.session_state:
+        # import pdb; pdb.set_trace()
         st.session_state[f"{first_model_name}_state"] = {
             # --- Add raw_datasets and filtered_datasets dictionaries here ---
             "raw_datasets": {
-                "Loan Data": pd.read_csv("loan_data.csv"),
-                "Bureau Data": pd.read_csv("loan_data.csv").copy(), # Assuming loan_data.csv contains all initial data
-                "On-Us Data": pd.read_csv("loan_data.csv").copy(),
-                "Installments Data": pd.read_csv("loan_data.csv").copy(),
+                "Loan Data": pd.read_parquet(data_path).copy() , # Assuming loan_data.csv contains all initial data
+                "Bureau Data": pd.read_parquet(data_path).copy(), # Assuming loan_data.csv contains all initial data
+                "On-Us Data": pd.read_parquet(data_path).copy(),
+                "Installments Data": pd.read_parquet(data_path).copy(),
             },
             "filtered_datasets": {}, # Initialize as an empty dictionary to store filtered results
 
             # Your existing state variables follow (consider removing individual dataframes later for cleaner state):
-            "loan_data": pd.read_csv("loan_data.csv"),
-            "bureau_data": pd.read_csv("loan_data.csv").copy(),
-            "onus_data": pd.read_csv("loan_data.csv").copy(),
-            "installments_data": pd.read_csv("loan_data.csv").copy(),
+            "loan_data": pd.read_parquet(data_path).copy(),
+            "bureau_data": pd.read_parquet(data_path).copy(),
+            "onus_data": pd.read_parquet(data_path).copy(),
+            "installments_data": pd.read_parquet(data_path).copy(),
 
             "show_popup1": False,
             "transform_blocks": [],
@@ -2072,66 +2116,64 @@ if not final_dataset.empty:
             # Get the combined dataset from session state for the active model
             combined_data_with_target = st.session_state.get(f"{active_model}_recommended_features", pd.DataFrame()).copy()
 
-            # Add target column to the combined dataset if not already present
+            # Ensure the target column exists in the combined dataset
             if target_feature not in combined_data_with_target.columns:
-                # This is a placeholder. You would typically load this from your raw data or another source.
-                # For demonstration, I'll add a dummy column.
-                # Replace this with your actual logic to get the target variable data.
-                if not combined_data_with_target.empty:
-                    combined_data_with_target[target_feature] = np.random.randint(0, 2, len(combined_data_with_target)) # Dummy binary target
-                    st.warning(f"Added a dummy '{target_feature}' column. Please ensure this data is correctly sourced.")
-                else:
-                    st.error("Cannot add target variable to an empty dataset.")
-                    combined_data_with_target = pd.DataFrame() # Ensure it's empty on error
+                st.error(f"Target variable '{target_feature}' is not present in the dataset. Please ensure it is included in the data.")
+                st.stop()
 
             # Update the final dataset in session state to include the target column
             # Ensure only selected features + target are in the final dataset
             selected_features_including_mandatory = st.session_state.get(f"{active_model}_selected_features", []) + present_mandatory_features
             features_for_final_dataset = [f for f in selected_features_including_mandatory if f in combined_data_with_target.columns]
             if target_feature in combined_data_with_target.columns:
-                 features_for_final_dataset.append(target_feature)
-                 # Remove duplicates while preserving order (optional, but good practice)
-                 features_for_final_dataset = list(dict.fromkeys(features_for_final_dataset))
-
+                features_for_final_dataset.append(target_feature)
+                # Remove duplicates while preserving order
+                features_for_final_dataset = list(dict.fromkeys(features_for_final_dataset))
 
             if features_for_final_dataset and not combined_data_with_target.empty:
                 st.session_state[f"{active_model}_final_dataset"] = combined_data_with_target[features_for_final_dataset].copy()
             else:
                 st.warning("No features selected to create the final dataset with target.")
-                st.session_state[f"{active_model}_final_dataset"] = pd.DataFrame() # Ensure it's empty
-
+                st.session_state[f"{active_model}_final_dataset"] = pd.DataFrame()  # Ensure it's empty
 
             # Store target variable in model-specific session state
             st.session_state[f"{active_model}_target_column"] = target_column
             st.session_state[f"{active_model}_target_feature"] = target_feature
 
-            # Convert final dataset (with target) to JSON and store for Model_develop page
+            # Save the final dataset (with target) as a Parquet file in a subfolder within `data_registry`
             final_dataset_with_target = st.session_state.get(f"{active_model}_final_dataset", pd.DataFrame())
             if not final_dataset_with_target.empty:
-                 final_json = final_dataset_with_target.to_json(orient="records")
-                 st.session_state[f"{active_model}_final_dataset_json"] = final_json
+                # Create a subfolder in `data_registry` for the active model
+                data_registry_subfolder = os.path.join("data_registry", active_model)
+                os.makedirs(data_registry_subfolder, exist_ok=True)
 
-                 # Save the JSON file to the backend with model name and target variable
-                 # Sanitize model name and target column for filename
-                 safe_model_name = re.sub(r'\W+', '_', active_model) # Replace non-alphanumeric with underscore
-                 safe_target_column = re.sub(r'\W+', '', target_column) # Remove non-alphanumeric
-                 file_name = f"{safe_model_name}_{safe_target_column}.json"
+                # Save the final dataset as a Parquet file
+                final_dataset_path = os.path.join(data_registry_subfolder, f"{target_column}_final_dataset.parquet")
+                final_dataset_with_target.to_parquet(final_dataset_path, index=False)
 
-                 # Ensure the model_states directory exists before saving
-                 if not os.path.exists("model_states"):
-                      os.makedirs("model_states")
+                # Save the file path in session state for use in the next page
+                st.session_state[f"{active_model}_final_dataset_path"] = final_dataset_path
 
-                 file_path_to_save = os.path.join("model_states", file_name)
-
-                 with open(file_path_to_save, 'w') as f:
-                     f.write(final_json)
-
-                 st.success(f"Target variable '{target_column}' added to the final dataset successfully! Dataset saved as '{file_path_to_save}'.")
+                st.success(f"Target variable '{target_column}' added to the final dataset successfully! Dataset saved as '{final_dataset_path}'.")
             else:
-                 st.warning("Final dataset is empty, cannot save JSON.")
-
+                st.warning("Final dataset is empty, cannot save Parquet file.")
 
         except Exception as e:
             st.error(f"Error adding target variable: {str(e)}")
 else:
     st.info("Please select and show your features first to enable target variable selection.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+####################################################################################################

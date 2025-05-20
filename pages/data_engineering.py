@@ -8,7 +8,7 @@ import shutil  # Import shutil for directory cleanup
 
 # Path to the default data directory
 DEFAULT_DATA_DIR = "default_data"
-
+DATA_REGISTRY_DIR = "data_registry"
 # Function to load default data if session state is empty
 def load_default_data():
     default_files = {
@@ -39,14 +39,36 @@ CATEGORICAL_FEATURES = [
 
 # Clear the data_registry directory at the start of a new session
 def clear_data_registry():
-    save_dir = "data_registry"
-    if os.path.exists(save_dir):
-        # Delete all files and subdirectories in the data_registry directory
-        shutil.rmtree(save_dir)
-    os.makedirs(save_dir, exist_ok=True)  # Recreate the directory
+    if os.path.exists(DATA_REGISTRY_DIR):
+        # Iterate through all files and subdirectories in the directory
+        for root, dirs, files in os.walk(DATA_REGISTRY_DIR, topdown=False):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                try:
+                    os.unlink(file_path)  # Remove the file
+                    st.info(f"Deleted file: {file_path}")
+                except Exception as e:
+                    st.error(f"Failed to delete file {file_path}: {e}")
+            for dir_name in dirs:
+                dir_path = os.path.join(root, dir_name)
+                try:
+                    os.rmdir(dir_path)  # Remove the directory (if empty)
+                    st.info(f"Deleted directory: {dir_path}")
+                except Exception as e:
+                    st.error(f"Failed to delete directory {dir_path}: {e}")
+        try:
+            os.rmdir(DATA_REGISTRY_DIR)  # Remove the main directory (if empty)
+            st.info(f"Deleted main directory: {DATA_REGISTRY_DIR}")
+        except Exception as e:
+            st.error(f"Failed to delete directory {DATA_REGISTRY_DIR}: {e}")
+    else:
+        os.makedirs(DATA_REGISTRY_DIR, exist_ok=True)  # Create the directory if it doesn't exist
+        st.info(f"Created directory: {DATA_REGISTRY_DIR}")  # Create the directory if it doesn't exist
 
-# Call the function to clear the data_registry
-clear_data_registry()
+# Clear the `data_registry` directory only once per session
+if "data_registry_cleared" not in st.session_state:
+    clear_data_registry()
+    st.session_state["data_registry_cleared"] = True  # Mark as cleared for this session
 
 # --- Functions ---
 def load_data(uploaded_file):
@@ -344,6 +366,15 @@ if on_us_file is not None:
     on_us_data = load_data(on_us_file)
     if on_us_data is not None:
         display_insights(on_us_data, "On-Us")
+    if on_us_file is not None and on_us_data is not None:
+        print("ENTERED DATA REGISTRY PARQUET")
+        save_dir = "data_registry"
+        os.makedirs(save_dir, exist_ok=True)
+        data_path = os.path.join(save_dir, "on_us_data.parquet")
+        on_us_data.to_parquet(data_path, index=False)
+
+        # Store the path in session state
+        st.session_state["on_us_data_path"] = data_path
 
 if bureau_file is not None:
     bureau_data = load_data(bureau_file)
@@ -351,43 +382,11 @@ if bureau_file is not None:
         display_bureau_insights(bureau_data, "Bureau")
 
 # At the end of your data engineering logic, before moving to the next page:
-if on_us_file is not None and on_us_data is not None:
-    # Create or update a registry in session state
-    if "data_registry" not in st.session_state:
-        st.session_state["data_registry"] = {}
-    st.session_state["data_registry"]["on_us_data"] = on_us_data
-    
 
-if on_us_file is not None and on_us_data is not None:
-    save_dir = "data_registry"
-    os.makedirs(save_dir, exist_ok=True)
-    data_path = os.path.join(save_dir, "on_us_data.parquet")
-    on_us_data.to_parquet(data_path, index=False)
 
-    # Store the path in session state
-    st.session_state["on_us_data_path"] = data_path
+
     
 # --- Main Logic ---
 
 
 # Check if 'on_us_data' is in session state or load default data
-if "on_us_data" not in st.session_state:
-    st.info("No session data found. Attempting to load default data...")
-    load_default_data()
-
-# Removed the display of "Loaded On-Us Data" and its overview
-# The data is still loaded into session state for use in subsequent steps
-
-# At the end of your data engineering logic, before moving to the next page:
-if "on_us_data" in st.session_state:
-    on_us_data = st.session_state["on_us_data"]
-    save_dir = "data_registry"
-    os.makedirs(save_dir, exist_ok=True)
-    data_path = os.path.join(save_dir, "on_us_data.parquet")
-    on_us_data.to_parquet(data_path, index=False)
-
-    # Store the path in session state
-    st.session_state["on_us_data_path"] = data_path
-   
-else:
-    st.error("No data available. Please upload a file or ensure default data is available.")
