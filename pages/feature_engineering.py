@@ -479,7 +479,7 @@ with col2:
             add_new_model()
 
 # Switch model if selection changed
-if selected_model != st.session_state.active_model:
+if selected_model != st.session_state.active_model: 
     switch_model(selected_model)
 
 # Initialize state for the first page if it doesn't exist
