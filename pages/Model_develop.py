@@ -1,13 +1,10 @@
 import numpy as np
 import os
 import json
-import shutil # Added for potential directory cleanup
+import shutil
 import streamlit as st
-# --- Streamlit Page Configuration ---
-
 from xgboost import XGBClassifier
 import plotly.express as px
-# import streamlit as st # already imported
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -21,14 +18,37 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import LabelEncoder
 import shap
-import joblib # To potentially save the model itself if needed later
+import joblib
 
-# Path to the default data directory
+# --- Constants and Configuration ---
 DEFAULT_DATA_DIR = "default_data"
+DATA_REGISTRY_BASE_DIR = "data_registry"
 
-# Function to load default data if session state is empty
+# Configuration for model input sources
+# 'session_state_key_suffix': Matches 'active_model' used on the previous page to set the path in session state.
+# 'data_registry_subfolder_actual': The actual subfolder name in data_registry (spaces replaced by underscores).
+# 'target_column_primary': The primary target associated with this data source.
+MODEL_INPUT_SOURCES = {
+    "Default Model Data (for Profitability)": {
+        "session_state_key_suffix": "Default Model",
+        "target_column_primary": "Profitability_GBP_x",  # Correct target variable name
+        "data_registry_subfolder_actual": "Default_Model"
+    },
+    "Charge-Off Model Data (for COF)": {
+        "session_state_key_suffix": "Charge-Off Model",
+        "target_column_primary": "COF_EVENT_LABEL_x",  # Correct target variable name
+        "data_registry_subfolder_actual": "Charge-Off_Model"
+    },
+    "Prepayment Model Data (for Prepayment)": {
+        "session_state_key_suffix": "Prepayment Model",
+        "target_column_primary": "PREPAYMENT_EVENT_LABEL_x",  # Correct target variable name
+        "data_registry_subfolder_actual": "Prepayment_Model"
+    }
+}
+
+# --- Function to load default data (Your existing function) ---
 def load_default_data():
-     # Debugging line
+    # st.write("Executing load_default_data function...") # Debug
     default_files = {
         "COF_EVENT_LABEL": os.path.join(DEFAULT_DATA_DIR, "default_COF_EVENT_LABEL_test_data.parquet"),
         "PREPAYMENT_EVENT_LABEL": os.path.join(DEFAULT_DATA_DIR, "default_PREPAYMENT_EVENT_LABEL_test_data.parquet"),
@@ -37,147 +57,149 @@ def load_default_data():
     }
     any_default_loaded = False
     for key, file_path in default_files.items():
-        # Load if key not in session OR if it is, but it's not a DataFrame (e.g. path)
-        # This ensures that if 'on_us_data' was a path, it doesn't stop loading the default DataFrame
         if key not in st.session_state or not isinstance(st.session_state.get(key), pd.DataFrame):
             if os.path.exists(file_path):
                 try:
                     st.session_state[key] = pd.read_parquet(file_path)
+                    # st.write(f"✔️ Default data for '{key}' loaded into session state from {file_path}.") # Debug
                     any_default_loaded = True
                 except Exception as e:
                     st.warning(f"⚠️ Default file for {key} at {file_path} could not be loaded: {e}")
-            elif key == "on_us_data": # Only critical for the main data file
-                 st.warning(f"⚠️ Default main data file for '{key}' not found at {file_path}. This might cause issues if no other data source is available.")
-        # else: # Debugging line
-            # st.write(f"Skipping default load for '{key}', already in session state as a DataFrame.")
-
-    
-        
-    # else: # This message can be noisy if data is already properly loaded.
-        # st.info("No new default datasets were loaded into session state (either already present or files not found).")
+            elif key == "on_us_data":
+                 st.warning(f"⚠️ Default main data file ('on_us_data.parquet') for '{key}' not found at {file_path}.")
+    # if any_default_loaded:
+    #     st.info("One or more default datasets were loaded into session state.")
 
 
-# Check if 'on_us_data' DataFrame is in session state. If not, try to load defaults.
-# This is the primary trigger for using default files if the app is started on this page.
-if "on_us_data" not in st.session_state or not isinstance(st.session_state.get("on_us_data"), pd.DataFrame):
-    # Also consider if on_us_data_path is set; if it is, we might not need to load default 'on_us_data' DF yet.
-    if not st.session_state.get("on_us_data_path"): # Only load defaults if data path from DE is also not set
-        
-        load_default_data()
-    # else: # Debugging line
-        # st.info("'on_us_data_path' is set, will attempt to load from there first. Default 'on_us_data' DF loading skipped for now.")
-
-
+# --- Page Title ---
 st.title("🔧 Model Development")
 
-# --- Data Loading from Session State or Defaults ---
+# Initialize session state keys if not already present
+if "confirmed_model_outputs" not in st.session_state:
+    st.session_state["confirmed_model_outputs"] = {}
+
+if "model_development_state" not in st.session_state:
+    st.session_state["model_development_state"] = {}
+
+# Initialize current_task_state if not already present in session state
+if "current_task_state" not in st.session_state:
+    st.session_state["current_task_state"] = {}
+current_task_state = st.session_state["current_task_state"]
+
+# --- Sidebar Dropdown for Selecting Model Input Data Source ---
+st.sidebar.title("Select Input Data Source")
+selected_input_source_display_name = st.sidebar.selectbox(
+    "Which model's prepared dataset do you want to work with?",
+    options=list(MODEL_INPUT_SOURCES.keys()),
+    key="model_input_source_selector"
+)
+
+# Get the selected model's configuration
+selected_source_config = MODEL_INPUT_SOURCES[selected_input_source_display_name]
+active_model_suffix_for_path = selected_source_config["session_state_key_suffix"]
+target_column = selected_source_config["target_column_primary"]  # Dynamically set the target variable
+data_registry_subfolder = selected_source_config["data_registry_subfolder_actual"]
+
+# --- Data Loading Logic ---
 df_full = None
 
-# Priority 1: Try to load from 'on_us_data_path' (set by a potential Data Engineering step)
-data_path = st.session_state.get("on_us_data_path")
+# Priority 1: Load from session_state path set by the previous page
+data_path_key_from_prev_page = f"{active_model_suffix_for_path}_final_dataset_path"
+data_path_from_session = st.session_state.get(data_path_key_from_prev_page)
 
-if data_path and os.path.exists(data_path):
+if data_path_from_session and os.path.exists(data_path_from_session):
     try:
-        df_full = pd.read_parquet(data_path)
+        df_full = pd.read_parquet(data_path_from_session)
+        data_source_message = f"Data successfully loaded from previous step for '{selected_input_source_display_name}'. Path: `{data_path_from_session}`"
+        st.success(data_source_message)
     except Exception as e:
-        st.error(f"Error loading data from registered file {data_path}: {e}. Will attempt to use default data if available.")
-        df_full = None  # Ensure fallback
+        st.error(f"Error loading data from session state path '{data_path_from_session}': {e}. Attempting fallbacks.")
+        df_full = None
 else:
-    if data_path:  # Path was provided but not found
-        st.warning(f"Registered data file not found at {data_path}. Will attempt to use default data if available.")
-
-# Priority 2: If df_full is not loaded yet, try to use 'on_us_data' DataFrame from session state
-if df_full is None:
-    if "on_us_data" in st.session_state and isinstance(st.session_state["on_us_data"], pd.DataFrame):
-        df_full = st.session_state["on_us_data"].copy()  # Use a copy to avoid modifying session state directly
+    if data_path_from_session:  # Path was in session state but file not found
+        st.warning(f"Path '{data_path_from_session}' (for '{selected_input_source_display_name}') found in session state (key: `{data_path_key_from_prev_page}`), but file does not exist. Attempting to construct path.")
     else:
-        st.error("No primary data source could be loaded. Please check your data setup.")
-        st.stop()
+        st.info(f"Path for '{selected_input_source_display_name}' not found in session state (expected key: `{data_path_key_from_prev_page}`). Attempting to construct path.")
 
-# --- Ensure Target Variables are Present in df_full ---
-target_variables_list = ["Profitability_GBP", "COF_EVENT_LABEL", "PREPAYMENT_EVENT_LABEL"]
-missing_targets = [target for target in target_variables_list if target not in df_full.columns]
-
-if missing_targets:
-    st.error(
-        f"The main dataset is missing the following essential target variable(s): "
-        f"{', '.join(missing_targets)}. Please ensure your primary data file contains all necessary target columns: "
-        f"{', '.join(target_variables_list)}."
+# Priority 2: Try constructing the path if session state path failed
+if df_full is None:
+    constructed_path = os.path.join(
+        DATA_REGISTRY_BASE_DIR,
+        data_registry_subfolder,
+        f"{target_column}_final_dataset.parquet"
     )
-    st.stop()
+    st.write(f"Attempting constructed path: `{constructed_path}`")  # Debugging aid
+    if os.path.exists(constructed_path):
+        try:
+            df_full = pd.read_parquet(constructed_path)
+            data_source_message = f"Data successfully loaded from constructed path for '{selected_input_source_display_name}'. Path: `{constructed_path}`"
+            st.info(data_source_message)
+        except Exception as e:
+            st.error(f"Error loading data from constructed path '{constructed_path}': {e}. Attempting general default data load.")
+            df_full = None
+    else:
+        st.warning(f"Constructed data path '{constructed_path}' not found. Attempting general default data load.")
 
-# Drop 'timestamp' column if it exists (often a duplicate or less precise version of 'Timestamp')
+# Priority 3: Fallback to general default data loading mechanism ('on_us_data.parquet')
+if df_full is None:
+    st.warning(f"Could not load specific data for '{selected_input_source_display_name}' from data_registry. Falling back to the general default dataset ('on_us_data.parquet').")
+
+    # Ensure default data (like 'on_us_data' DataFrame) is loaded into session_state if not already
+    if "on_us_data" not in st.session_state or not isinstance(st.session_state.get("on_us_data"), pd.DataFrame):
+        st.info("General default 'on_us_data' DataFrame not found in session state. Calling `load_default_data()` to load all default files...")
+        load_default_data()  # Your existing function
+
+    if "on_us_data" in st.session_state and isinstance(st.session_state["on_us_data"], pd.DataFrame):
+        df_full = st.session_state["on_us_data"].copy()  # Use a copy
+        data_source_message = "Data loaded from general default: `default_data/default_on_us_data.parquet` (Fallback)."
+        st.info(data_source_message)
+    else:
+        st.error("CRITICAL: Failed to load any data. Specific model data from data_registry, constructed path, and general default 'on_us_data.parquet' are all unavailable or failed to load. Please check your data files and paths.")
+        st.stop()  # Stop execution if no data can be loaded
+
+# --- From here, the rest of your script uses `df_full` ---
+
+# Drop 'timestamp' column if it exists, keep 'Timestamp'
 if 'timestamp' in df_full.columns:
     df_full = df_full.drop(columns=['timestamp'])
 
+# Define target variables and check their existence in the loaded df_full
+target_variables_list = ["Profitability_GBP_x", "COF_EVENT_LABEL_x", "PREPAYMENT_EVENT_LABEL_x"]
+# Crucial check: Does the loaded df_full actually contain the target for the selected task?
+if target_column not in df_full.columns:
+    st.error(f"FATAL ERROR: The target variable '{target_column}' (for selected task '{selected_input_source_display_name}') is NOT PRESENT in the currently loaded dataset sourced from '{data_source_message}'. Please ensure the data source is correct or select a different model task.")
+    st.stop()
+
 # Display a snapshot of the finalized df_full
-
-if st.checkbox("Dataset Overview", key="show_df_full_head"):  # Renamed the checkbox
+st.subheader("📊 Data Overview")
+st.write(f"DataFrame shape: {df_full.shape}")
+if st.checkbox("Show head of the loaded dataset?", key="show_df_full_head_model_dev"):
     st.dataframe(df_full.head())
-
-# List of modeling tasks
-modeling_tasks = [
-    {"name": "Model 1 (Profitability_GBP)", "target": "Profitability_GBP"},
-    {"name": "Model 2 (COF_EVENT_LABEL)", "target": "COF_EVENT_LABEL"},
-    {"name": "Model 3 (PREPAYMENT_EVENT_LABEL)", "target": "PREPAYMENT_EVENT_LABEL"},
-]
-
-# --- Session State Initialization for Model Development Page ---
-if "model_development_state" not in st.session_state:
-    st.session_state.model_development_state = {}
-if "confirmed_model_outputs" not in st.session_state:
-    st.session_state.confirmed_model_outputs = {}
-
-# --- Setup Output Directory ---
-output_data_dir = "data_registry/selected_iteration_data"
-os.makedirs(output_data_dir, exist_ok=True)
-
-# --- Step 1: Dropdown for Model Selection ---
-model_task_options = [task["name"] for task in modeling_tasks]
-selected_model_task_name = st.selectbox(
-    "Select Model Task to Work On",
-    model_task_options,
-    key="model_task_selector" # Added a key for robustness
-)
-current_task_config = next(task for task in modeling_tasks if task["name"] == selected_model_task_name)
-target_column = current_task_config["target"]
-task_key = selected_model_task_name
-
-current_task_state = st.session_state.model_development_state.get(task_key, {})
-
-# Work on a copy of the full dataframe for sampling and processing within this task
-df = df_full.copy()
 
 # --- Step 2: Sub-sampling ---
 st.subheader("🔍 Sub-sampling")
-# Retrieve sample_frac from task_state or default to 1.0
-default_sample_frac = current_task_state.get("sample_frac", 1.0)
 sample_frac = st.slider(
     "Select sub-sample fraction for the current task", 0.01, 1.0,
-    default_sample_frac, key=f"sample_frac_{task_key}"
+    value=1.0, key=f"sample_frac_{active_model_suffix_for_path}"
 )
 if sample_frac < 1.0:
-    df = df.sample(frac=sample_frac, random_state=42).reset_index(drop=True)
-    st.info(f"Using a {sample_frac:.2f} fraction of the data ({len(df)} rows) for '{selected_model_task_name}'.")
-
-     
-current_task_state["sample_frac"] = sample_frac # Save current setting
-
+    df_full = df_full.sample(frac=sample_frac, random_state=42).reset_index(drop=True)
+    st.info(f"Using a {sample_frac:.2f} fraction of the data ({len(df_full)} rows) for '{selected_input_source_display_name}'.")
 
 # --- Step 3: Target Variable Selection & Distribution ---
 st.subheader(f"🎯 Target Variable Analysis for: {target_column}")
 
-if target_column not in df.columns: # Should not happen if initial checks passed
+if target_column not in df_full.columns: # Should not happen if initial checks passed
     st.error(f"Target column '{target_column}' is unexpectedly missing from the sampled data. Please review data loading.")
     st.stop()
 
-if df[target_column].nunique() < 10 and df[target_column].dtype in ['int64', 'float64', 'object', 'category', 'bool']:
+if df_full[target_column].nunique() < 10 and df_full[target_column].dtype in ['int64', 'float64', 'object', 'category', 'bool']:
     target_type = "Classification"
-    if df[target_column].dtype == 'object' or df[target_column].dtype == 'category' or df[target_column].dtype == 'bool':
+    if df_full[target_column].dtype == 'object' or df_full[target_column].dtype == 'category' or df_full[target_column].dtype == 'bool':
          try:
-             original_values = df[target_column].unique()
+             original_values = df_full[target_column].unique()
              le = LabelEncoder() # Define LabelEncoder here
-             df[target_column] = le.fit_transform(df[target_column])
+             df_full[target_column] = le.fit_transform(df_full[target_column])
              st.info(f"Encoded categorical/boolean target '{target_column}' using LabelEncoder.")
              # Create a viewable mapping
              try: # Robust mapping display
@@ -191,19 +213,19 @@ if df[target_column].nunique() < 10 and df[target_column].dtype in ['int64', 'fl
          except Exception as e:
               st.error(f"Could not encode target variable '{target_column}': {e}")
               st.stop()
-    elif not pd.api.types.is_numeric_dtype(df[target_column]): # e.g. float that's actually categorical
+    elif not pd.api.types.is_numeric_dtype(df_full[target_column]): # e.g. float that's actually categorical
         st.warning(f"Target '{target_column}' is non-numeric but inferred as Classification. Attempting LabelEncoding.")
         try:
             le = LabelEncoder()
-            df[target_column] = le.fit_transform(df[target_column])
+            df_full[target_column] = le.fit_transform(df_full[target_column])
         except Exception as e:
             st.error(f"Could not encode non-numeric target '{target_column}': {e}")
             st.stop()
 
 else:
     target_type = "Regression"
-    if not pd.api.types.is_numeric_dtype(df[target_column]):
-        st.error(f"Target '{target_column}' inferred as Regression but is not numeric ({df[target_column].dtype}). Please check data.")
+    if not pd.api.types.is_numeric_dtype(df_full[target_column]):
+        st.error(f"Target '{target_column}' inferred as Regression but is not numeric ({df_full[target_column].dtype}). Please check data.")
         st.stop()
 
 
@@ -212,18 +234,18 @@ st.markdown(f"**Problem Type:** {target_type}")
 
 if target_type == "Regression":
     fig, ax = plt.subplots(figsize=(8, 4))
-    sns.histplot(df[target_column].dropna(), kde=True, ax=ax, color="blue") # Added dropna()
+    sns.histplot(df_full[target_column].dropna(), kde=True, ax=ax, color="blue") # Added dropna()
     ax.set_title(f"Distribution of {target_column}")
     ax.set_xlabel(target_column)
     st.pyplot(fig)
     plt.close(fig)
 else: # Classification
     try:
-        unique_targets_after_encoding = df[target_column].unique()
+        unique_targets_after_encoding = df_full[target_column].unique()
         if len(unique_targets_after_encoding) == 2:
              positive_class_label = 1 # Standard assumption after LabelEncoding for binary
-             if positive_class_label in df[target_column].value_counts(normalize=True):
-                 event_rate_value = df[target_column].value_counts(normalize=True).get(positive_class_label, 0) * 100
+             if positive_class_label in df_full[target_column].value_counts(normalize=True):
+                 event_rate_value = df_full[target_column].value_counts(normalize=True).get(positive_class_label, 0) * 100
                  st.metric(
                      label="Event Rate (%)",
                      value=f"{event_rate_value:.2f}%",
@@ -235,7 +257,7 @@ else: # Classification
         else:
              st.info(f"Target '{target_column}' has {len(unique_targets_after_encoding)} unique encoded values. Displaying frequency.")
 
-        frequency_df = df[target_column].value_counts().reset_index()
+        frequency_df = df_full[target_column].value_counts().reset_index()
         frequency_df.columns = [target_column, "count"] # Ensure correct column names
         # Make sure target_column in frequency_df is suitable for px.bar (e.g., string or numeric)
         if not pd.api.types.is_numeric_dtype(frequency_df[target_column]):
@@ -259,21 +281,38 @@ else: # Classification
 # --- Step 4: Feature Selection & Train/Test Split ---
 st.subheader("📊 Select Features & Split Data")
 
-excluded_cols_from_features = target_variables_list + ["Timestamp", "TERM_OF_LOAN"]
-selectable_features = [col for col in df.columns if col not in excluded_cols_from_features and col != target_column]
+# Define excluded columns
+timestamp_cols = ["Timestamp_x", "Timestamp_y", "TERM_OF_LOAN_y"]
+# Define target_variables_list with the expected target variables
+target_variables_list = ["Profitability_GBP_x", "COF_EVENT_LABEL_x", "PREPAYMENT_EVENT_LABEL_x"]
 
+excluded_cols_from_features = target_variables_list + timestamp_cols
+
+# Select features by excluding the specified columns
+selectable_features = [col for col in df_full.columns if col not in excluded_cols_from_features and col != target_column]
+
+# Default selected features should also be filtered to ensure they exist in the DataFrame
 selected_features_default = current_task_state.get("feature_columns", selectable_features)
 selected_features_default = [f for f in selected_features_default if f in selectable_features]
 
-
+# Display the multiselect widget with only existing columns
 feature_columns = st.multiselect(
     "Select features to include in the model",
     options=selectable_features,
     default=selected_features_default,
-    key=f"features_{task_key}"
+    key=f"features_{selected_input_source_display_name.replace(' ', '_')}"
 )
 
 current_task_state["feature_columns"] = feature_columns
+
+# Ensure that at least one feature is selected
+if not feature_columns:
+    st.error("No valid features selected. Please ensure the selected features exist in the dataset.")
+    st.stop()
+
+# Define X and y for model training
+X = df_full[feature_columns]  # Include only selected features
+y = df_full[target_column]
 
 if not feature_columns:
     st.warning("Please select at least one feature to proceed with model training.")
@@ -281,12 +320,11 @@ else:
     default_test_size = current_task_state.get("test_size", 0.2)
     test_size = st.slider(
         "Select test size for splitting the data", 0.01, 0.5,
-        default_test_size, key=f"test_size_{task_key}"
+        default_test_size, key=f"test_size_{active_model_suffix_for_path}"
     )
     current_task_state["test_size"] = test_size
 
-    X = df[feature_columns]
-    y = df[target_column]
+    
 
     stratify_y = None
     if target_type == "Classification":
@@ -296,12 +334,12 @@ else:
         elif len(unique_classes) > 1:
             st.warning(f"Stratification skipped for target '{target_column}': Some classes have fewer than 2 samples. Minimum counts per class: {np.min(counts)}.")
 
-    original_indices = df.index
+    original_indices = df_full.index
     X_train, X_test, y_train, y_test, train_indices, test_indices = train_test_split(
         X, y, original_indices, test_size=test_size, random_state=42, stratify=stratify_y
     )
 
-    st.info(f"Train set size: {len(X_train)} rows | Test set size: {len(X_test)} rows for '{selected_model_task_name}'.")
+    st.info(f"Train set size: {len(X_train)} rows | Test set size: {len(X_test)} rows for '{selected_input_source_display_name}'.")
 
 
     # --- Step 5: Model Selection ---
@@ -324,7 +362,7 @@ else:
         "Select Model",
         list(models.keys()),
         index=list(models.keys()).index(default_model_name),
-        key=f"model_{task_key}"
+        key=f"model_{selected_input_source_display_name.replace(' ', '_')}"
     )
     current_task_state["selected_model"] = selected_model
     model_class = models[selected_model]
@@ -345,6 +383,7 @@ else:
         sampled_params = [{}]
     else:
         default_n_iterations = current_task_state.get("n_iterations", 5 if target_type == "Classification" else 1) # Fewer for simple Linear Regression
+        task_key = f"{selected_input_source_display_name.replace(' ', '_')}_task"  # Define task_key based on the selected input source
         n_iterations_to_run = st.number_input("Number of hyperparameter iterations to try", min_value=1, max_value=50, value=default_n_iterations, key=f"n_iter_{task_key}")
         current_task_state["n_iterations"] = n_iterations_to_run
         try:
@@ -379,6 +418,7 @@ else:
     current_task_state["selected_metric"] = selected_metric_eval
 
 
+    selected_model_task_name = selected_input_source_display_name  # Define the task name based on the selected input source
     if st.button(f"Run Model Iterations for {selected_model_task_name}", key=f"run_{task_key}"):
         iteration_results_list = [] # Use a different name to avoid confusion with session state
         progress_bar = st.progress(0)
@@ -426,7 +466,7 @@ else:
                     "params": params_iter,
                     "metrics": metrics_dict,
                     "model_object": model_instance,
-                    "test_indices": test_indices.tolist() # Original indices from 'df' (the sampled df for task)
+                    "test_indices": test_indices.tolist() # Original indices from 'df_full' (the sampled df_full for task)
                 })
 
             except Exception as e_iter:
@@ -559,7 +599,7 @@ if feature_columns and iteration_results_for_task_display: # Check if results ex
     selectable_iterations_data = []
     for idx_iter_loop, res_iter_loop in enumerate(iteration_results_for_task_display):
         if "Error" not in res_iter_loop["metrics"] and res_iter_loop["model_object"] is not None:
-            metric_val_iter_loop = res_iter_loop["metrics"].get(selected_metric_eval, "N/A")
+            metric_val_iter_loop = res_iter_loop['metrics'].get(selected_metric_eval, "N/A")
             if isinstance(metric_val_iter_loop, (int, float)):
                 metric_val_iter_loop = f"{metric_val_iter_loop:.2f}"
             
@@ -589,40 +629,42 @@ if feature_columns and iteration_results_for_task_display: # Check if results ex
         selected_iteration_details_confirm = iteration_results_for_task_display[selected_original_idx_confirm]
 
         if st.button(f"Confirm Selection for {selected_model_task_name} (Iteration {selected_iteration_details_confirm['iteration_num']})", key=f"confirm_{task_key}"):
-            # Test indices are from 'df' (which is df_full possibly sampled for THIS task)
+        # Test indices are from 'df_full' (which is df_full possibly sampled for THIS task)
             test_indices_for_iteration_save = selected_iteration_details_confirm.get("test_indices")
 
             if test_indices_for_iteration_save is None or not isinstance(test_indices_for_iteration_save, list) or len(test_indices_for_iteration_save) == 0:
                 st.error("Could not retrieve valid test set indices for this iteration. Cannot save test data.")
             else:
                 try:
-                    columns_to_save_final = list(feature_columns) + [target_column]
-                    if "Timestamp" in df.columns and "Timestamp" not in columns_to_save_final:
-                        columns_to_save_final.append("Timestamp")
-                    if "TERM_OF_LOAN" in df.columns and "TERM_OF_LOAN" not in columns_to_save_final:
-                        columns_to_save_final.append("TERM_OF_LOAN")
-                    
-                    columns_to_save_final = [col for col in columns_to_save_final if col in df.columns] # Final check
+                    # Start with selected features and target column
+                    columns_to_save_final = list(feature_columns) + [target_column] + ["Timestamp_x", "Timestamp_y", "TERM_OF_LOAN_y"]
 
-                    df_test_slice_save = df.loc[test_indices_for_iteration_save, columns_to_save_final].copy()
+                    # Ensure all columns to save exist in the DataFrame
+                    columns_to_save_final = [col for col in columns_to_save_final if col in df_full.columns]
 
+                    # Slice the test data
+                    df_test_slice_save = df_full.loc[test_indices_for_iteration_save, columns_to_save_final].copy()
+
+                    # Save the test data to a Parquet file
                     output_file_name_save = f"{target_column}_test_data_task_{task_key.replace(' ', '_').replace('(', '').replace(')', '')}_iter_{selected_iteration_details_confirm['iteration_num']}.parquet"
+                    output_data_dir = os.path.join("data_registry", "selected_iterations")  # Subfolder for selected iterations
+                    os.makedirs(output_data_dir, exist_ok=True)  # Ensure the directory exists
                     output_file_path_save = os.path.join(output_data_dir, output_file_name_save)
 
                     df_test_slice_save.to_parquet(output_file_path_save, index=False)
-                    
 
+                    # Save model configuration and metadata to session state
                     st.session_state.confirmed_model_outputs[task_key] = {
                         "task_name": selected_model_task_name,
                         "target_variable": target_column,
                         "selected_features": feature_columns,
-                        "model_name": selected_model, # This is from the current UI selection
+                        "model_name": selected_model,  # This is from the current UI selection
                         "hyperparameters": selected_iteration_details_confirm["params"],
                         "test_data_path": output_file_path_save,
                         "key_metrics": {k: v for k, v in selected_iteration_details_confirm["metrics"].items() if not (isinstance(v, (np.ndarray, list)) or k == "Error" or k == "Parameters")},
                         "iteration_number": selected_iteration_details_confirm['iteration_num'],
                     }
-                    current_task_state["selected_iteration_global_index"] = selected_original_idx_confirm # Store the original index
+                    current_task_state["selected_iteration_global_index"] = selected_original_idx_confirm  # Store the original index
                     st.session_state.model_development_state[task_key] = current_task_state
 
                     st.success(f"✅ Configuration for {selected_model_task_name} (Iteration {selected_iteration_details_confirm['iteration_num']}) confirmed and details saved!")
@@ -634,6 +676,7 @@ if feature_columns and iteration_results_for_task_display: # Check if results ex
         st.info("No successful model iterations are available to select for confirmation for this task.")
 
 # Save current UI settings for the task (e.g. selected features, model, sliders) to the task's state
+
 st.session_state.model_development_state[task_key] = current_task_state
 
 
@@ -642,6 +685,8 @@ st.markdown("---")
 st.subheader("Finalize and Proceed")
 
 confirmed_count_final = len(st.session_state.confirmed_model_outputs)
+# Define modeling_tasks as a list of tasks if not already defined
+modeling_tasks = list(MODEL_INPUT_SOURCES.keys())  # Example: Use keys from MODEL_INPUT_SOURCES
 all_tasks_count_final = len(modeling_tasks)
 
 if confirmed_count_final > 0:
@@ -662,3 +707,4 @@ if confirmed_count_final == all_tasks_count_final:
         # Example: st.switch_page("pages/your_next_page.py") # If using Streamlit's new page structure
 else:
     st.info(f"Please select and confirm a model iteration for all {all_tasks_count_final} model tasks. Currently {confirmed_count_final}/{all_tasks_count_final} confirmed.")
+

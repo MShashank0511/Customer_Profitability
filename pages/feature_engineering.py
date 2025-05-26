@@ -10,43 +10,46 @@ import json
 import os
 import feat_engg_backend
 
-data_path = st.session_state.get("on_us_data_path")
+on_us_data_path = st.session_state.get("on_us_data_path")
+bureau_data_path = st.session_state.get("bureau_data_path")
+installments_data_path = st.session_state.get("Installments_data_path")
+print("ENTERED FEATURE ENGINEERING PAGE")
+print(on_us_data_path,bureau_data_path,installments_data_path)
 
-def load_data_from_data_engineering(model_name):
-    """
-    Loads the 'on_us_data' parquet file saved by data_engineering.py.
-    If the parquet file is not found, loads 'loan_data.csv' as a fallback.
+# def load_data_from_data_engineering(model_name):
+#     """
+#     Loads the 'on_us_data' parquet file saved by data_engineering.py.
+#     If the parquet file is not found, loads 'loan_data.csv' as a fallback.
 
-    Returns:
-        pd.DataFrame: The loaded DataFrame, or None if an error occurs.
-    """
-    data_path = st.session_state.get("on_us_data_path")  # Access from session_state
+#     Returns:
+#         pd.DataFrame: The loaded DataFrame, or None if an error occurs.
+#     """
+#     data_path = st.session_state.get("on_us_data_path")  # Access from session_state
 
-    if data_path and os.path.exists(data_path):
-        print(st.session_state)
-        try:
-            df = pd.read_parquet(data_path)
-            # import pdb; pdb.set_trace()
-            st.success(f"Data successfully loaded from: {data_path}")
-            return df
-        except Exception as e:
-            st.error(f"An error occurred while loading parquet data: {e}. Loading loan_data.csv as fallback.")
-            try:
-                df = pd.read_csv("loan_data.csv")
-                st.success("Fallback: loan_data.csv loaded successfully.")
-                return df
-            except Exception as e2:
-                st.error(f"An error occurred while loading fallback CSV data: {e2}")
-                return None
-    else:
-        st.warning("No parquet data path found or file does not exist. Loading loan_data.csv as fallback.")
-        try:
-            df = pd.read_csv("loan_data.csv")
-            st.success("Fallback: loan_data.csv loaded successfully.")
-            return df
-        except Exception as e:
-            st.error(f"An error occurred while loading fallback CSV data: {e}")
-            return None
+#     if data_path and os.path.exists(data_path):
+#         print(st.session_state)
+#         try:
+#             df = pd.read_parquet(data_path)
+#             st.success(f"Data successfully loaded from: {data_path}")
+#             return df
+#         except Exception as e:
+#             st.error(f"An error occurred while loading parquet data: {e}. Loading loan_data.csv as fallback.")
+#             try:
+#                 df = pd.read_csv("loan_data.csv")
+#                 st.success("Fallback: loan_data.csv loaded successfully.")
+#                 return df
+#             except Exception as e2:
+#                 st.error(f"An error occurred while loading fallback CSV data: {e2}")
+#                 return None
+#     else:
+#         st.warning("No parquet data path found or file does not exist. Loading loan_data.csv as fallback.")
+#         try:
+#             df = pd.read_csv("loan_data.csv")
+#             st.success("Fallback: loan_data.csv loaded successfully.")
+#             return df
+#         except Exception as e:
+#             st.error(f"An error occurred while loading fallback CSV data: {e}")
+#             return None
 
 # --- Model Definitions ---
 MODEL_NAMES = ["Default Model", "Charge-Off Model", "Prepayment Model", "Churn Model", "Extrapolation Model"]
@@ -175,17 +178,19 @@ def load_model_state(model_name):
 def initialize_new_model_state(model_name):
     """Initialize a fresh state for a new model."""
     # Load the primary dataset (parquet or CSV)
-    primary_df = load_data_from_data_engineering(model_name) # Ensure load_data_from_data_engineering is defined
+     # Ensure load_data_from_data_engineering is defined
 
     # Initialize raw_datasets and filtered_datasets dictionaries
     raw_datasets = {
-        "Loan Data": primary_df.copy() if primary_df is not None else pd.DataFrame(),
-        "Bureau Data": primary_df.copy() if primary_df is not None else pd.read_parquet(data_path).copy(), # Ensure data_path is accessible
-        "On-Us Data": primary_df.copy() if primary_df is not None else pd.read_parquet(data_path).copy(),
-        "Installments Data": primary_df.copy() if primary_df is not None else pd.read_parquet(data_path).copy(),
+        "Loan Data": pd.read_csv("loan_data.csv").copy(),
+        "Bureau Data": pd.read_parquet(bureau_data_path).copy(),
+         # Ensure data_path is accessible
+        
+        "On-Us Data": pd.read_parquet(on_us_data_path).copy(),
+        "Installments Data": pd.read_parquet(installments_data_path).copy(),
     }
     filtered_datasets = {}
-
+    
     # Initialize main state for the model
     st.session_state[f"{model_name}_state"] = {
         "raw_datasets": raw_datasets,
@@ -303,38 +308,10 @@ def switch_model(model_name):
         st.error(f"Error switching models: {str(e)}")
 
 # Add caching decorators for expensive operations
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def load_data(data_path: str) -> pd.DataFrame:
-    """Load and optimize a DataFrame from CSV."""
-    df = pd.read_parquet(data_path)
-    return optimize_dataframe(df)
 
-@st.cache_data(ttl=3600)
-def optimize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Optimize DataFrame memory usage and performance."""
-    # Create a copy to avoid modifying the original
-    df = df.copy()
 
-    # Optimize numeric columns
-    for col in df.select_dtypes(include=['int64', 'float64']).columns:
-        if df[col].dtype == 'int64':
-            # Downcast integers
-            df[col] = pd.to_numeric(df[col], downcast='integer')
-        elif df[col].dtype == 'float64':
-            # Downcast floats
-            df[col] = pd.to_numeric(df[col], downcast='float')
 
-    # Optimize categorical columns
-    for col in df.select_dtypes(include=['object']).columns:
-        if df[col].nunique() / len(df) < 0.5:  # If less than 50% unique values
-            df[col] = df[col].astype('category')
 
-    return df
-
-@st.cache_data(ttl=3600)
-def perform_merge(left_df: pd.DataFrame, right_df: pd.DataFrame, merge_kwargs: dict) -> pd.DataFrame:
-    """Perform optimized merge operation."""
-    return pd.merge(left_df, right_df, **merge_kwargs)
 
 
 # Add this callback function near the top with other callback functions
@@ -570,7 +547,7 @@ dataset_mapping = {
     onus_name: model_state["onus_data"],
     installments_name: model_state["installments_data"],
 }
-
+print(bureau_name, onus_name, installments_name)
 with col1:
     st.markdown(
         f"<div style='border: 1px solid #e0e0e0; border-radius: 4px; padding: 10px; text-align: center;'>"
@@ -616,7 +593,8 @@ def filter_data_section():
     # --- Add these lines here ---
     active_model = st.session_state.active_model
     model_state = st.session_state.get(f"{active_model}_state", {})
-    raw_datasets = model_state.get("raw_datasets", {}) # Get the raw datasets dictionary
+    raw_datasets = model_state.get("raw_datasets", {})
+     # Get the raw datasets dictionary
 
     # --- Initialize filter blocks in session state ---
     if f"{active_model}_filter_blocks" not in st.session_state:
@@ -1282,7 +1260,9 @@ if model_state.get("show_merge", False): # Check the show_merge state within the
             if merge_blocks:
                 final_merged_name = merge_blocks[-1].get("merged_name")
                 if final_merged_name and final_merged_name in all_merged_results:
-                    model_state["combined_dataset"] = all_merged_results[final_merged_name].copy() # Store the final result
+                    model_state["combined_dataset"] = all_merged_results[final_merged_name].copy()
+                    # merged_dataset = all_merged_results[final_merged_name].copy()
+                    model_state["merged dataset"] = all_merged_results[final_merged_name].copy() # Store the final result
                     st.success(f"✅ All merge operations completed successfully! Final dataset: '{final_merged_name}'.")
                 elif not final_merged_name and all_merged_results:
                      # If the last block had no output name, use the name from the last key in results
@@ -1953,8 +1933,7 @@ if available_optional_features:
     features_df = pd.DataFrame({
         "Feature": available_optional_features,
         "Description": [feature_descriptions.get(feat, "No description available") for feat in available_optional_features],
-        # Use the model-specific checkbox state
-        "Select": [bool(st.session_state[f"{active_model}_feature_checkboxes"].get(feat, False)) for feat in available_optional_features]
+        "Select": [feat in st.session_state.get(f"{active_model}_selected_features", []) for feat in available_optional_features]
     })
 
     # Display the features in a dataframe with custom styling
@@ -1980,11 +1959,10 @@ if available_optional_features:
         },
         hide_index=True,
         use_container_width=True,
-        # Use a model-specific key for the data editor
         key=f"{active_model}_feature_editor"
     )
 
-    # Update selected features based on checkboxes for the active model
+    # Update selected features based on the user's interaction with the data editor
     st.session_state[f"{active_model}_selected_features"] = [
         feature for feature, is_selected in zip(available_optional_features, edited_df["Select"])
         if is_selected
@@ -2035,19 +2013,35 @@ if st.button("📊 Show Selected Attributes"):
         st.info("No features selected (mandatory or optional).")
         st.session_state[f"{active_model}_final_dataset"] = pd.DataFrame() # Set to empty if no features
 
+# Collapsible section to display the merged dataset
+st.subheader("Merged dataset preview")
+# Collapsible section to display the merged dataset
 
-# Target Variable Selection
+
+# Retrieve the merged dataset from model_state
+merged_dataset = model_state.get("merged dataset", pd.DataFrame())
+
+if merged_dataset is not None and not merged_dataset.empty:
+    with st.expander("📂 View Merged Dataset", expanded=False):
+        st.markdown("### Merged Dataset")
+        st.write(f"Shape: {merged_dataset.shape}")
+        st.dataframe(merged_dataset)
+else:
+    st.warning("Merged dataset is empty or not available. Please complete the merge operations first.")
+#Target Variable Selection
 st.subheader("🎯 Target Variable Selection")
 
 # Define the target variable options and their corresponding feature names
 target_variable_mapping = {
-    "Profitability": "Profitability_GBP",
-    "Charge-Off": "COF_EVENT_LABEL",
-    "Prepayment": "PREPAYMENT_EVENT_LABEL"
+    "Profitability": "Profitability_GBP_x",
+    "Charge-Off": "COF_EVENT_LABEL_x",
+    "Prepayment": "PREPAYMENT_EVENT_LABEL_x"
 }
 
 # Get the final dataset from session state for the active model
-final_dataset = st.session_state.get(f"{active_model}_final_dataset", pd.DataFrame())
+# Retrieve the merged dataset from model_state
+# Retrieve the merged dataset from model_state
+final_dataset = model_state.get("merged dataset", pd.DataFrame())
 
 if not final_dataset.empty:
     # Allow the user to select a target variable
@@ -2058,28 +2052,18 @@ if not final_dataset.empty:
             # Get the target feature name from the mapping
             target_feature = target_variable_mapping[target_column]
 
-            # Get the combined dataset from session state for the active model
-            combined_data_with_target = st.session_state.get(f"{active_model}_recommended_features", pd.DataFrame()).copy()
-
-            # Ensure the target column exists in the combined dataset
-            if target_feature not in combined_data_with_target.columns:
-                st.error(f"Target variable '{target_feature}' is not present in the dataset. Please ensure it is included in the data.")
+            # Ensure the target column exists in the merged dataset
+            if target_feature not in final_dataset.columns:
+                st.error(f"Target variable '{target_feature}' is not present in the merged dataset. Please ensure it is included in the data.")
                 st.stop()
 
-            # Update the final dataset in session state to include the target column
-            # Ensure only selected features + target are in the final dataset
-            selected_features_including_mandatory = st.session_state.get(f"{active_model}_selected_features", []) + present_mandatory_features
-            features_for_final_dataset = [f for f in selected_features_including_mandatory if f in combined_data_with_target.columns]
-            if target_feature in combined_data_with_target.columns:
-                features_for_final_dataset.append(target_feature)
-                # Remove duplicates while preserving order
-                features_for_final_dataset = list(dict.fromkeys(features_for_final_dataset))
+            # Add the target column to the dataset if not already present
+            if target_feature not in final_dataset.columns:
+                st.error(f"Target variable '{target_feature}' is missing from the dataset.")
+                st.stop()
 
-            if features_for_final_dataset and not combined_data_with_target.empty:
-                st.session_state[f"{active_model}_final_dataset"] = combined_data_with_target[features_for_final_dataset].copy()
-            else:
-                st.warning("No features selected to create the final dataset with target.")
-                st.session_state[f"{active_model}_final_dataset"] = pd.DataFrame()  # Ensure it's empty
+            # Update the final dataset in session state to include the entire dataset along with the target column
+            st.session_state[f"{active_model}_final_dataset"] = final_dataset.copy()
 
             # Store target variable in model-specific session state
             st.session_state[f"{active_model}_target_column"] = target_column
@@ -2107,10 +2091,6 @@ if not final_dataset.empty:
             st.error(f"Error adding target variable: {str(e)}")
 else:
     st.info("Please select and show your features first to enable target variable selection.")
-
-
-
-
 
 
 

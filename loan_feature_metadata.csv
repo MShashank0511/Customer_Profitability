@@ -1,0 +1,38 @@
+feature_name,simple_name,description
+MORTGAGE_TRDLN_TOTAL,Total Mortgage Tradelines,Total number of mortgage-related credit tradelines reported.
+RECENT_OPEN_ACCT_TRDLN_OPEN_TOTAL,Recent Open Accounts,Number of recently opened tradelines or accounts.
+TERM_OF_LOAN,Loan Term,Duration of the loan in months.
+ALL_TRDLN_TAGGED_TOTAL,Total Tagged Tradelines,Total number of credit tradelines with tags or classifications.
+DEROG_TRDLN_TOTAL,Total Derogatory Tradelines,"Number of tradelines marked with derogatory remarks (e.g., defaults)."
+INQUIRY_CNT_TOTAL,Total Credit Inquiries,Total number of hard inquiries on the credit report.
+CREDIT_SCORE_AVG_CALC,Average Credit Score,Calculated average of available credit scores.
+ALL_CREDIT_HISTORY_MONTHS_TOTAL,Total Credit History (Months),Total number of months of available credit history.
+CASH_DOWN_CONTRACT,Cash Down (Contract),Amount of cash paid upfront for the loan.
+RECENT_OPEN_ACCT_CUR_BAL_OPEN_TOTAL,Current Balance of Recent Accounts,Total current balance across recently opened accounts.
+COLLECTIONS_CUR_BAL_TOTAL,Collections Balance,Current total balance in collection accounts.
+CREDIT_CARD_AVAILABLE_TOTAL,Available Credit on Credit Cards,Sum of unused credit limit across all credit cards.
+REVOLVING_AVAILABLE_TAGGED_TOTAL,Available Revolving Credit,Available credit for tagged revolving accounts.
+CREDIT_CARD_CREDIT_LIMIT_TOTAL,Total Credit Card Limit,Sum of credit limits on all credit card accounts.
+BANK_CARD_CREDIT_LIMIT_TOTAL,Total Bank Card Limit,Sum of credit limits on all bank-issued credit cards.
+CREDIT_CARD_CUR_BAL_OPEN_TOTAL,Credit Card Current Balance,Total current balance on all credit card accounts.
+INSTALLMENT_MO_PMT_TOTAL,Total Installment Payments,Total monthly payment amount for installment loans.
+REVOLVING_CUR_BAL_TOTAL,Total Revolving Balance,Sum of current balances on revolving credit accounts.
+AUTO_ORIG_BAL_PAID_TOTAL,Auto Loan Principal Paid,Total amount of principal paid on auto loans.
+VEHICLE_MILEAGE,Vehicle Mileage,Current mileage of the vehicle tied to the loan.
+AUTO_ORIG_BAL_MAX_TOTAL,Maximum Auto Loan Amount,Highest original balance among auto loans.
+INSTALLMENT_CUR_BAL_TOTAL,Installment Loan Current Balance,Current balance on all installment loans.
+PAYMENT_AMOUNT,Monthly Payment Amount,Current monthly payment amount on the loan.
+AUTO_PTI_TOTAL,Auto PTI,Payment-to-income ratio for auto loans.
+OPB,Outstanding Principal Balance,Remaining unpaid principal balance on the loan.
+INQUIRY_RECENT_CNT_TOTAL,Recent Credit Inquiries,Number of recent hard credit inquiries.
+DEALER_RESERVE,Dealer Reserve,Profit margin or reserve amount retained by the dealer.
+AUTO_CREDIT_HISTORY_MONTHS_MAX_TOTAL,Max Auto Credit History,Maximum number of months of auto-related credit history.
+DEROG_CUR_BAL_TOTAL,Derogatory Balance,Current balance of derogatory tradelines.
+DEROG_MO_PMT_TOTAL,Derogatory Monthly Payment,Monthly payment amount for derogatory accounts.
+PAYMENT_MADE_CNT_TOTAL,Total Payments Made,Total number of payments made on the loan.
+PAYMENT_MADE_CNT_TAGGED_TOTAL,Tagged Payment Count,Number of payments made on tagged tradelines.
+AUTO_PAYMENT_MADE_CNT_TOTAL,Auto Loan Payments Made,Number of payments made toward auto loans.
+DEALER_ADDS_PERCENT,Dealer Adds (%),Percentage of additional charges or fees added by the dealer.
+DELINQ_CNT_30_DAY_TOTAL,30-Day Delinquencies,Number of accounts delinquent by 30 days.
+TOTAL_DOWN_CONTRACT_PERCENT,Down Payment Percentage,Down payment as a percentage of contract value.
+Origination_Year,Loan Origination Year,Year in which the loan was originated.

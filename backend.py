@@ -72,7 +72,7 @@ def generate_default_confirmed_outputs():
     df_on_us_default = st.session_state["on_us_data"] # This is the DataFrame
 
     all_potential_target_names = [task_cfg["target"] for task_cfg in modeling_tasks_configs]
-    common_non_features = ["Timestamp", "timestamp", "ID", "AccountID", "account_id"] # Add any other known non-features
+    common_non_features = ["Timestamp_x", "timestamp", "ID", "AccountID", "account_id"] # Add any other known non-features
 
     # Derive a common list of features from default_on_us_data, excluding all targets and common non-features
     base_default_features = [
@@ -153,11 +153,11 @@ def process_models_from_session():
     source_of_config = "User Confirmed (Model Development)" # Default assumption
 
     if not confirmed_models_data:
-        st.info("back.py/process_models: No user-confirmed models found. Attempting to generate and use default configurations.")
+        st.info("backend.py/process_models: No user-confirmed models found. Attempting to generate and use default configurations.")
         confirmed_models_data = generate_default_confirmed_outputs()
         source_of_config = "Default Configuration"
         if not confirmed_models_data:
-            st.error("back.py/process_models: Failed to generate default model configurations. Cannot proceed.")
+            st.error("backend.py/process_models: Failed to generate default model configurations. Cannot proceed.")
             return []
 
     processed_dataframes_list = []
