@@ -16,9 +16,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Import all pages
 from pages.data_engineering import show_page as data_engineering_page
 from pages.feature_engineering import show_page as feature_engineering_page
-from pages.Model_develop import show_page as model_dev_page
+from pages.Model_Development import show_page as model_dev_page
 from pages.results import show_page as results_page
-from pages.monitor import show_page as monitor_page
+from pages.Model_Validation import show_page as monitor_page
 
 # Import navbar
 from utils.navbar import create_sidebar

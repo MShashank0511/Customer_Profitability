@@ -3,7 +3,7 @@ MORTGAGE_TRDLN_TOTAL,Total Mortgage Tradelines,Total number of mortgage-related 
 RECENT_OPEN_ACCT_TRDLN_OPEN_TOTAL,Recent Open Accounts,Number of recently opened tradelines or accounts.
 TERM_OF_LOAN,Loan Term,Duration of the loan in months.
 ALL_TRDLN_TAGGED_TOTAL,Total Tagged Tradelines,Total number of credit tradelines with tags or classifications.
-DEROG_TRDLN_TOTAL,Total Derogatory Tradelines,"Number of tradelines marked with derogatory remarks (e.g., defaults)."
+DEROG_TRDLN_TOTAL,Total Derogatory Tradelines,"Number of tradelines marked with derogatory remarks (e.g. defaults)."
 INQUIRY_CNT_TOTAL,Total Credit Inquiries,Total number of hard inquiries on the credit report.
 CREDIT_SCORE_AVG_CALC,Average Credit Score,Calculated average of available credit scores.
 ALL_CREDIT_HISTORY_MONTHS_TOTAL,Total Credit History (Months),Total number of months of available credit history.
@@ -36,3 +36,6 @@ DEALER_ADDS_PERCENT,Dealer Adds (%),Percentage of additional charges or fees add
 DELINQ_CNT_30_DAY_TOTAL,30-Day Delinquencies,Number of accounts delinquent by 30 days.
 TOTAL_DOWN_CONTRACT_PERCENT,Down Payment Percentage,Down payment as a percentage of contract value.
 Origination_Year,Loan Origination Year,Year in which the loan was originated.
+COF_EVENT_LABEL,Charge Off Event,Indicates whether a loan has been charged off meaning the lender has written it off.
+PREPAYMENT_EVENT_LABEL,Prepayment Event,Flags if a borrower paid off the loan before the scheduled end date.
+Loan_Status,Loan Outcome,Final decision or state of the loan.
