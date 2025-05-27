@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from typing import List, Dict, Any, Optional
 import streamlit as st # Streamlit might be needed for st.warning/error in backend functions
+import random # Required for random.sample in select_mandatory_features
+from gen_ai_multi import gen_ai_agent
 
 
 # --- Existing functions from Filtering Section ---
@@ -18,6 +20,7 @@ def get_table_names(datasets: Dict[str, pd.DataFrame]) -> List[str]:
     """
     return list(datasets.keys())
 
+
 def get_features_for_table(dataset_name: str, datasets: Dict[str, pd.DataFrame]) -> List[str]:
     """
     Returns a list of feature (column) names for a given dataset.
@@ -33,6 +36,7 @@ def get_features_for_table(dataset_name: str, datasets: Dict[str, pd.DataFrame])
     if dataset_name in datasets and not datasets[dataset_name].empty:
         return datasets[dataset_name].columns.tolist()
     return []
+
 
 def get_filter_operations() -> List[str]:
     """
@@ -55,6 +59,7 @@ def get_filter_operations() -> List[str]:
         "Is Not Null",      # Check for non-missing values
         "Contains String"   # Check if a string column contains a substring
     ]
+
 
 def _get_filter_mask(df: pd.DataFrame, filter_block: Dict[str, Any]) -> pd.Series:
     """
@@ -275,7 +280,6 @@ def apply_filter_block(df: pd.DataFrame, filter_block: Dict[str, Any]) -> pd.Dat
         df[output_name] = False # Mark all rows as False on error
 
     return df
-
 
 
 def apply_all_filters_for_table(original_df: pd.DataFrame, filter_blocks: List[Dict[str, Any]]) -> pd.DataFrame:
@@ -522,27 +526,19 @@ def get_transformation_operations() -> List[str]:
         "Rename"
     ]
 
-def get_multi_transformation_operations() -> List[str]:
+
+# --- New Helper Function for Transformations ---
+def get_single_feature_transform_operations() -> List[str]:
     """
-    Returns a list of supported multi-feature transformation operations.
-
-    Returns:
-        A list of strings representing the available multi-feature operations.
+    Returns a list of supported single feature transformation operations.
     """
-    # These are conceptual operations that need interpretation for implementation
-    return [
-        "Sum", # Sum of selected features
-        "Mean", # Mean of selected features
-        "Product", # Product of selected features
-        "Max", # Maximum of selected features
-        "Min", # Minimum of selected features
-        # Add other multi-feature operations here as needed (e.g., Difference, Ratio)
-    ]
+    return ["Addition", "Subtraction", "Multiplication", "Division", "Log",
+            "Square Root", "Power", "Absolute Value", "Rename", "Rounding"]
 
-
+# --- Single Feature Transformation Function ---
 def apply_single_feature_transform(df: pd.DataFrame, transform_block: Dict[str, Any]) -> pd.DataFrame:
     """
-    Applies a single feature transformation to a DataFrame and adds the result as a new column (reverted).
+    Applies a single feature transformation to a DataFrame and adds the result as a new column.
 
     Args:
         df: The input pandas DataFrame.
@@ -550,106 +546,120 @@ def apply_single_feature_transform(df: pd.DataFrame, transform_block: Dict[str, 
                          - 'feature': The name of the column to transform.
                          - 'operation': The type of transformation operation (str).
                          - 'value': The value to use for the operation (e.g., for addition, power).
+                                    This will be None for operations like Log, Abs, Sqrt, Rename, Rounding.
                          - 'output_name': The name for the new transformed column.
 
     Returns:
         A new DataFrame with the transformed column added.
-        Returns the original DataFrame if the transformation cannot be applied (e.g., invalid feature, operation).
 
     Raises:
-        ValueError: If the input feature is not found or the operation is invalid for the feature type.
-        Exception: Any error that occurs during the transformation.
+        ValueError: If the input feature is not found, the operation is invalid for the feature type,
+                    or an output name conflict occurs that cannot be resolved automatically (if we chose to raise).
+        TypeError: If the feature's data type is incompatible with the chosen operation.
+        Exception: Any other unexpected error during transformation.
     """
     feature = transform_block.get("feature")
     operation = transform_block.get("operation")
     value = transform_block.get("value")
     output_name = transform_block.get("output_name")
 
+    # Basic validation for essential block components
     if not feature or not operation or not output_name:
-        print(f"Skipping invalid transformation block: {transform_block}")
-        return df.copy() # Return a copy to maintain consistency
+        raise ValueError(f"Transformation block incomplete: missing feature, operation, or output name. Block: {transform_block}")
 
+    # Check if the specified feature exists in the DataFrame
     if feature not in df.columns:
         raise ValueError(f"Feature '{feature}' not found in the DataFrame.")
 
-    # Create a copy to avoid modifying the original DataFrame
+    # Create a copy to avoid modifying the original DataFrame passed into this function call
     transformed_df = df.copy()
 
-    # Check if output column name already exists (excluding the original feature if renaming)
+    # Handle output column name conflicts. If output_name exists and is not the original feature
+    # (this prevents self-renaming from causing a conflict), append a suffix.
     if output_name in transformed_df.columns and output_name != feature:
-         # Option 3: Append a suffix (safer)
-         original_output_name = output_name
-         k = 1
-         while output_name in transformed_df.columns:
-              output_name = f"{original_output_name}_{k}"
-              k += 1
-         print(f"Warning: Output column name '{original_output_name}' already exists. Using '{output_name}' instead.")
+        original_output_name = output_name
+        k = 1
+        while f"{original_output_name}_{k}" in transformed_df.columns:
+            k += 1
+        output_name = f"{original_output_name}_{k}"
+        # Note: We don't raise an error here because the backend automatically resolves it.
+        # The UI could add a warning if this automatic renaming happens.
 
+    # Get the Series for the feature to be transformed
+    feature_series = transformed_df[feature]
+
+    # Helper function for numeric type checking
+    def _check_numeric(series_to_check, op_name):
+        if not pd.api.types.is_numeric_dtype(series_to_check):
+            raise TypeError(f"Operation '{op_name}' requires a numeric feature. Feature '{feature}' is of type '{series_to_check.dtype}'.")
 
     try:
-        # Get the Series for the feature
-        feature_series = transformed_df[feature]
-
-        # Perform the transformation based on the operation
         if operation == "Addition":
-            if pd.api.types.is_numeric_dtype(feature_series):
-                transformed_df[output_name] = feature_series + value
-            else:
-                raise ValueError(f"Addition operation requires a numeric feature. Feature '{feature}' is not numeric.")
+            _check_numeric(feature_series, "Addition")
+            if not isinstance(value, (int, float)):
+                raise ValueError(f"Value for 'Addition' must be a number. Received: {type(value)}")
+            transformed_df[output_name] = feature_series + value
         elif operation == "Subtraction":
-            if pd.api.types.is_numeric_dtype(feature_series):
-                transformed_df[output_name] = feature_series - value
-            else:
-                raise ValueError(f"Subtraction operation requires a numeric feature. Feature '{feature}' is not numeric.")
+            _check_numeric(feature_series, "Subtraction")
+            if not isinstance(value, (int, float)):
+                raise ValueError(f"Value for 'Subtraction' must be a number. Received: {type(value)}")
+            transformed_df[output_name] = feature_series - value
         elif operation == "Multiplication":
-            if pd.api.types.is_numeric_dtype(feature_series):
-                transformed_df[output_name] = feature_series * value
-            else:
-                raise ValueError(f"Multiplication operation requires a numeric feature. Feature '{feature}' is not numeric.")
+            _check_numeric(feature_series, "Multiplication")
+            if not isinstance(value, (int, float)):
+                raise ValueError(f"Value for 'Multiplication' must be a number. Received: {type(value)}")
+            transformed_df[output_name] = feature_series * value
         elif operation == "Division":
-            if pd.api.types.is_numeric_dtype(feature_series):
-                # Handle division by zero
-                transformed_df[output_name] = feature_series / value if value != 0 else np.nan
+            _check_numeric(feature_series, "Division")
+            if not isinstance(value, (int, float)):
+                raise ValueError(f"Value for 'Division' must be a number. Received: {type(value)}")
+            if value == 0:
+                # Handle division by zero: results in NaN where numerator is 0, else Inf
+                transformed_df[output_name] = np.where(feature_series == 0, np.nan, feature_series / value)
+                raise ValueError(f"Division by zero attempted for feature '{feature}'. Resulting values might be NaN or Inf.")
             else:
-                raise ValueError(f"Division operation requires a numeric feature. Feature '{feature}' is not numeric.")
-        elif operation == "Log": # Reverted to simple np.log
-             if pd.api.types.is_numeric_dtype(feature_series):
-                 # Handle non-positive values by setting to NaN or similar
-                 transformed_df[output_name] = np.log(feature_series.replace(0, np.nan)) # Replace 0 with NaN before log
-                 if (feature_series <= 0).any():
-                      print(f"Warning: Log operation encountered non-positive values for feature '{feature}'. Result is NaN for these values.")
-             else:
-                 raise ValueError(f"Log operation requires a numeric feature. Feature '{feature}' is not numeric.")
+                transformed_df[output_name] = feature_series / value
+        elif operation == "Log":
+            _check_numeric(feature_series, "Log")
+            # np.log handles non-positive values (log(0) is -inf, log(negative) is NaN).
+            # We raise a ValueError if such values are present to inform the user.
+            transformed_df[output_name] = np.log(feature_series)
+            if (feature_series <= 0).any():
+                raise ValueError(f"Log operation encountered non-positive values for feature '{feature}'. Resulting values might be NaN or -Inf.")
         elif operation == "Square Root":
-             if pd.api.types.is_numeric_dtype(feature_series):
-                 # Handle negative values by clipping at 0 before sqrt
-                 transformed_df[output_name] = np.sqrt(feature_series.clip(lower=0)) # Clip at 0 to avoid NaN for negative
-             else:
-                 raise ValueError(f"Square Root operation requires a numeric feature. Feature '{feature}' is not numeric.")
+            _check_numeric(feature_series, "Square Root")
+            # np.sqrt handles negative values (results in NaN). Clip at 0 to explicitly avoid NaN for negative inputs.
+            transformed_df[output_name] = np.sqrt(feature_series.clip(lower=0))
+            if (feature_series < 0).any():
+                raise ValueError(f"Square Root operation encountered negative values for feature '{feature}'. Values were clipped to 0, resulting in 0 or NaN.")
         elif operation == "Power":
-             if pd.api.types.is_numeric_dtype(feature_series):
-                 transformed_df[output_name] = np.power(feature_series, value)
-             else:
-                 raise ValueError(f"Power operation requires a numeric feature. Feature '{feature}' is not numeric.")
+            _check_numeric(feature_series, "Power")
+            if not isinstance(value, (int, float)):
+                raise ValueError(f"Value for 'Power' must be a number. Received: {type(value)}")
+            transformed_df[output_name] = np.power(feature_series, value)
         elif operation == "Absolute Value":
-             if pd.api.types.is_numeric_dtype(feature_series):
-                 transformed_df[output_name] = np.abs(feature_series)
-             else:
-                 raise ValueError(f"Absolute Value operation requires a numeric feature. Feature '{feature}' is not numeric.")
+            _check_numeric(feature_series, "Absolute Value")
+            transformed_df[output_name] = np.abs(feature_series)
         elif operation == "Rename":
-            # Renaming is handled by just assigning the original column to the new name
-            # This doesn't add a *new* column in the sense of a transformation,
-            # but it fits the UI block structure. We'll just copy the column.
-            transformed_df[output_name] = feature_series.copy() # Use copy to avoid potential SettingWithCopyWarning
+            # For rename, we copy the original column to the new output_name.
+            # The original column under its old name is kept unless explicitly dropped later.
+            transformed_df[output_name] = feature_series.copy()
+        elif operation == "Rounding":
+            _check_numeric(feature_series, "Rounding")
+            # Round to 2 decimal places as specified
+            transformed_df[output_name] = np.round(feature_series, 2)
         else:
             raise ValueError(f"Unsupported transformation operation: '{operation}'.")
 
-    except Exception as e:
-        print(f"Error applying transformation for feature '{feature}' with operation '{operation}': {e}")
-        # Re-raise the exception to be caught by the frontend
+    except (ValueError, TypeError) as e:
+        # Re-raise specific ValueErrors and TypeErrors for frontend to catch
         raise e
+    except Exception as e:
+        # Catch any other unexpected exceptions and re-raise as a generic error
+        raise Exception(f"An unexpected error occurred during transformation '{operation}' on feature '{feature}': {e}")
 
     return transformed_df
+
 
 def apply_multi_feature_transform(df: pd.DataFrame, transform_block: Dict[str, Any]) -> pd.DataFrame:
     """
@@ -741,74 +751,372 @@ def apply_multi_feature_transform(df: pd.DataFrame, transform_block: Dict[str, A
         raise e
 
 
-# Example usage (for testing purposes, not part of the backend logic itself)
-if __name__ == "__main__":
-    # Create a dummy DataFrame for testing transformations
-    data = {
-        'feature1': [1, 2, 3, 4, 5],
-        'feature2': [10.5, 20.1, 30.9, 40.0, 50.7],
-        'feature3': [-1, 0, 1, 2, 3],
-        'feature4': [0, 1, 10, 100, 1000], # For log/reciprocal
-        'feature5': [-5, -2, 0, 2, 5], # For sqrt/abs
-        'categorical_feature': ['A', 'B', 'A', 'C', 'B'],
-        'string_feature': ['apple', 'banana', 'cherry', 'date', 'elderberry']
+# --- NEW: Functions for AI-driven Multi-Feature Transformation Section ---
+
+def get_multi_feature_ai_operations() -> List[str]:
+    """
+    Returns a conceptual list of operations for AI-driven multi-feature transformations.
+    In this setup, the user provides free-form text, which an AI model would interpret.
+    This list is primarily for UI guidance, indicating that complex operations are possible.
+    """
+    return [
+        "User-defined (e.g., 'sum of X and Y', 'average of A, B, C', 'product of all features')",
+        # More examples can be added here for UI guidance
+    ]
+
+
+def generate_transform_code_with_llm(features: List[str], user_operation_text: str) -> str:
+    """
+    Delegates code generation to the GenAIAgent.
+    """
+    return gen_ai_agent.generate_transform_code(features, user_operation_text)
+
+# def _simulate_ai_operation(data_subset: pd.DataFrame, user_operation_text: str) -> pd.Series:
+#     """
+#     Simulates the behavior of an AI model interpreting a user-defined operation
+#     on a subset of a DataFrame.
+
+#     This function is a placeholder. In a real application, this would involve
+#     calling a Gen AI/Agentic AI model (e.g., via an API) that takes the
+#     'user_operation_text' and potentially metadata about 'data_subset'
+#     (like column names, dtypes) and returns the calculated Series.
+
+#     For demonstration, it attempts to parse simple operations.
+
+#     Args:
+#         data_subset: A pandas DataFrame containing only the features selected by the user.
+#         user_operation_text: The free-form text string entered by the user describing the operation.
+
+#     Returns:
+#         A pandas Series representing the result of the operation.
+
+#     Raises:
+#         ValueError: If the operation cannot be interpreted or is invalid for the data.
+#         TypeError: If data types are incompatible with the interpreted operation.
+#     """
+#     operation_text_lower = user_operation_text.lower().strip()
+#     result_series = None
+
+#     # Helper to check if all columns in data_subset are numeric
+#     def all_numeric(df_sub):
+#         return all(pd.api.types.is_numeric_dtype(df_sub[col]) for col in df_sub.columns)
+
+#     try:
+#         if "sum" in operation_text_lower:
+#             if not all_numeric(data_subset):
+#                 raise TypeError("Sum operation requires all selected features to be numeric.")
+#             result_series = data_subset.sum(axis=1)
+#         elif "mean" in operation_text_lower or "average" in operation_text_lower:
+#             if not all_numeric(data_subset):
+#                 raise TypeError("Mean/Average operation requires all selected features to be numeric.")
+#             result_series = data_subset.mean(axis=1)
+#         elif "product" in operation_text_lower:
+#             if not all_numeric(data_subset):
+#                 raise TypeError("Product operation requires all selected features to be numeric.")
+#             result_series = data_subset.prod(axis=1)
+#         elif "max" in operation_text_lower:
+#             if not all_numeric(data_subset):
+#                 raise TypeError("Max operation requires all selected features to be numeric.")
+#             result_series = data_subset.max(axis=1)
+#         elif "min" in operation_text_lower:
+#             if not all_numeric(data_subset):
+#                 raise TypeError("Min operation requires all selected features to be numeric.")
+#             result_series = data_subset.min(axis=1)
+#         # Add more complex parsing logic here if desired for the simulation
+#         # For example, using regex to extract column names and operators for custom formulas.
+#         # Example: "col1 + col2 * 5" -> would require a more sophisticated parser or an actual LLM.
+#         else:
+#             # If no recognized operation, return a series of NaNs or raise an error
+#             raise ValueError(f"AI simulation could not interpret operation: '{user_operation_text}'. "
+#                              "Please provide a more explicit operation (e.g., 'sum', 'mean', 'product', 'max', 'min').")
+
+#     except (ValueError, TypeError) as e:
+#         # Re-raise specific errors for clearer feedback
+#         raise e
+#     except Exception as e:
+#         # Catch any other unexpected errors during simulation
+#         raise Exception(f"An unexpected error occurred during AI operation simulation for '{user_operation_text}': {e}")
+
+#     if result_series is None:
+#         # Fallback if interpretation failed but no specific error was raised
+#         raise ValueError(f"AI simulation failed to produce a result for operation: '{user_operation_text}'.")
+
+#     return result_series
+
+
+def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Applies a single AI-driven multi-feature transformation to a DataFrame
+    and adds the result as a new column.
+
+    Args:
+        df: The input pandas DataFrame (e.g., output from single-feature transformations).
+        transform_block: A dictionary defining the transformation, containing:
+                         - 'features': A list of names of the columns to combine.
+                         - 'operation': The free-form text string entered by the user (AI input).
+                         - 'output_name': The name for the new transformed column.
+
+    Returns:
+        A new DataFrame with the transformed column added.
+
+    Raises:
+        ValueError: If input features are not found, the operation text is invalid,
+                    or an output name conflict occurs that cannot be resolved automatically.
+        TypeError: If data types are incompatible with the AI-interpreted operation.
+        Exception: Any other unexpected error during transformation.
+    """
+    features = transform_block.get("features")
+    user_operation_text = transform_block.get("operation") # This is now the free-form text
+    output_name = transform_block.get("output_name")
+
+    # Basic validation for essential block components
+    if not features or not user_operation_text or not output_name:
+        raise ValueError(f"AI-driven transformation block incomplete: missing features, operation text, or output name. Block: {transform_block}")
+
+    # Check if all input features exist
+    for feature in features:
+        if feature not in df.columns:
+            raise ValueError(f"Input feature '{feature}' not found in the DataFrame for AI-driven multi-feature transformation.")
+
+    # Create a copy to avoid modifying the original DataFrame passed into this function call
+    transformed_df = df.copy()
+
+    # Handle output column name conflicts by appending a suffix
+    if output_name in transformed_df.columns:
+        original_output_name = output_name
+        k = 1
+        while f"{original_output_name}_{k}" in transformed_df.columns:
+            k += 1
+        output_name = f"{original_output_name}_{k}"
+        st.warning(f"Output column name '{original_output_name}' already exists. Using '{output_name}' instead.")
+
+    try:
+        # >>>>> MODIFIED LINE: Call the new code generation function <<<<<
+        generated_code = _generate_transform_code_with_llm(features, user_operation_text)
+
+        if generated_code.startswith("ERROR:"):
+            raise ValueError(f"AI interpretation failed for '{user_operation_text}': {generated_code}")
+
+        # >>>>> ADDED: Execute the generated code safely <<<<<
+        execution_context = {
+            'df': transformed_df, # Pass the transformed_df (copy) into the context
+            'np': np,
+            'pd': pd
+        }
+        # The LLM is instructed to generate a Series.
+        result_series = eval(generated_code, {}, execution_context)
+
+        if not isinstance(result_series, pd.Series):
+            raise TypeError(f"AI generated code did not return a pandas Series. Got: {type(result_series)}. Generated code: '{generated_code}'")
+
+        if np.isinf(result_series).any():
+             result_series = result_series.replace([np.inf, -np.inf], np.nan)
+
+
+        # Add the new column to the DataFrame
+        transformed_df[output_name] = result_series
+
+    except SyntaxError as se:
+        st.error(f"Error: AI generated invalid Python code: {generated_code}. Details: {se}")
+        raise ValueError(f"AI generated invalid Python code: {generated_code}. Error: {se}")
+    except NameError as ne:
+        st.error(f"Error: AI generated code referenced an unknown name (e.g., a feature that doesn't exist or is misspelled by AI): {generated_code}. Details: {ne}")
+        raise ValueError(f"AI generated code referenced an unknown name (e.g., a feature that doesn't exist or is misspelled by AI): {generated_code}. Error: {ne}")
+    except TypeError as te:
+        st.error(f"Error: AI generated code resulted in a type error (e.g., trying to sum text columns): {generated_code}. Details: {te}")
+        raise ValueError(f"AI generated code resulted in a type error (e.g., trying to sum text columns): {generated_code}. Error: {te}")
+    except Exception as e:
+        # Catch any other unexpected exceptions and re-raise as a generic error
+        st.error(f"An unexpected error occurred during AI-driven multi-feature transformation for '{user_operation_text}'. Generated code: '{generated_code}'. Details: {e}")
+        raise Exception(f"An unexpected error occurred during AI-driven multi-feature transformation for '{user_operation_text}': {e}")
+
+    return transformed_df
+
+
+def apply_all_ai_driven_multi_feature_transforms(original_df: pd.DataFrame, transform_blocks: List[Dict[str, Any]]) -> pd.DataFrame:
+    """
+    Applies a list of AI-driven multi-feature transformation blocks sequentially to a DataFrame.
+    Each subsequent transformation is applied to the result of the previous transformation.
+
+    Args:
+        original_df: The initial DataFrame to apply transformations to (e.g., output from single-feature transforms).
+        transform_blocks: A list of dictionaries, where each dictionary defines an AI-driven
+                          multi-feature transformation block.
+
+    Returns:
+        A new DataFrame containing the original data plus all newly created transformed columns.
+        Returns the original DataFrame if transform_blocks is empty.
+    """
+    if not transform_blocks:
+        return original_df.copy() # Return a copy if no transformations
+
+    current_df = original_df.copy()
+    applied_transforms_count = 0
+
+    for i, block in enumerate(transform_blocks):
+        features = block.get("features")
+        user_operation_text = block.get("operation")
+        output_name = block.get("output_name")
+
+        # Skip incomplete blocks
+        if not features or not user_operation_text or not output_name:
+            st.warning(f"Skipping incomplete AI-driven multi-feature transform block {i+1}: {block}")
+            continue
+
+        # Check for feature existence in current_df columns BEFORE applying the transform
+        missing_features = [f for f in features if f not in current_df.columns]
+        if missing_features:
+            st.warning(f"Skipping AI-driven multi-feature transform block {i+1} - "
+                       f"Features {missing_features} not found in current intermediate data.")
+            continue
+
+        print(f"Applying AI-driven multi-feature transform block {i+1}: "
+              f"Features: {features}, Operation: '{user_operation_text}', Output: '{output_name}'")
+        try:
+            current_df = apply_ai_driven_multi_feature_transform(current_df, block)
+            applied_transforms_count += 1
+            st.success(f"Successfully applied AI-driven multi-feature transform block {i+1}.")
+        except (ValueError, TypeError, Exception) as e:
+            # Errors are already logged by apply_ai_driven_multi_feature_transform
+            st.error(f"Failed to apply AI-driven multi-feature transform block {i+1}. Error: {e}")
+            continue # Continue to the next block even if one fails
+
+    if applied_transforms_count == 0 and len(transform_blocks) > 0:
+        st.warning("No AI-driven multi-feature transform blocks were successfully applied.")
+        return original_df.copy() # Return original_df copy if no transforms applied but blocks were defined
+    elif applied_transforms_count > 0:
+        st.info(f"Completed applying {applied_transforms_count} AI-driven multi-feature transform block(s).")
+
+    return current_df
+
+
+# --- NEW: Mandatory Feature Selection Function ---
+def select_mandatory_features(df: pd.DataFrame) -> List[str]:
+
+    """
+    Simulates a model assessing and selecting mandatory features from the given DataFrame.
+    For now, it returns a fixed list of features if they are present in the DataFrame.
+    In a real scenario, this would involve a more complex feature importance model.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame (after target variable removal).
+
+    Returns:
+        List[str]: A list of selected mandatory feature names.
+    """
+    if df.empty:
+        return []
+
+    # Define a set of "pre-determined" mandatory features for simulation
+    potential_mandatory_features = [
+        "OPB", "interest_rate", "tenure", "credit_score_band", "LTV",
+        "loan_amount", "age", "employment_status"
+    ]
+
+    # Filter this list to include only features actually present in the input DataFrame
+    present_mandatory_features = [
+        feat for feat in potential_mandatory_features if feat in df.columns
+    ]
+
+    # For simulation, let's randomly pick 5 to 7 features from the present ones
+    # to simulate a selection process, ensuring we don't pick more than available.
+    num_to_select = min(random.randint(5, 7), len(present_mandatory_features))
+    selected_mandatory = random.sample(present_mandatory_features, num_to_select)
+
+    return selected_mandatory
+
+
+# --- NEW: Recommend Features Function ---
+def recommend_features(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    Simulates a Gen AI model recommending features from the input DataFrame.
+    It selects a random subset of features and provides simulated descriptions and stats.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame (e.g., combined_dataset after merging).
+
+    Returns:
+        List[Dict[str, Any]]: A list of dictionaries, where each dict contains
+                              'Feature', 'Description', 'Min', 'Max', 'Mean', 'Data Type'.
+    """
+    if df.empty:
+        return []
+
+    available_features = df.columns.tolist()
+    if not available_features:
+        return []
+
+    # Decide how many features to recommend (e.g., 5 to 10)
+    num_to_recommend = min(random.randint(5, 10), len(available_features))
+    recommended_feature_names = random.sample(available_features, num_to_recommend)
+
+    recommended_features_info = []
+    # General placeholder descriptions for various feature types
+    default_descriptions = {
+        "numeric": "A continuous numerical attribute.",
+        "categorical": "A categorical attribute representing different groups.",
+        "boolean": "A binary attribute (True/False or 0/1).",
+        "datetime": "A date or time attribute."
     }
-    initial_df = pd.DataFrame(data)
 
-    print("Initial DataFrame:")
-    print(initial_df)
-
-    # --- Test Single Feature Transformations ---
-    print("\n--- Testing Single Feature Transformations ---")
-    single_transform_blocks = [
-        {"feature": "feature1", "operation": "Addition", "value": 10, "output_name": "feature1_plus_10"},
-        {"feature": "feature2", "operation": "Multiplication", "value": 2, "output_name": "feature2_times_2"},
-        {"feature": "feature3", "operation": "Absolute Value", "value": None, "output_name": "feature3_abs"},
-        {"feature": "feature4", "operation": "Log", "value": None, "output_name": "feature4_log"}, # Reverted Log
-        {"feature": "feature5", "operation": "Square Root", "value": None, "output_name": "feature5_sqrt"},
-        {"feature": "feature1", "operation": "Power", "value": 3, "output_name": "feature1_cubed"},
-        {"feature": "categorical_feature", "operation": "Rename", "value": None, "output_name": "category_renamed"}, # Example of rename
-        {"feature": "feature1", "operation": "Addition", "value": 5, "output_name": "feature1_plus_10"}, # Test duplicate output name
-        {"feature": "nonexistent_feature", "operation": "Addition", "value": 1, "output_name": "invalid_transform"}, # Test invalid feature
-    ]
-
-    current_df = initial_df.copy()
-    for block in single_transform_blocks:
-        try:
-            # Need to handle the 'value' type dynamically in the frontend and pass correctly
-            # For testing here, we manually provide the correct value type
-            print(f"\nApplying block: {block}")
-            current_df = apply_single_feature_transform(current_df, block)
-            print(current_df.tail()) # Print tail to show new column
-        except (ValueError, TypeError, Exception) as e:
-            print(f"\nError applying block {block}: {e}")
+    for feature in recommended_feature_names:
+        data = df[feature]
+        description = f"AI-recommended feature: {feature_descriptions.get(feature, default_descriptions.get('numeric', ''))}"
+        
+        # Simulate generic descriptions if not already defined
+        if "OPB" in feature: description = "Outstanding Principal Balance of the customer's loan (AI-recommended)"
+        elif "interest_rate" in feature: description = "Current interest rate applicable to the loan (AI-recommended)"
+        elif "tenure" in feature: description = "Duration of the loan in months (AI-recommended)"
+        elif "credit_score_band" in feature: description = "Customer's credit score category (AI-recommended)"
+        elif "LTV" in feature: description = "Loan-to-Value ratio (AI-recommended)"
+        elif "age" in feature: description = "Customer's age in years (AI-recommended)"
+        elif "income" in feature: description = "Customer's annual income (AI-recommended)"
+        elif "loan_amount" in feature: description = "Original loan amount (AI-recommended)"
+        elif "loan_type" in feature: description = "Type of loan (Personal, Mortgage, etc.) (AI-recommended)"
+        else:
+            description = f"AI-recommended feature derived from original data: {feature}"
 
 
-    # --- Test Multi Feature Transformations ---
-    print("\n--- Testing Multi Feature Transformations ---")
-    multi_transform_blocks = [
-        {"features": ["feature1", "feature2"], "operation": "Sum", "output_name": "feature1_plus_feature2_sum"},
-        {"features": ["feature1", "feature2", "feature3"], "operation": "Mean", "output_name": "features_mean"},
-        {"features": ["feature1", "feature2"], "operation": "Product", "output_name": "features_product"},
-        {"features": ["feature1", "feature2", "feature3"], "operation": "Max", "output_name": "features_max"},
-        {"features": ["feature1", "feature2", "feature3"], "operation": "Min", "output_name": "features_min"},
-        {"features": ["feature1", "categorical_feature"], "operation": "Sum", "output_name": "invalid_multi_sum"}, # Test non-numeric sum
-        {"features": ["feature1", "feature2"], "operation": "Sum", "output_name": "feature1_plus_feature2_sum"}, # Test duplicate output name
-        {"features": ["feature1", "nonexistent_feature"], "operation": "Sum", "output_name": "invalid_multi_feature"} # Test invalid feature
-    ]
+        stats = {
+            'Feature': feature,
+            'Description': description
+        }
 
-    current_df_multi = initial_df.copy()
-    # Apply single transformations first to have intermediate features available for multi-transform testing
-    for block in single_transform_blocks:
-         try:
-              current_df_multi = apply_single_feature_transform(current_df_multi, block)
-         except (ValueError, TypeError, Exception):
-              pass # Ignore errors for testing purposes here
+        if pd.api.types.is_numeric_dtype(data):
+            stats['Min'] = f"{data.min():.2f}"
+            stats['Max'] = f"{data.max():.2f}"
+            stats['Mean'] = f"{data.mean():.2f}"
+            stats['Data Type'] = 'Numeric'
+        else:
+            stats['Min'] = 'N/A'
+            stats['Max'] = 'N/A'
+            stats['Mean'] = 'N/A'
+            stats['Data Type'] = 'Categorical' # Or 'Object', 'Boolean', 'DateTime'
 
-    for block in multi_transform_blocks:
-        try:
-            print(f"\nApplying multi-feature block: {block}")
-            current_df_multi = apply_multi_feature_transform(current_df_multi, block)
-            print(current_df_multi.tail()) # Print tail to show new column
-        except (ValueError, TypeError, Exception) as e:
-            print(f"\nError applying multi-feature block {block}: {e}")
+        recommended_features_info.append(stats)
+
+    return recommended_features_info
+
+# Helper descriptions for existing features (can be expanded)
+feature_descriptions = {
+    "OPB": "Outstanding Principal Balance of the customer's loan",
+    "interest_rate": "Current interest rate applicable to the customer's loan",
+    "tenure": "Duration of the loan in months",
+    "credit_score_band": "Customer's credit score category (Excellent, Good, Fair, Poor)",
+    "LTV": "Loan-to-Value ratio indicating the risk level of the loan",
+    "age": "Customer's age in years",
+    "income": "Customer's annual income",
+    "employment_length": "Length of employment in years",
+    "debt_to_income": "Ratio of total debt to income",
+    "payment_history": "Customer's payment history score",
+    "loan_amount": "Original loan amount",
+    "loan_type": "Type of loan (Personal, Mortgage, Auto, Business)",
+    "property_value": "Value of the property (for mortgage loans)",
+    "down_payment": "Amount of down payment made",
+    "loan_purpose": "Purpose of the loan",
+    "marital_status": "Customer's marital status",
+    "education": "Customer's education level",
+    "residence_type": "Type of residence (Own, Rent, Other)",
+    "number_of_dependents": "Number of dependents",
+    "previous_loans": "Number of previous loans"
+}
