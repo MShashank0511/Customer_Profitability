@@ -9,6 +9,22 @@ from datetime import datetime, timedelta
 import json
 import os
 import feat_engg_backend
+import re # For parsing Gemini output
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+try:
+    from genai_recommend_features import (
+        summarize_dataset_columns,
+        get_recommended_features_gemini,
+        parse_gemini_recommendations,
+        GEMINI_API_KEY_CONFIGURED
+    )
+except ImportError:
+    st.error("Failed to import 'genai_utils.py'. Make sure it's in the same directory or Python path.")
+    # Stop execution if utils can't be imported
+    GEMINI_API_KEY_CONFIGURED = False # Assume not configured
+    st.stop()
 
 on_us_data_path = st.session_state.get("on_us_data_path")
 bureau_data_path = st.session_state.get("bureau_data_path")
@@ -1304,198 +1320,147 @@ st.markdown("---")
 ############################################################################################################################################3
 
 # --- Recommend Features Button ---
+if 'active_model' not in st.session_state:
+    st.session_state.active_model = "default_model" 
+active_model = st.session_state.active_model
+
+# Initialize session state dictionaries if not present
+if f"{active_model}_operations_complete" not in st.session_state:
+    st.session_state[f"{active_model}_operations_complete"] = {}
+if f"{active_model}_state" not in st.session_state: # This ensures model_state (the dictionary) itself exists
+     st.session_state[f"{active_model}_state"] = {}
+
+# --- Recommend Features Button ---
+st.markdown("## AI-Powered Feature Recommendation")
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    if st.button("✨ Recommend Features", key="recommend_features", use_container_width=True):
-        try:
-            # Create sample features
-            sample_features = [
-                "OPB", "interest_rate", "tenure", "credit_score_band", "LTV",
-                "age", "income", "employment_length", "debt_to_income", "payment_history",
-                "loan_amount", "loan_type", "property_value", "down_payment", "loan_purpose",
-                "marital_status", "education", "residence_type", "number_of_dependents", "previous_loans"
-            ]
+    if st.button("✨ Recommend Features (AI)", key="recommend_features_ai", use_container_width=True):
+        if not GEMINI_API_KEY_CONFIGURED:
+             st.error("Gemini API Key is not configured. Cannot recommend features. Please check `genai_utils.py` and your .env file.")
+        else:
+            try:
+                with st.spinner("🧠 Calling Generative AI for feature recommendations..."):
+                    current_dataset = model_state.get("merged dataset", pd.DataFrame())
 
-            # Create feature descriptions
-            feature_descriptions = {
-                "OPB": "Outstanding Principal Balance of the customer's loan",
-                "interest_rate": "Current interest rate applicable to the customer's loan",
-                "tenure": "Duration of the loan in months",
-                "credit_score_band": "Customer's credit score category (Excellent, Good, Fair, Poor)",
-                "LTV": "Loan-to-Value ratio indicating the risk level of the loan",
-                "age": "Customer's age in years",
-                "income": "Customer's annual income",
-                "employment_length": "Length of employment in years",
-                "debt_to_income": "Ratio of total debt to income",
-                "payment_history": "Customer's payment history score",
-                "loan_amount": "Original loan amount",
-                "loan_type": "Type of loan (Personal, Mortgage, etc.)",
-                "property_value": "Value of the property (for mortgage loans)",
-                "down_payment": "Amount of down payment made",
-                "loan_purpose": "Purpose of the loan",
-                "marital_status": "Customer's marital status",
-                "education": "Customer's education level",
-                "residence_type": "Type of residence (Own, Rent, etc.)",
-                "number_of_dependents": "Number of dependents",
-                "previous_loans": "Number of previous loans"
-            }
+                    if current_dataset is None or not isinstance(current_dataset, pd.DataFrame) or current_dataset.empty:
+                        st.error("The 'merged_dataset' is empty or not a DataFrame. Cannot generate recommendations.")
+                    else:
+                        dataset_description = summarize_dataset_columns(current_dataset.head()) # Use head() for brevity
+                        
+                        st.markdown("#### Dataset Summary Sent to AI:")
+                        st.text_area("Input to AI",dataset_description, height=100, disabled=True)
 
-            # Create sample data with realistic values
-            sample_data = pd.DataFrame({
-                "OPB": np.random.uniform(10000, 500000, 100),
-                "interest_rate": np.random.uniform(3.5, 8.5, 100),
-                "tenure": np.random.randint(12, 360, 100),
-                "credit_score_band": np.random.choice(["Excellent", "Good", "Fair", "Poor"], 100),
-                "LTV": np.random.uniform(0.3, 0.95, 100),
-                "age": np.random.randint(18, 75, 100),
-                "income": np.random.uniform(30000, 200000, 100),
-                "employment_length": np.random.randint(1, 40, 100),
-                "debt_to_income": np.random.uniform(0.1, 0.5, 100),
-                "payment_history": np.random.uniform(0, 100, 100),
-                "loan_amount": np.random.uniform(10000, 500000, 100),
-                "loan_type": np.random.choice(["Personal", "Mortgage", "Auto", "Business"], 100),
-                "property_value": np.random.uniform(100000, 1000000, 100),
-                "down_payment": np.random.uniform(5000, 100000, 100),
-                "loan_purpose": np.random.choice(["Home Purchase", "Refinance", "Debt Consolidation", "Business"], 100),
-                "marital_status": np.random.choice(["Single", "Married", "Divorced", "Widowed"], 100),
-                "education": np.random.choice(["High School", "Bachelor", "Master", "PhD"], 100),
-                "residence_type": np.random.choice(["Own", "Rent", "Other"], 100),
-                "number_of_dependents": np.random.randint(0, 5, 100),
-                "previous_loans": np.random.randint(0, 10, 100)
-            })
+                        recommendations_text = get_recommended_features_gemini(dataset_description)
 
-            # Calculate statistics for each feature
-            stats = []
-            for feature in sample_features:
-                data = sample_data[feature]
-                if pd.api.types.is_numeric_dtype(data):
-                    stats.append({
-                        'Feature': feature,
-                        'Description': feature_descriptions.get(feature, f"Description for {feature}"),
-                        'Min': f"{data.min():.2f}",
-                        'Max': f"{data.max():.2f}",
-                        'Mean': f"{data.mean():.2f}",
-                        'Data Type': 'Numeric'
-                    })
-                else:
-                    stats.append({
-                        'Feature': feature,
-                        'Description': feature_descriptions.get(feature, f"Description for {feature}"),
-                        'Min': 'N/A',
-                        'Max': 'N/A',
-                        'Mean': 'N/A',
-                        'Data Type': 'Categorical'
-                    })
+                        if recommendations_text.startswith("Error:") or "An error occurred" in recommendations_text:
+                            st.error(f"Failed to get recommendations: {recommendations_text}")
+                        else:
+                            st.markdown("#### Raw AI Response:")
+                            st.text_area("Gemini Raw Output", recommendations_text, height=150, disabled=True)
+                            
+                            recommended_features_df = parse_gemini_recommendations(recommendations_text)
 
-            # Create feature info DataFrame with statistics
-            feature_info = pd.DataFrame(stats)
+                            if not recommended_features_df.empty:
+                                st.session_state.feature_info = recommended_features_df
+                                st.session_state.recommended_features = recommended_features_df.copy()
+                                
+                                st.session_state[f"{active_model}_operations_complete"]["recommend"] = True
+                                st.success("AI Recommended features generated!")
+                                st.rerun()
+                            else:
+                                st.warning("AI recommendations received, but no features could be parsed or extracted. Please check the raw AI response above. The response might be empty or not in the expected format.")
+            except Exception as e:
+                st.error(f"Error during AI feature recommendation process: {str(e)}")
+                # You might want to log the full traceback here for debugging
+                # import traceback
+                # st.text_area("Full Error Traceback", traceback.format_exc(), height=200)
 
-            # Store in session state
-            st.session_state.recommended_features = sample_data
-            st.session_state.feature_info = feature_info
-            if f"{active_model}_operations_complete" not in st.session_state:
-                st.session_state[f"{active_model}_operations_complete"] = {}
-            st.session_state[f"{active_model}_operations_complete"]["recommend"] = True
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"Error recommending features: {str(e)}")
 
 # Display recommended features if they exist
-if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and hasattr(st.session_state, 'feature_info'):
-    st.markdown("### Recommended Features")
-    # Create a dataframe for the features with the same styling as good-to-have section
-    features_df = pd.DataFrame({
-        "Feature": st.session_state.feature_info["Feature"],
-        "Description": st.session_state.feature_info["Description"],
-        "Min": st.session_state.feature_info["Min"],
-        "Max": st.session_state.feature_info["Max"],
-        "Mean": st.session_state.feature_info["Mean"],
-        "Data Type": st.session_state.feature_info["Data Type"]
-    })
+# Display recommended features if they exist
+if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
+   hasattr(st.session_state, 'feature_info') and \
+   isinstance(st.session_state.feature_info, pd.DataFrame) and \
+   not st.session_state.feature_info.empty:
+    st.markdown("### AI Recommended Engineered Features")
+    
+    display_df = st.session_state.feature_info.copy()
+    # Ensure all expected columns exist for data_editor for consistent display
+    expected_cols_display = ["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type", "Derivation", "Justification"]
+    for col in expected_cols_display:
+        if col not in display_df.columns:
+            display_df[col] = "N/A" 
 
-    # Display the features in a dataframe with custom styling
+    # Convert any Series in column_config to strings or lists
+    column_config = {
+        "Feature": st.column_config.TextColumn(
+            "Feature 💡", 
+            width="medium", 
+            disabled=True, 
+            help=display_df["Feature"].to_list()  # Convert Series to list
+        ),
+        "Description": st.column_config.TextColumn(
+            "Full Description 📝", 
+            width="large", 
+            disabled=True, 
+            help=display_df["Description"].to_list()  # Convert Series to list
+        ),
+        "Primary Event Impact": st.column_config.TextColumn(
+            "Primary Impact 🎯", 
+            width="medium", 
+            disabled=True, 
+            help=display_df["Primary Event Impact"].to_list()  # Convert Series to list
+        ),
+        "Min": st.column_config.TextColumn("Min", width="small", disabled=True),
+        "Max": st.column_config.TextColumn("Max", width="small", disabled=True),
+        "Mean": st.column_config.TextColumn("Mean", width="small", disabled=True),
+        "Data Type": st.column_config.TextColumn("Data Type", width="small", disabled=True),
+    }
+
     st.data_editor(
-        features_df,
-        column_config={
-            "Feature": st.column_config.TextColumn(
-                "Feature 🔍",
-                width="medium",
-                disabled=True
-            ),
-            "Description": st.column_config.TextColumn(
-                "Description",
-                width="large",
-                disabled=True
-            ),
-            "Min": st.column_config.TextColumn(
-                "Min",
-                width="small",
-                disabled=True
-            ),
-            "Max": st.column_config.TextColumn(
-                "Max",
-                width="small",
-                disabled=True
-            ),
-            "Mean": st.column_config.TextColumn(
-                "Mean",
-                width="small",
-                disabled=True
-            ),
-            "Data Type": st.column_config.TextColumn(
-                "Data Type",
-                width="small",
-                disabled=True
-            )
-        },
+        display_df[["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type"]],
+        column_config=column_config,
         hide_index=True,
         use_container_width=True,
-        key="recommended_features_editor"
+        key="recommended_features_ai_editor"
     )
+    with st.expander("See Full Derivations and Justifications"):
+        st.dataframe(display_df[["Feature", "Derivation", "Justification", "Primary Event Impact"]], use_container_width=True)
 
 # --- Accept Recommended Features Button ---
-if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False):
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("✅ Accept Recommended Features", key="accept_recommended_features", use_container_width=True):
+if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
+   hasattr(st.session_state, 'recommended_features') and \
+   isinstance(st.session_state.recommended_features, pd.DataFrame) and \
+   not st.session_state.recommended_features.empty:
+    col1_accept, col2_accept, col3_accept = st.columns([1, 2, 1])
+    with col2_accept:
+        if st.button("✅ Accept AI Recommended Features", key="accept_recommended_features_ai", use_container_width=True):
             try:
-                if hasattr(st.session_state, 'recommended_features'):
-                    # Get the recommended features
-                    recommended_features = st.session_state.recommended_features
+                recommended_features_descriptions = st.session_state.recommended_features
 
-                    # Store in final dataset
-                    st.session_state.final_dataset = recommended_features.copy()
+                # Store in a more descriptive session state key for clarity
+                st.session_state.final_ai_engineered_features_descriptions = recommended_features_descriptions.copy()
 
-                    # Save to CSV
-                    recommended_features.to_csv("recommended_features.csv", index=False)
+                csv_filename = "ai_recommended_engineered_features.csv"
+                recommended_features_descriptions.to_csv(csv_filename, index=False)
+                st.info(f"AI recommended feature descriptions saved to '{csv_filename}'")
 
-                    # Store in model state for transformations
-                    model_state = st.session_state[f"{active_model}_state"]
-                    model_state["recommended_features"] = recommended_features.copy()
-
-                    # Update state
-                    if f"{active_model}_operations_complete" not in st.session_state:
-                        st.session_state[f"{active_model}_operations_complete"] = {}
-                    st.session_state[f"{active_model}_operations_complete"]["accept"] = True
-
-                    # Store success message in session state
-                    st.session_state.accept_success = True
-
-                    # Rerun to update the UI
-                    st.rerun()
-                else:
-                    st.warning("No recommended features found. Please click 'Recommend Features' first.")
+                model_state = st.session_state[f"{active_model}_state"]
+                model_state["ai_recommended_features_descriptions"] = recommended_features_descriptions.copy()
+                
+                st.session_state[f"{active_model}_operations_complete"]["accept_ai"] = True
+                st.session_state.accept_ai_success = True
+                st.rerun()
             except Exception as e:
-                st.error(f"Error accepting recommended features: {str(e)}")
+                st.error(f"Error accepting AI recommended features: {str(e)}")
 
-# Display success message if it exists in session state
-if st.session_state.get("accept_success", False):
-    st.success("✅ All recommended features have been selected successfully!")
-    # Clear the success message after displaying
-    st.session_state.accept_success = False
+# Display success message
+if st.session_state.get("accept_ai_success", False):
+    st.success("✅ AI recommended features (descriptions) have been accepted and their definitions saved!")
+    st.session_state.accept_ai_success = False
 
 st.markdown("---")
+
 
 # --- Data Transformation Buttons ---
 st.subheader("Data Actions")
