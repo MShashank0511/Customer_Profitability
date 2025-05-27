@@ -1,6 +1,10 @@
+# gen_ai_multi.py
+
 import os
 import google.generativeai as genai
-import streamlit as st # Assuming Streamlit secrets might be used for API key
+import streamlit as st
+import pandas as pd
+import numpy as np
 
 class GenAIAgent:
     """
@@ -8,36 +12,42 @@ class GenAIAgent:
     for generating Python code snippets for feature transformations.
     """
     def __init__(self):
-        self._configure_gemini_api()
-        self.model = self._initialize_generative_model()
+        self.model = None
+        try:
+            self._configure_gemini_api()
+            # Only initialize model if API key was successfully found
+            if genai.api_key: # Check if genai.api_key is set after configuration
+                self.model = self._initialize_generative_model()
+            else:
+                st.warning("Gemini API key not found. AI features will be unavailable.")
+        except Exception as e:
+            st.error(f"Failed to initialize GenAIAgent: {e}")
+            self.model = None # Ensure model is None if initialization fails
 
     def _configure_gemini_api(self):
         """
         Configures the Gemini API using an API key from Streamlit secrets or environment variables.
         """
-        # Access API key securely
-        GEMINI_API_KEY = st.secrets["AIzaSyBTQyDIFyoeLBSdt-ttd14Oynd3zmxAl70"] if "GEMINI_API_KEY" in st.secrets else os.getenv("GEMINI_API_KEY")
+        GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
 
         if not GEMINI_API_KEY:
-            # In a production environment, you might want to raise an exception here
-            # or log a critical error instead of just a Streamlit error.
             st.error("Gemini API Key not found. Please set it in Streamlit secrets or as an environment variable.")
-            raise ValueError("GEMINI_API_KEY not configured.")
+            # Do NOT raise ValueError here, as it prevents Streamlit from running.
+            # Instead, ensure `self.model` remains None and subsequent calls check for it.
+            return # Exit if key not found
 
         genai.configure(api_key=GEMINI_API_KEY)
-        st.success("Gemini API configured successfully.") # For debugging during setup
+        # st.success("Gemini API configured successfully.") # Good for debugging during setup, remove for production
 
     def _initialize_generative_model(self):
-        """
-        Initializes and returns the Generative Model instance.
-        """
+        # ... (rest of _initialize_generative_model method - NO CHANGE) ...
         return genai.GenerativeModel(
-            'gemini-pro', # Or 'gemini-1.5-pro-latest' if you have access and want more power
+            'gemini-pro',
             generation_config={
-                "temperature": 0.8, # Lower temperature for more deterministic, factual responses (code generation)
+                "temperature": 0.2,
                 "top_p": 1,
                 "top_k": 1,
-                "max_output_tokens": 500, # Limit output length to prevent overly long code
+                "max_output_tokens": 500,
             },
             safety_settings=[
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
@@ -50,28 +60,17 @@ class GenAIAgent:
     def generate_transform_code(self, features: list[str], user_operation_text: str) -> str:
         """
         Generates a Python code snippet using the Gemini LLM for feature transformation.
-
-        Args:
-            features: A list of column names (e.g., ['col_A', 'col_B']).
-            user_operation_text: The natural language description of the transformation.
-
-        Returns:
-            A string containing the generated Python code snippet (e.g., "df['col_A'] / df['col_B']").
-            Returns an error message string if the LLM cannot generate valid code, prefixed with 'ERROR: '.
         """
-        if not self.model: # Check if model was initialized (e.g. if API key was missing)
-            return "ERROR: Gemini model not initialized due to API key issue."
+        if not self.model: # Check if model was successfully initialized
+            return "ERROR: Gemini model not initialized due to API key or configuration issue."
 
-        # Create a string representation of features for the prompt
-        features_str = ", ".join([f"df['{f}']" for f in features])
-        if len(features) == 1:
-            features_context = f"The selected feature is: {features_str}. "
-        elif len(features) > 1:
-            features_context = f"The selected features are: {features_str}. "
-        else:
+        # ... (rest of generate_transform_code method - NO CHANGE) ...
+        if not features:
             return "ERROR: No features provided for transformation."
 
-        # --- LLM System Prompt ---
+        features_str = ", ".join([f"df['{f}']" for f in features])
+        features_context = f"The selected features are: {features_str}. "
+
         system_prompt = (
             "You are an expert Python programmer specializing in Pandas DataFrame manipulations for feature engineering. "
             "Your task is to generate a single line of Python code that calculates a new pandas Series. "
@@ -94,7 +93,6 @@ class GenAIAgent:
             "Input: Features: df['num_col'], df['cat_col']. Operation: 'average of num_col and cat_col'\nOutput: ERROR: Cannot average numeric and categorical columns. Please select only numeric features.\n"
         )
 
-        # --- User Prompt ---
         user_prompt = (
             f"Features available for operation: {features_str}\n"
             f"User requested operation: '{user_operation_text}'\n"
@@ -105,10 +103,9 @@ class GenAIAgent:
             response = self.model.generate_content([system_prompt, user_prompt])
             generated_text = response.text.strip()
 
-            # Robust validation: ensure it's not empty, doesn't contain markdown or common code structures
             if not generated_text or "```" in generated_text or generated_text.lower().startswith(("import", "def", "class", "if", "for", "while")):
                 return "ERROR: Invalid code generated by AI. The output should be a single pandas expression."
-            if generated_text.startswith("ERROR:"): # Pass through LLM's own error messages
+            if generated_text.startswith("ERROR:"):
                 return generated_text
 
             return generated_text

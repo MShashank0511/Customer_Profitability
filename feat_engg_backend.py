@@ -771,78 +771,6 @@ def generate_transform_code_with_llm(features: List[str], user_operation_text: s
     """
     return gen_ai_agent.generate_transform_code(features, user_operation_text)
 
-# def _simulate_ai_operation(data_subset: pd.DataFrame, user_operation_text: str) -> pd.Series:
-#     """
-#     Simulates the behavior of an AI model interpreting a user-defined operation
-#     on a subset of a DataFrame.
-
-#     This function is a placeholder. In a real application, this would involve
-#     calling a Gen AI/Agentic AI model (e.g., via an API) that takes the
-#     'user_operation_text' and potentially metadata about 'data_subset'
-#     (like column names, dtypes) and returns the calculated Series.
-
-#     For demonstration, it attempts to parse simple operations.
-
-#     Args:
-#         data_subset: A pandas DataFrame containing only the features selected by the user.
-#         user_operation_text: The free-form text string entered by the user describing the operation.
-
-#     Returns:
-#         A pandas Series representing the result of the operation.
-
-#     Raises:
-#         ValueError: If the operation cannot be interpreted or is invalid for the data.
-#         TypeError: If data types are incompatible with the interpreted operation.
-#     """
-#     operation_text_lower = user_operation_text.lower().strip()
-#     result_series = None
-
-#     # Helper to check if all columns in data_subset are numeric
-#     def all_numeric(df_sub):
-#         return all(pd.api.types.is_numeric_dtype(df_sub[col]) for col in df_sub.columns)
-
-#     try:
-#         if "sum" in operation_text_lower:
-#             if not all_numeric(data_subset):
-#                 raise TypeError("Sum operation requires all selected features to be numeric.")
-#             result_series = data_subset.sum(axis=1)
-#         elif "mean" in operation_text_lower or "average" in operation_text_lower:
-#             if not all_numeric(data_subset):
-#                 raise TypeError("Mean/Average operation requires all selected features to be numeric.")
-#             result_series = data_subset.mean(axis=1)
-#         elif "product" in operation_text_lower:
-#             if not all_numeric(data_subset):
-#                 raise TypeError("Product operation requires all selected features to be numeric.")
-#             result_series = data_subset.prod(axis=1)
-#         elif "max" in operation_text_lower:
-#             if not all_numeric(data_subset):
-#                 raise TypeError("Max operation requires all selected features to be numeric.")
-#             result_series = data_subset.max(axis=1)
-#         elif "min" in operation_text_lower:
-#             if not all_numeric(data_subset):
-#                 raise TypeError("Min operation requires all selected features to be numeric.")
-#             result_series = data_subset.min(axis=1)
-#         # Add more complex parsing logic here if desired for the simulation
-#         # For example, using regex to extract column names and operators for custom formulas.
-#         # Example: "col1 + col2 * 5" -> would require a more sophisticated parser or an actual LLM.
-#         else:
-#             # If no recognized operation, return a series of NaNs or raise an error
-#             raise ValueError(f"AI simulation could not interpret operation: '{user_operation_text}'. "
-#                              "Please provide a more explicit operation (e.g., 'sum', 'mean', 'product', 'max', 'min').")
-
-#     except (ValueError, TypeError) as e:
-#         # Re-raise specific errors for clearer feedback
-#         raise e
-#     except Exception as e:
-#         # Catch any other unexpected errors during simulation
-#         raise Exception(f"An unexpected error occurred during AI operation simulation for '{user_operation_text}': {e}")
-
-#     if result_series is None:
-#         # Fallback if interpretation failed but no specific error was raised
-#         raise ValueError(f"AI simulation failed to produce a result for operation: '{user_operation_text}'.")
-
-#     return result_series
-
 
 def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: Dict[str, Any]) -> pd.DataFrame:
     """
@@ -892,7 +820,7 @@ def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: D
 
     try:
         # >>>>> MODIFIED LINE: Call the new code generation function <<<<<
-        generated_code = _generate_transform_code_with_llm(features, user_operation_text)
+        generated_code = generate_transform_code_with_llm(features, user_operation_text)
 
         if generated_code.startswith("ERROR:"):
             raise ValueError(f"AI interpretation failed for '{user_operation_text}': {generated_code}")
@@ -1024,7 +952,6 @@ def select_mandatory_features(df: pd.DataFrame) -> List[str]:
     selected_mandatory = random.sample(present_mandatory_features, num_to_select)
 
     return selected_mandatory
-
 
 # --- NEW: Recommend Features Function ---
 def recommend_features(df: pd.DataFrame) -> List[Dict[str, Any]]:
