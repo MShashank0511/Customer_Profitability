@@ -71,10 +71,10 @@ if "data_registry_cleared" not in st.session_state:
 #         return None
 
 
-#     if 'Customer_ID' in data.columns:
-#         data['Customer_ID'] = data['Customer_ID'].astype(str)
+#     if 'Application_ID' in data.columns:
+#         data['Application_ID'] = data['Application_ID'].astype(str)
 #     else:
-#         st.warning("The dataset does not contain a 'Customer_ID' column. Some insights may be limited.")
+#         st.warning("The dataset does not contain a 'Application_ID' column. Some insights may be limited.")
 
 #     return data
 def load_feature_metadata(metadata_file="loan_feature_metadata.csv"):
@@ -110,10 +110,10 @@ def load_data(uploaded_file, feature_mapping):
         st.error("The dataset does not contain a 'Timestamp' column. This column is essential for historical insights.")
         return None
 
-    if 'Customer_ID' in data.columns:
-        data['Customer_ID'] = data['Customer_ID'].astype(str)
+    if 'Application_ID' in data.columns:
+        data['Application_ID'] = data['Application_ID'].astype(str)
     else:
-        st.warning("The dataset does not contain a 'Customer_ID' column. Some insights may be limited.")
+        st.warning("The dataset does not contain a 'Application_ID' column. Some insights may be limited.")
 
     return data
 
@@ -141,20 +141,20 @@ def today_rates(df):
     if 'Loan_Status' not in df.columns:
         st.warning("Information regarding loan status is not available: 'Loan_Status' column is missing.")
         return 0.0, 0.0
-    if 'Customer_ID' not in df.columns:
-        st.warning("Skipping Today's Loan Rates: 'Customer_ID' column not found in the data.")
+    if 'Application_ID' not in df.columns:
+        st.warning("Skipping Today's Loan Rates: 'Application_ID' column not found in the data.")
         return 0.0, 0.0
     if df.empty:
         return 0.0, 0.0
 
     df_cleaned = df.dropna(subset=['Timestamp'])
-    df_cleaned = df_cleaned[df_cleaned['Customer_ID'] != '0'] # Assuming '0' is an invalid/placeholder Customer_ID
+    df_cleaned = df_cleaned[df_cleaned['Application_ID'] != '0'] # Assuming '0' is an invalid/placeholder Application_ID
     
     if df_cleaned['Loan_Status'].isnull().all():
         st.warning("Information regarding loan status is not available: 'Loan_Status' contains only missing values.")
         return 0.0, 0.0
 
-    latest_status_per_customer = df_cleaned.dropna(subset=['Loan_Status']).sort_values(by='Timestamp', ascending=True).groupby('Customer_ID')['Loan_Status'].last().reset_index()
+    latest_status_per_customer = df_cleaned.dropna(subset=['Loan_Status']).sort_values(by='Timestamp', ascending=True).groupby('Application_ID')['Loan_Status'].last().reset_index()
 
     total_unique_customers_with_status = len(latest_status_per_customer)
     if total_unique_customers_with_status == 0:
@@ -165,7 +165,7 @@ def today_rates(df):
 
     # Recalculate total after coercing and dropping NaNs from Loan_Status
     # This ensures the denominator is based on customers with valid, numeric loan statuses
-    valid_status_customers = latest_status_per_customer['Customer_ID'].nunique()
+    valid_status_customers = latest_status_per_customer['Application_ID'].nunique()
     if valid_status_customers == 0:
         return 0.0, 0.0
 
@@ -199,12 +199,12 @@ def average_approval_rate(df):
     if 'Loan_Status' not in df.columns:
         st.warning("Information regarding loan status is not available: 'Loan_Status' column is missing.")
         return 0.0, 0.0
-    if df.empty or 'Customer_ID' not in df.columns:
-        st.warning("Skipping Average Approval Rate: DataFrame is empty or 'Customer_ID' column not found.")
+    if df.empty or 'Application_ID' not in df.columns:
+        st.warning("Skipping Average Approval Rate: DataFrame is empty or 'Application_ID' column not found.")
         return 0.0, 0.0
 
     df_cleaned = df.dropna(subset=['Timestamp'])
-    df_cleaned = df_cleaned[df_cleaned['Customer_ID'] != '0']
+    df_cleaned = df_cleaned[df_cleaned['Application_ID'] != '0']
 
     if df_cleaned['Loan_Status'].isnull().all():
         st.warning("Information regarding loan status is not available: 'Loan_Status' contains only missing values for average rate calculation.")
@@ -221,7 +221,7 @@ def average_approval_rate(df):
     if df_cleaned.empty: # Check again after numeric conversion and dropna
         return 0.0, 0.0
 
-    grouped_by_date_customer = df_cleaned.sort_values(by='Timestamp', ascending=True).groupby([df_cleaned['Timestamp'].dt.date, 'Customer_ID'])['Loan_Status_Numeric'].last()
+    grouped_by_date_customer = df_cleaned.sort_values(by='Timestamp', ascending=True).groupby([df_cleaned['Timestamp'].dt.date, 'Application_ID'])['Loan_Status_Numeric'].last()
     
     # Now, aggregate daily rates
     daily_summary = grouped_by_date_customer.groupby(level=0).agg( # level=0 is the date
@@ -294,9 +294,9 @@ def display_insights(data, dataset_name, feature_mapping):
         col1, col2, col3 = st.columns(3)
 
         total_applications_yesterday = 0
-        if 'Customer_ID' in yesterday_data.columns and not yesterday_data.empty:
-            total_applications_yesterday = yesterday_data['Customer_ID'].nunique()
-        elif not yesterday_data.empty:  # Fallback if Customer_ID is missing but data exists
+        if 'Application_ID' in yesterday_data.columns and not yesterday_data.empty:
+            total_applications_yesterday = yesterday_data['Application_ID'].nunique()
+        elif not yesterday_data.empty:  # Fallback if Application_ID is missing but data exists
             total_applications_yesterday = len(yesterday_data)
 
         col1.metric("Total Unique Loan Applications Yesterday", total_applications_yesterday)
@@ -477,7 +477,7 @@ def display_historical_insights(data, dataset_name, feature_mapping):
         )
 
         features = []
-        base_features = [col for col in data.columns if col not in ['Timestamp', 'Customer_ID']]
+        base_features = [col for col in data.columns if col not in ['Timestamp', 'Application_ID']]
 
         if chart_type == "Categorical":
             features = [get_display_name(col, feature_mapping) for col in base_features if historical_data[col].nunique(dropna=False) <= 10 and historical_data[col].nunique(dropna=False) > 0]
@@ -485,7 +485,7 @@ def display_historical_insights(data, dataset_name, feature_mapping):
             features = [get_display_name(col, feature_mapping) for col in base_features if pd.api.types.is_numeric_dtype(historical_data[col]) and historical_data[col].nunique(dropna=False) > 10]
 
         if not features:
-            st.warning(f"No **{chart_type.lower()}** features found in the filtered data for **{dataset_name}** based on the current criteria (excluding 'Timestamp' and 'Customer_ID'). Adjust date range or check data.")
+            st.warning(f"No **{chart_type.lower()}** features found in the filtered data for **{dataset_name}** based on the current criteria (excluding 'Timestamp' and 'Application_ID'). Adjust date range or check data.")
             return
 
         selected_feature_display_name = st.selectbox(
@@ -598,10 +598,11 @@ if on_us_file is not None:
             data_path = os.path.join(save_dir, "on_us_data.parquet")
             try:
                 on_us_data.to_parquet(data_path, index=False)
+                
                 st.session_state["on_us_data_path"] = data_path
-                st.success("On-Us data processed and saved to data_registry.")
             except Exception as e:
                 st.error(f"Failed to save On-Us data as parquet: {e}")
+            
         else:
             st.error("On-Us data loaded but 'Timestamp' column is missing, invalid, or empty. Cannot proceed with insights.")
 
@@ -615,6 +616,7 @@ if bureau_file is not None:
             try:
                 bureau_data.to_parquet(data_path, index=False)
                 st.session_state["bureau_data_path"] = data_path
+                
                 st.success("Bureau data processed and saved to data_registry.")
             except Exception as e:
                 st.error(f"Failed to save Bureau data as parquet: {e}")
@@ -636,3 +638,6 @@ if installments_file is not None:
                 st.error(f"Failed to save Installments data as parquet: {e}")
         else:
             st.error("Installments data loaded but 'Timestamp' column is missing, invalid, or empty. Cannot proceed with insights.")
+
+
+  

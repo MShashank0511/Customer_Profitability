@@ -8,10 +8,11 @@ import random
 from datetime import datetime, timedelta
 import json
 import os
-import feat_engg_backend
+import model_states.feat_engg_backend as feat_engg_backend
 import re # For parsing Gemini output
 import google.generativeai as genai
 from dotenv import load_dotenv
+import shutil
 
 try:
     from genai_recommend_features import (
@@ -26,11 +27,62 @@ except ImportError:
     GEMINI_API_KEY_CONFIGURED = False # Assume not configured
     st.stop()
 
+def clear_model_states_folder():
+    model_states_dir = "model_states"
+    exclude_file = "feat_engg_backend.py"  # File to exclude from deletion
+
+    if os.path.exists(model_states_dir):
+        try:
+            # Iterate through the contents of the folder
+            for item in os.listdir(model_states_dir):
+                item_path = os.path.join(model_states_dir, item)
+                # Skip the excluded file
+                if item == exclude_file:
+                    continue
+                # Remove directories
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                # Remove files
+                elif os.path.isfile(item_path):
+                    os.remove(item_path)
+
+            print("Cleared model_states folder for a new session, excluding 'feat_engg_backend.py'.")
+        except Exception as e:
+            st.error(f"Error clearing model_states folder: {str(e)}")
+
+# Call the function to clear the folder
+clear_model_states_folder()
+
 on_us_data_path = st.session_state.get("on_us_data_path")
+ 
 bureau_data_path = st.session_state.get("bureau_data_path")
-installments_data_path = st.session_state.get("Installments_data_path")
+
+installments_data_path = st.session_state.get("installments_data_path")
+
 print("ENTERED FEATURE ENGINEERING PAGE")
+
 print(on_us_data_path,bureau_data_path,installments_data_path)
+print(f"Attempting to load Bureau Data from: {bureau_data_path}")
+try:
+    bureau_df = pd.read_parquet(bureau_data_path)
+    print(f"Successfully loaded Bureau Data. Shape: {bureau_df.shape}")
+except Exception as e:
+    print(f"Error loading Bureau Data from '{bureau_data_path}': {e}")
+
+print(f"Attempting to load On-Us Data from: {on_us_data_path}")
+try:
+    on_us_df = pd.read_parquet(on_us_data_path)
+    print(f"Successfully loaded On-Us Data. Shape: {on_us_df.shape}")
+except Exception as e:
+    print(f"Error loading On-Us Data from '{on_us_data_path}': {e}")
+
+print(f"Attempting to load Installments Data from: {installments_data_path}")
+try:
+    installments_df = pd.read_parquet(installments_data_path)
+    print(f"Successfully loaded Installments Data. Shape: {installments_df.shape}")
+except Exception as e:
+    print(f"Error loading Installments Data from '{installments_data_path}': {e}")
+
 
 # def load_data_from_data_engineering(model_name):
 #     """
@@ -70,151 +122,44 @@ print(on_us_data_path,bureau_data_path,installments_data_path)
 # --- Model Definitions ---
 MODEL_NAMES = ["Default Model", "Charge-Off Model", "Prepayment Model", "Churn Model", "Extrapolation Model"]
 
-def save_model_state(model_name):
-    """
-    Saves the complete state for a given model to a JSON file.
-    Handles serialization of DataFrames and nested dictionaries containing DataFrames.
-    """
-    model_states_dir = "model_states"
-    os.makedirs(model_states_dir, exist_ok=True)
-    file_path = os.path.join(model_states_dir, f"{model_name}.json")
-
-    state_to_save = {}
-
-    # List all session state keys that belong to this model
-    all_model_session_keys = [key for key in st.session_state.keys() if key.startswith(f"{model_name}_")]
-
-    for session_key in all_model_session_keys:
-        value = st.session_state[session_key]
-
-        if session_key == f"{model_name}_state":
-            # Handle the main model_state dictionary, which contains nested DataFrames
-            serializable_main_state = {}
-            for sub_key, sub_value in value.items():
-                if isinstance(sub_value, pd.DataFrame):
-                    serializable_main_state[sub_key] = sub_value.to_json(orient='split', date_format='iso')
-                elif isinstance(sub_value, dict): # e.g., raw_datasets, filtered_datasets, merged_tables
-                    serializable_nested_dict = {}
-                    for nested_key, nested_df_value in sub_value.items():
-                        if isinstance(nested_df_value, pd.DataFrame):
-                            serializable_nested_dict[nested_key] = nested_df_value.to_json(orient='split', date_format='iso')
-                        else:
-                            serializable_nested_dict[nested_key] = nested_df_value
-                    serializable_main_state[sub_key] = serializable_nested_dict
-                else:
-                    serializable_main_state[sub_key] = sub_value
-            state_to_save[session_key] = serializable_main_state
-        elif isinstance(value, pd.DataFrame):
-            state_to_save[session_key] = value.to_json(orient='split', date_format='iso')
-        else:
-            state_to_save[session_key] = value
-
-    try:
-        with open(file_path, "w") as f:
-            json.dump(state_to_save, f, indent=4) # Use indent for readability
-        print(f"State for model '{model_name}' saved to {file_path}")
-    except Exception as e:
-        st.error(f"Error saving state for model '{model_name}': {e}")
-
-
-def load_model_state(model_name):
-    """
-    Loads the complete state for a given model from a JSON file.
-    Handles deserialization of DataFrames and nested dictionaries containing DataFrames.
-    If no saved state is found, it initializes a new one.
-    """
-    model_states_dir = "model_states"
-    file_path = os.path.join(model_states_dir, f"{model_name}.json")
-
-    # Clear all existing model-specific keys from session state
-    # This ensures a clean slate before loading new state or initializing
-    for key in list(st.session_state.keys()): # Create a list to iterate over as you modify dict
-        if key.startswith(f"{model_name}_"):
-            del st.session_state[key]
-
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, "r") as f:
-                loaded_data = json.load(f)
-
-            for session_key, value in loaded_data.items():
-                if session_key == f"{model_name}_state":
-                    # Handle the main model_state dictionary
-                    deserialized_main_state = {}
-                    for sub_key, sub_value in value.items():
-                        if isinstance(sub_value, str) and (
-                            "df" in sub_key.lower() or "dataset" in sub_key.lower() or # General check for DataFrames
-                            sub_key in ["loan_data", "bureau_data", "onus_data", "installments_data",
-                                        "filtered_data_loan", "filtered_data_bureau", "filtered_data_onus",
-                                        "filtered_data_installments", "merged_dataframe", "selected_features_df",
-                                        "final_transformed_features", "recommended_features", "final_dataset",
-                                        "transformation_output_df"]
-                        ):
-                            try:
-                                deserialized_main_state[sub_key] = pd.read_json(sub_value, orient='split') if sub_value else pd.DataFrame()
-                            except Exception as inner_df_err:
-                                print(f"Warning: Error deserializing DataFrame '{sub_key}' within main state: {inner_df_err}. Setting to empty DataFrame.")
-                                deserialized_main_state[sub_key] = pd.DataFrame()
-                        elif isinstance(sub_value, dict) and (sub_key in ["raw_datasets", "filtered_datasets", "merged_tables"]):
-                            # Handle nested dictionaries of DataFrames
-                            deserialized_nested_dict = {}
-                            for nested_key, nested_json_df_str in sub_value.items():
-                                try:
-                                    deserialized_nested_dict[nested_key] = pd.read_json(nested_json_df_str, orient='split') if nested_json_df_str else pd.DataFrame()
-                                except Exception as nested_df_err:
-                                    print(f"Warning: Error deserializing nested DataFrame '{nested_key}' in '{sub_key}': {nested_df_err}. Setting to empty DataFrame.")
-                                    deserialized_nested_dict[nested_key] = pd.DataFrame()
-                            deserialized_main_state[sub_key] = deserialized_nested_dict
-                        else:
-                            deserialized_main_state[sub_key] = sub_value
-                    st.session_state[session_key] = deserialized_main_state
-                elif isinstance(value, str) and (
-                    "df" in session_key.lower() or "dataset" in session_key.lower() or # General check for DataFrames
-                    session_key in [f"{model_name}_recommended_features", f"{model_name}_final_dataset"] # Explicit direct DFs
-                ):
-                    try:
-                        st.session_state[session_key] = pd.read_json(value, orient='split') if value else pd.DataFrame()
-                    except Exception as direct_df_err:
-                        print(f"Warning: Error deserializing direct DataFrame '{session_key}': {direct_df_err}. Setting to empty DataFrame.")
-                        st.session_state[session_key] = pd.DataFrame()
-                else:
-                    st.session_state[session_key] = value
-
-            print(f"State for model '{model_name}' loaded from {file_path}")
-            return True
-        except Exception as e:
-            st.error(f"Error loading state for model '{model_name}': {e}. Initializing new state.")
-            initialize_new_model_state(model_name)
-            return False
-    else:
-        print(f"No saved state found for model '{model_name}'. Initializing new state.")
-        initialize_new_model_state(model_name)
-        return False
-
 def initialize_new_model_state(model_name):
     """Initialize a fresh state for a new model."""
-    # Load the primary dataset (parquet or CSV)
-     # Ensure load_data_from_data_engineering is defined
+    # Ensure bureau_df, on_us_df, and installments_df are defined or passed.
+    # For demonstration, let's assume they are globally available or passed as arguments.
+    # In a real Streamlit app, these would typically come from user uploads or a data loading utility.
+    try:
+        # These dataframes should be available in the Streamlit session state
+        # if they have been loaded previously by the user.
+        # If not, provide empty dataframes to avoid errors.
+        initial_loan_data = pd.read_csv("loan_data.csv") 
+        initial_bureau_data = bureau_df.copy()
+        initial_on_us_data = on_us_df.copy()
+        initial_installments_data = installments_df.copy()
+    except AttributeError:
+        # Handle cases where session_state might not have these attributes yet
+        initial_loan_data = pd.DataFrame()
+        initial_bureau_data = pd.DataFrame()
+        initial_on_us_data = pd.DataFrame()
+        initial_installments_data = pd.DataFrame()
+
 
     # Initialize raw_datasets and filtered_datasets dictionaries
     raw_datasets = {
-        "Loan Data": pd.read_csv("loan_data.csv").copy(),
-        "Bureau Data": pd.read_parquet(bureau_data_path).copy(),
-         # Ensure data_path is accessible
-        
-        "On-Us Data": pd.read_parquet(on_us_data_path).copy(),
-        "Installments Data": pd.read_parquet(installments_data_path).copy(),
+        "Loan Data": initial_loan_data.copy(),
+        "Bureau Data": initial_bureau_data.copy(),
+        "On-Us Data": initial_on_us_data.copy(),
+        "Installments Data": initial_installments_data.copy(),
     }
     filtered_datasets = {}
-    
+
     # Initialize main state for the model
     st.session_state[f"{model_name}_state"] = {
         "raw_datasets": raw_datasets,
         "filtered_datasets": filtered_datasets,
-        "loan_data": raw_datasets["Loan Data"],
-        "bureau_data": raw_datasets["Bureau Data"],
-        "onus_data": raw_datasets["On-Us Data"],
-        "installments_data": raw_datasets["Installments Data"],
+        "loan_data": raw_datasets["Loan Data"], # Point to the raw_datasets version
+        "bureau_data": raw_datasets["Bureau Data"], # Point to the raw_datasets version
+        "onus_data": raw_datasets["On-Us Data"], # Point to the raw_datasets version
+        "installments_data": raw_datasets["Installments Data"], # Point to the raw_datasets version
         "show_popup1": False,
         "transform_blocks": [],
         "multi_transform_blocks": [],
@@ -276,6 +221,156 @@ def initialize_new_model_state(model_name):
 
     print(f"New state initialized for model: {model_name}")
 
+def save_model_state(model_name):
+    """
+    Saves the complete state for a given model to a JSON file.
+    Handles serialization of DataFrames and nested dictionaries containing DataFrames.
+    """
+    model_states_dir = "model_states"
+    os.makedirs(model_states_dir, exist_ok=True)
+    file_path = os.path.join(model_states_dir, f"{model_name}.json")
+
+    state_to_save = {}
+
+    # List all session state keys that belong to this model
+    all_model_session_keys = [key for key in st.session_state.keys() if key.startswith(f"{model_name}_")]
+
+    for session_key in all_model_session_keys:
+        value = st.session_state[session_key]
+
+        if session_key == f"{model_name}_state":
+            serializable_main_state = {}
+            for sub_key, sub_value in value.items():
+                if sub_key == "raw_datasets":
+                    # For raw_datasets, we want to preserve the actual user-uploaded data.
+                    # DO NOT serialize them as they are supposed to be loaded initially by the user.
+                    # We will simply store their structure, not their content.
+                    # Or, more practically, we can just skip saving their content here
+                    # as they are assumed to be loaded by the user at the start.
+                    # However, to maintain the structure, we can store empty DataFrames for keys.
+                    serializable_main_state[sub_key] = {
+                        k: (v.to_json(orient='split', date_format='iso') if isinstance(v, pd.DataFrame) else v)
+                        for k, v in sub_value.items()
+                    }
+                elif isinstance(sub_value, pd.DataFrame):
+                    serializable_main_state[sub_key] = sub_value.to_json(orient='split', date_format='iso')
+                elif isinstance(sub_value, dict):
+                    serializable_nested_dict = {}
+                    for nested_key, nested_df_value in sub_value.items():
+                        if isinstance(nested_df_value, pd.DataFrame):
+                            serializable_nested_dict[nested_key] = nested_df_value.to_json(orient='split', date_format='iso')
+                        else:
+                            serializable_nested_dict[nested_key] = nested_df_value
+                    serializable_main_state[sub_key] = serializable_nested_dict
+                else:
+                    serializable_main_state[sub_key] = sub_value
+            state_to_save[session_key] = serializable_main_state
+        elif isinstance(value, pd.DataFrame):
+            state_to_save[session_key] = value.to_json(orient='split', date_format='iso')
+        else:
+            state_to_save[session_key] = value
+
+    try:
+        with open(file_path, "w") as f:
+            json.dump(state_to_save, f, indent=4)
+        print(f"State for model '{model_name}' saved to {file_path}")
+    except Exception as e:
+        st.error(f"Error saving state for model '{model_name}': {e}")
+
+def load_model_state(model_name):
+    """
+    Loads the complete state for a given model from a JSON file.
+    Handles deserialization of DataFrames and nested dictionaries containing DataFrames.
+    If no saved state is found, it initializes a new one.
+    Crucially, for 'raw_datasets', it uses the already uploaded user data
+    instead of re-loading from the saved JSON, which would be the default empty DataFrames.
+    """
+    model_states_dir = "model_states"
+    file_path = os.path.join(model_states_dir, f"{model_name}.json")
+
+    # Store the currently uploaded raw datasets before clearing session state
+    # These are assumed to be present in st.session_state from initial user uploads
+    current_raw_datasets = {
+        "Loan Data": st.session_state.get("uploaded_loan_data", pd.DataFrame()),
+        "Bureau Data": st.session_state.get("uploaded_bureau_data", pd.DataFrame()),
+        "On-Us Data": st.session_state.get("uploaded_on_us_data", pd.DataFrame()),
+        "Installments Data": st.session_state.get("uploaded_installments_data", pd.DataFrame()),
+    }
+
+    # Clear all existing model-specific keys from session state
+    for key in list(st.session_state.keys()):
+        if key.startswith(f"{model_name}_"):
+            del st.session_state[key]
+
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r") as f:
+                loaded_data = json.load(f)
+
+            for session_key, value in loaded_data.items():
+                if session_key == f"{model_name}_state":
+                    deserialized_main_state = {}
+                    for sub_key, sub_value in value.items():
+                        if sub_key == "raw_datasets":
+                            # Use the user-uploaded data for raw_datasets
+                            deserialized_main_state[sub_key] = current_raw_datasets
+                        elif isinstance(sub_value, str) and (
+                            "df" in sub_key.lower() or "dataset" in sub_key.lower() or
+                            sub_key in ["loan_data", "bureau_data", "onus_data", "installments_data",
+                                        "filtered_data_loan", "filtered_data_bureau", "filtered_data_onus",
+                                        "filtered_data_installments", "merged_dataframe", "selected_features_df",
+                                        "final_transformed_features", "recommended_features", "final_dataset",
+                                        "transformation_output_df"]
+                        ):
+                            try:
+                                deserialized_main_state[sub_key] = pd.read_json(sub_value, orient='split') if sub_value else pd.DataFrame()
+                            except Exception as inner_df_err:
+                                print(f"Warning: Error deserializing DataFrame '{sub_key}' within main state: {inner_df_err}. Setting to empty DataFrame.")
+                                deserialized_main_state[sub_key] = pd.DataFrame()
+                        elif isinstance(sub_value, dict) and (sub_key in ["filtered_datasets", "merged_tables"]):
+                            deserialized_nested_dict = {}
+                            for nested_key, nested_json_df_str in sub_value.items():
+                                try:
+                                    deserialized_nested_dict[nested_key] = pd.read_json(nested_json_df_str, orient='split') if nested_json_df_str else pd.DataFrame()
+                                except Exception as nested_df_err:
+                                    print(f"Warning: Error deserializing nested DataFrame '{nested_key}' in '{sub_key}': {nested_df_err}. Setting to empty DataFrame.")
+                                    deserialized_nested_dict[nested_key] = pd.DataFrame()
+                            deserialized_main_state[sub_key] = deserialized_nested_dict
+                        else:
+                            deserialized_main_state[sub_key] = sub_value
+                    st.session_state[session_key] = deserialized_main_state
+
+                    # After loading, ensure individual DataFrame pointers refer to the raw_datasets
+                    # This is crucial for consistency
+                    if "raw_datasets" in st.session_state[session_key]:
+                        st.session_state[session_key]["loan_data"] = st.session_state[session_key]["raw_datasets"].get("Loan Data", pd.DataFrame())
+                        st.session_state[session_key]["bureau_data"] = st.session_state[session_key]["raw_datasets"].get("Bureau Data", pd.DataFrame())
+                        st.session_state[session_key]["onus_data"] = st.session_state[session_key]["raw_datasets"].get("On-Us Data", pd.DataFrame())
+                        st.session_state[session_key]["installments_data"] = st.session_state[session_key]["raw_datasets"].get("Installments Data", pd.DataFrame())
+
+                elif isinstance(value, str) and (
+                    "df" in session_key.lower() or "dataset" in session_key.lower() or
+                    session_key in [f"{model_name}_recommended_features", f"{model_name}_final_dataset"]
+                ):
+                    try:
+                        st.session_state[session_key] = pd.read_json(value, orient='split') if value else pd.DataFrame()
+                    except Exception as direct_df_err:
+                        print(f"Warning: Error deserializing direct DataFrame '{session_key}': {direct_df_err}. Setting to empty DataFrame.")
+                        st.session_state[session_key] = pd.DataFrame()
+                else:
+                    st.session_state[session_key] = value
+
+            print(f"State for model '{model_name}' loaded from {file_path}")
+            return True
+        except Exception as e:
+            st.error(f"Error loading state for model '{model_name}': {e}. Initializing new state.")
+            initialize_new_model_state(model_name)
+            return False
+    else:
+        print(f"No saved state found for model '{model_name}'. Initializing new state.")
+        initialize_new_model_state(model_name)
+        return False
+
 
 def add_new_model():
     """Add a new model (page) with fresh state."""
@@ -314,7 +409,7 @@ def switch_model(model_name):
         # Try to load existing state from backend
         load_model_state(model_name)
 
-        # If no saved state exists, initialize with default values
+        # If no saved state exists, initialize with default values (which will use uploaded data)
         if f"{model_name}_state" not in st.session_state:
             initialize_new_model_state(model_name)
             save_model_state(model_name)
@@ -322,7 +417,6 @@ def switch_model(model_name):
         st.rerun()
     except Exception as e:
         st.error(f"Error switching models: {str(e)}")
-
 # Add caching decorators for expensive operations
 
 
@@ -585,7 +679,6 @@ with col3:
         f"</div>",
         unsafe_allow_html=True,
     )
-
 
 # --- Further operations ---
 # You can now easily replace the datasets in session state
@@ -899,7 +992,7 @@ if st.session_state.show_filter_data:
     filter_data_section()
 
 st.markdown("---")
-
+# Debugging breakpoint to inspect session state and variables
 # --- Initialize Session State ---
 # Initialize session state variables if they don't exist
 active_model = st.session_state.active_model # Get active model name here
@@ -1467,7 +1560,7 @@ st.subheader("Data Actions")
 # Create a centered container for the buttons
 col1, col2, col3 = st.columns([1, 2, 1])  # Unequal columns to center the buttons
 with col2:  # Middle column
-    if st.button("🔧 Data Transformation", key="transform_btn", use_container_width=True):
+    if st.button("🔧 Single Feature Transformation", key="transform_btn", use_container_width=True):
         model_state["show_popup1"] = True
         st.rerun()
 
@@ -1475,22 +1568,33 @@ with col2:  # Middle column
 if model_state["show_popup1"]:
     st.markdown("### 🔧 Single Feature Transformation")
 
-    # Get the recommended features as input for single feature transformations
-    if "recommended_features" in st.session_state and not st.session_state.recommended_features.empty:
-        input_features = st.session_state.recommended_features.columns.tolist()
-    else:
+    # --- INPUT CHANGE: Explicitly mention the input dataset ---
+    st.info("Applying single feature transformations to the **Recommended Features** (from recommendation section).")
+
+    # Get the dataset for single feature transformations
+    # This now comes from features_for_single_transform
+    input_features_df = model_state.get("merged dataset", pd.DataFrame())
+
+    if input_features_df.empty:
+        st.warning("No features available for single feature transformation. Please acknowledge recommended features first.")
         input_features = []
+    else:
+        input_features = input_features_df.columns.tolist()
+
 
     # Initialize transform blocks if empty
     if not model_state["transform_blocks"]:
         model_state["transform_blocks"] = [{
             "feature": input_features[0] if input_features else "",
-            "operation": "Addition",
-            "value": 1.0,
+            "operation": "Addition", # Default operation
+            "value": 1.0, # Default value
             "output_name": ""
         }]
 
     # Show transformation blocks
+    # Fetch operations from backend
+    all_single_operations = feat_engg_backend.get_single_feature_transform_operations()
+
     for i, block in enumerate(model_state["transform_blocks"]):
         st.markdown(f"**Transformation #{i+1}**")
         col1, col2, col3, col4, col5 = st.columns([0.5, 2, 2, 2, 2])
@@ -1510,52 +1614,72 @@ if model_state["show_popup1"]:
                     index=input_features.index(block.get("feature", input_features[0])) if block.get("feature") in input_features else 0
                 )
             else:
-                st.warning("No features available. Please recommend and accept features first.")
+                # If no features, default to None or an empty string, warning is already above
                 feature = None
 
         with col3:
             operation = st.selectbox(
                 "Operation",
-                ["Addition", "Subtraction", "Multiplication", "Division", "Log", "Square Root", "Power", "Absolute Value", "Rename"],
+                # --- Changed: Use backend function to get operations ---
+                all_single_operations,
                 key=f"single_operation_{i}",
-                index=["Addition", "Subtraction", "Multiplication", "Division", "Log", "Square Root", "Power", "Absolute Value", "Rename"].index(block.get("operation", "Addition"))
+                index=all_single_operations.index(block.get("operation", "Addition")) if block.get("operation", "Addition") in all_single_operations else 0
             )
 
         with col4:
-            freeze_value_ops = ["Rename", "Log", "Square Root", "Absolute Value"]
+            # --- Changed: Added 'Rounding' to freeze_value_ops ---
+            freeze_value_ops = ["Rename", "Log", "Square Root", "Absolute Value", "Rounding"]
             if operation in freeze_value_ops:
-                default_val = 0 if operation == "Rename" else 1
+                default_val = 0 if operation == "Rename" else 1 # Rename could technically use a default of 0 or similar
                 value = st.number_input(
                     "Value",
                     value=default_val,
                     key=f"single_value_{i}",
-                    disabled=True
+                    disabled=True # Value input disabled for these operations
                 )
             elif operation in ["Addition", "Subtraction", "Multiplication", "Division", "Power"]:
+                # Ensure value is float for arithmetic operations' default input
                 value = st.number_input(
                     "Value",
-                    value=block.get("value", 1.0),
+                    value=float(block.get("value", 1.0)), # Cast to float for consistency
                     key=f"single_value_{i}"
                 )
-            else:
+            else: # Fallback for any other operation type that might need a value
                 value = st.number_input(
                     "Value",
-                    value=block.get("value", 1.0),
+                    value=float(block.get("value", 1.0)), # Cast to float
                     key=f"single_value_{i}"
                 )
 
+
         with col5:
             if feature:
+                # --- Changed: Added 'Rounding' to output name suggestion logic ---
                 if operation == "Rename":
                     suggested_output = f"{feature}_renamed"
+                elif operation == "Log":
+                    suggested_output = f"{feature}_log"
+                elif operation == "Square Root":
+                    suggested_output = f"{feature}_sqrt"
+                elif operation == "Absolute Value":
+                    suggested_output = f"{feature}_abs"
+                elif operation == "Rounding":
+                    suggested_output = f"{feature}_rounded"
                 elif value is not None:
-                    suggested_output = f"{feature}{operation.replace(' ', '')}{str(value).replace('.', '')}"
-                else:
-                    suggested_output = f"{feature}{operation.replace(' ', '')}"
+                    # Generic suggestion for operations with a numerical value
+                    op_symbol = {
+                        "Addition": "_plus_", "Subtraction": "_minus_",
+                        "Multiplication": "_mult_", "Division": "_div_",
+                        "Power": "_pow_"
+                    }.get(operation, "_")
+                    suggested_output = f"{feature}{op_symbol}{str(value).replace('.', '')}"
+                else: # Fallback if no specific suggestion can be made
+                    suggested_output = f"{feature}_{operation.replace(' ', '').lower()}"
 
                 prev_suggestion = block.get("prev_suggestion", "")
                 prev_output_name = block.get("output_name", "")
 
+                # Logic to retain user's custom output name unless it matches a previous suggestion
                 if not prev_output_name or prev_output_name == prev_suggestion:
                     output_name = suggested_output
                 else:
@@ -1567,12 +1691,13 @@ if model_state["show_popup1"]:
                     key=f"single_output_{i}"
                 )
 
+                # Update the model_state with current block's configuration
                 model_state["transform_blocks"][i] = {
                     "feature": feature,
                     "operation": operation,
                     "value": value,
                     "output_name": output_name,
-                    "prev_suggestion": suggested_output
+                    "prev_suggestion": suggested_output # Store the current suggestion to compare next time
                 }
 
     if st.button("➕ Add Transformation", key="add_transform"):
@@ -1585,305 +1710,361 @@ if model_state["show_popup1"]:
             })
             st.rerun()
         else:
-            st.warning("Please recommend and accept features first before adding transformations.")
+            st.warning("Please ensure data is available before adding transformations.")
 
     # --- Apply Transformation Button ---
     if st.button("✅ Apply Transformation", key="apply_single_transform"):
         try:
-            if not input_features:
-                st.warning("No features available. Please recommend and accept features first.")
+            if input_features_df.empty:
+                st.warning("No features available. Please ensure data is available.")
             else:
                 transformed_features = {}
                 successful_transformations = []
-                # Get the current state of recommended features
-                current_recommended_features = st.session_state.recommended_features.copy()
+                # Get the current state of the input features for sequential application
+                current_transformed_df = input_features_df.copy()
 
                 for block in model_state["transform_blocks"]:
                     feature = block["feature"]
                     operation = block["operation"]
-                    value = block["value"]
                     output_name = block["output_name"]
+
                     if not feature or not operation or not output_name:
-                        continue
+                        st.error(f"Skipping incomplete transformation block: {block}")
+                        continue # Skip to the next block if essential fields are missing
 
                     # Apply transformation using the backend function
                     try:
-                         # Pass the current recommended features to the backend function
-                         current_recommended_features = feat_engg_backend.apply_single_feature_transform(
-                             current_recommended_features,
+                         current_transformed_df = feat_engg_backend.apply_single_feature_transform(
+                             current_transformed_df,
                              block
                          )
                          successful_transformations.append(f"- Applied transformation '{operation}' on '{feature}' to create '{output_name}'")
                     except (ValueError, TypeError, Exception) as e:
-                         st.error(f"Error applying transformation block {block}: {e}")
-                         continue # Skip to the next block on error
+                         st.error(f"Error applying transformation block for '{feature}' with operation '{operation}': {e}")
+                         # Do not continue processing if a block fails, to prevent cascading errors
+                         break # Stop processing further blocks on first error
 
                 # Update session state with the new DataFrame containing transformed features
-                st.session_state.recommended_features = current_recommended_features
-
-                # Display success message and list of successful transformations
-                if successful_transformations:
+                # Only update if all blocks processed without a fatal error (no break occurred)
+                if not successful_transformations and not model_state["transform_blocks"]:
+                    # If no blocks were processed and there were no blocks, maybe a message
+                    pass
+                elif len(successful_transformations) == len(model_state["transform_blocks"]):
+                    model_state["single_transformed_features"] = current_transformed_df # Update the single_transformed_features
                     st.session_state.single_transform_success = "✅ Single feature transformations applied successfully!"
-                    st.info("Successful transformations:\n" + "\n".join(successful_transformations)) # Display list
+                    # Display list of successful transformations
+                    st.info("Successful transformations:\n" + "\n".join(successful_transformations))
+                elif successful_transformations: # Some blocks worked, but not all (due to 'break' above)
+                    model_state["single_transformed_features"] = current_transformed_df # Update with partially transformed data
+                    st.session_state.single_transform_success = "⚠️ Some single feature transformations applied. Check errors above for skipped transformations."
+                    st.info("Successful transformations:\n" + "\n".join(successful_transformations))
+                else: # No successful transformations
+                    st.session_state.single_transform_success = "❌ No single feature transformations were applied due to errors."
 
-                # Clear the transform blocks after successful application
+
+                # Clear the transform blocks after successful application (or partial application if errors occurred)
+                # This ensures the UI resets for the next set of transformations
                 model_state["transform_blocks"] = []
                 st.rerun()
         except Exception as e:
-            st.error(f"Error applying transformations: {str(e)}")
+            # Catching any remaining unexpected errors from the entire 'Apply Transformation' process
+            st.error(f"An unexpected error occurred during the application of transformations: {str(e)}")
 
 
-    # Display success message if it exists
-    if st.session_state.single_transform_success:
-        st.success(st.session_state.single_transform_success)
-        # The info message is displayed immediately after successful application, so no need to clear here.
-        st.session_state.single_transform_success = None
+    # Display success message if it exists (from previous rerun)
+    if st.session_state.get("single_transform_success"):
+        if "✅" in st.session_state.single_transform_success:
+            st.success(st.session_state.single_transform_success)
+        elif "⚠️" in st.session_state.single_transform_success:
+            st.warning(st.session_state.single_transform_success)
+        elif "❌" in st.session_state.single_transform_success:
+            st.error(st.session_state.single_transform_success)
 
-    # --- Multi-Feature Transformation Section ---
-    st.markdown("### 🔧 Multiple Features Transformation")
+        st.session_state.single_transform_success = None # Clear after displaying
 
-    # Initialize multi transform blocks if empty
-    if not model_state["multi_transform_blocks"]:
-        model_state["multi_transform_blocks"] = [{
+
+
+##########################################################################################################################################################
+
+# --- Multi-Feature Transformation Section ---
+st.markdown("### 🔧 Multiple Features Transformation")
+
+# IMPORTANT: Ensure active_model and model_state are defined here or globally
+if "active_model" not in st.session_state:
+    st.info("Please select or initialize a model first to use Multi-Feature Transformation.")
+    st.stop() # Stops execution of the rest of the script if no active model
+
+active_model = st.session_state.active_model
+model_state = st.session_state[f"{active_model}_state"]
+
+# Get the current DataFrame for this section from the model's state.
+# This now comes from single_transformed_features
+current_df_for_multi_feature = model_state.get("single_transformed_features", pd.DataFrame())
+
+# --- IMPORTANT: Early Exit if no data is available ---
+if current_df_for_multi_feature.empty:
+    st.info("No data available for Multi-Feature Transformation. Please ensure you have completed single feature transformation steps.")
+    st.stop() # Stops execution of the rest of this section if no data
+
+
+# Initialize multi transform blocks if empty
+# This provides a default empty block if the list was cleared or never initialized for this model.
+if not model_state["multi_transform_blocks"]:
+    model_state["multi_transform_blocks"] = [{
+        "features": [],
+        "operation": "",
+        "output_name": ""
+    }]
+
+# Show transformation blocks
+for i, block in enumerate(model_state["multi_transform_blocks"]):
+    st.markdown(f"**Transformation #{i+1}**")
+    col1, col2, col3, col4 = st.columns([0.5, 2, 2, 2])
+
+    with col1:
+        # Corrected key for remove button
+        if st.button("❌", key=f"remove_multi_block_{active_model}_{i}"):
+            model_state["multi_transform_blocks"].pop(i)
+            st.rerun()
+
+    with col2:
+        available_features = feat_engg_backend.get_features_for_table("data", {"data": current_df_for_multi_feature})
+        if available_features:
+            selected_features = st.multiselect(
+                "Choose Features to Combine",
+                available_features,
+                default=block.get("features", []),
+                key=f"multi_features_select_{active_model}_{i}" # Explicit key
+            )
+            model_state["multi_transform_blocks"][i]["features"] = selected_features
+        else:
+            st.warning("No features available in the current dataset. Please check data loading and previous steps.")
+
+    with col3:
+        # The AI backend expects a free-form text description of the operation.
+        operation_text = st.text_input(
+             "Describe the transformation (AI will interpret)",
+             value=block.get("operation", ""),
+             placeholder="e.g.,'ratio of col_A to col_B'",
+             key=f"multi_operation_text_{active_model}_{i}" # Explicit key
+        )
+        model_state["multi_transform_blocks"][i]["operation"] = operation_text
+
+    with col4:
+        features_for_name = block.get("features", [])
+        operation_for_name = block.get("operation", "").replace(' ', '').lower()
+
+        if features_for_name and operation_for_name:
+            suggested_output = f"{operation_for_name}_{'_'.join(features_for_name).lower()}"
+            suggested_output = suggested_output[:50] # Limit length
+
+            current_output_name = block.get("output_name", "")
+            # Corrected key for previous suggestion to include active_model
+            prev_suggestion_key = f"multi_prev_suggestion_{active_model}_{i}"
+            prev_suggestion = st.session_state.get(prev_suggestion_key, "")
+
+            if not current_output_name or current_output_name == prev_suggestion:
+                output_name_value = suggested_output
+            else:
+                output_name_value = current_output_name
+
+            output_name = st.text_input(
+                "Name for New Feature",
+                value=output_name_value,
+                key=f"multi_output_name_{active_model}_{i}" # Explicit key
+            )
+            model_state["multi_transform_blocks"][i]["output_name"] = output_name
+            st.session_state[prev_suggestion_key] = suggested_output
+        else:
+            output_name = st.text_input(
+                "Name for New Feature",
+                value=block.get("output_name", ""),
+                key=f"multi_output_name_{active_model}_{i}" # Explicit key
+            )
+            model_state["multi_transform_blocks"][i]["output_name"] = output_name
+            # Corrected key for previous suggestion to include active_model
+            prev_suggestion_key = f"multi_prev_suggestion_{active_model}_{i}"
+            if prev_suggestion_key in st.session_state:
+                 del st.session_state[prev_suggestion_key]
+
+
+if st.button("➕ Add New Feature Combination", key=f"add_multi_transform_button_{active_model}"): # Explicit key
+    if not current_df_for_multi_feature.empty:
+        model_state["multi_transform_blocks"].append({
             "features": [],
             "operation": "",
             "output_name": ""
-        }]
+        })
+        st.rerun()
+    else:
+        st.warning("Please ensure data is loaded and available before adding transformations.")
 
-    # Show transformation blocks
-    for i, block in enumerate(model_state["multi_transform_blocks"]):
-        st.markdown(f"**Transformation #{i+1}**")
-        col1, col2, col3, col4 = st.columns([0.5, 2, 2, 2])
+# --- Apply All Multi-Feature Transformations Button ---
 
-        with col1:
-            if st.button("❌", key=f"remove_multi_{i}"):
-                model_state["multi_transform_blocks"].pop(i)
-                st.rerun()
-
-        with col2:
-            if input_features:
-                selected_features = st.multiselect(
-                    "Choose Features to Combine",
-                    input_features,
-                    default=block.get("features", []),
-                    key=f"multi_features_{i}"
-                )
-                model_state["multi_transform_blocks"][i]["features"] = selected_features
-            else:
-                st.warning("No features available. Please recommend and accept features first.")
-
-        with col3:
-            # Use selectbox for predefined multi-feature operations
-            operation = st.selectbox(
-                 "Select Combination Operation",
-                 feat_engg_backend.get_multi_transformation_operations(), # Get operations from backend
-                 index=feat_engg_backend.get_multi_transformation_operations().index(block.get("operation", feat_engg_backend.get_multi_transformation_operations()[0])) if block.get("operation") in feat_engg_backend.get_multi_transformation_operations() else 0,
-                 key=f"multi_operation_{i}"
-            )
-            model_state["multi_transform_blocks"][i]["operation"] = operation
-
-
-        with col4:
-            # Suggest a default output name based on selected features and operation
-            features_for_name = block.get("features", [])
-            operation_for_name = block.get("operation", "").replace(' ', '').lower()
-
-            if features_for_name and operation_for_name:
-                 # Create a simple suggested name
-                 suggested_output = f"{operation_for_name}_{'_'.join(features_for_name).lower()}"
-                 # Limit suggested name length to avoid overly long column names
-                 suggested_output = suggested_output[:50] # Arbitrary limit
-
-                 # Check if a name is already saved for this block, if so, use it
-                 current_output_name = block.get("output_name", "")
-
-                 # If no name is saved, or the saved name is the old suggestion for this block, use the new suggestion
-                 prev_suggestion_key = f"multi_prev_suggestion_{i}"
-                 prev_suggestion = st.session_state.get(prev_suggestion_key, "")
-
-                 if not current_output_name or current_output_name == prev_suggestion:
-                      output_name_value = suggested_output
-                 else:
-                      output_name_value = current_output_name
-
-                 output_name = st.text_input(
-                     "Name for New Feature",
-                     value=output_name_value,
-                     key=f"multi_output_{i}"
-                 )
-                 model_state["multi_transform_blocks"][i]["output_name"] = output_name
-                 # Store the current suggestion so we know if the user overwrites it
-                 st.session_state[prev_suggestion_key] = suggested_output
-            else:
-                # If no features or operation selected, provide a default empty input
-                output_name = st.text_input(
-                    "Name for New Feature",
-                    value=block.get("output_name", ""),
-                    key=f"multi_output_{i}"
-                )
-                model_state["multi_transform_blocks"][i]["output_name"] = output_name
-                # Clear previous suggestion if features/operation are no longer selected
-                prev_suggestion_key = f"multi_prev_suggestion_{i}"
-                if prev_suggestion_key in st.session_state:
-                     del st.session_state[prev_suggestion_key]
-
-
-    if st.button("➕ Add New Feature Combination", key="add_multi_transform"):
-        if input_features:
-            model_state["multi_transform_blocks"].append({
-                "features": [],
-                "operation": "",
-                "output_name": ""
-            })
-            st.rerun()
+if st.button("✅ Apply all transformations", key=f"apply_multi_transforms_button_{active_model}"): # Explicit key
+    try:
+        if not model_state["multi_transform_blocks"]:
+            st.warning("No multi-feature transformation blocks defined. Please add at least one.")
+            # No st.stop() here, allow warning to display
         else:
-            st.warning("Please recommend and accept features first before adding transformations.")
+            # Call the new backend function for AI-driven multi-feature transformations
+            final_transformed_df = feat_engg_backend.apply_all_ai_driven_multi_feature_transforms(
+                current_df_for_multi_feature.copy(), # Pass a copy of the input DataFrame
+                model_state["multi_transform_blocks"] # Pass the entire list of transformation blocks
+            )
 
-    if st.button("✅ Apply all transformations", key="apply_multi_transforms"):
-        try:
-            if not input_features:
-                st.warning("No features available. Please recommend and accept features first.")
-            else:
-                successful_transformations = []
-                # Get the current state of recommended features
-                current_recommended_features = st.session_state.recommended_features.copy()
+            # Store the result in model_state["final_transformed_features"]
+            model_state["final_transformed_features"] = final_transformed_df
 
-                for block in model_state["multi_transform_blocks"]:
-                    features = block["features"]
-                    operation = block["operation"]
-                    output_name = block["output_name"]
-                    if not features or not operation or not output_name:
-                        continue
+            # Update success message for the model state (handled by the display block below)
+            model_state["multi_transform_success"] = "✅ Multi-feature transformations applied successfully!"
 
-                    # Apply multi-feature transformation using the backend function
-                    try:
-                         current_recommended_features = feat_engg_backend.apply_multi_feature_transform(
-                             current_recommended_features,
-                             block
-                         )
-                         successful_transformations.append(f"- Applied multi-feature transformation '{operation}' on {', '.join(features)} to create '{output_name}'")
-                    except (ValueError, TypeError, Exception) as e:
-                         st.error(f"Error applying multi-feature transformation block {block}: {e}")
-                         continue # Skip to the next block on error
+            # Optional: Save the updated features to a CSV file (use final_transformed_features)
+            # This is a good place if you want to persist the output of multi-feature transformations.
+            # combined_dataset_file = os.path.join("data_registry", active_model, "transformed_features.parquet")
+            # os.makedirs(os.path.dirname(combined_dataset_file), exist_ok=True)
+            # model_state["final_transformed_features"].to_parquet(combined_dataset_file, index=False)
+            # st.info(f"Transformed features saved to: {combined_dataset_file}")
 
-                # Update session state with the new DataFrame containing transformed features
-                st.session_state.recommended_features = current_recommended_features
+            # Clear the transform blocks after successful application
+            model_state["multi_transform_blocks"] = []
+            st.rerun() # Rerun to clear blocks and update UI (this will also trigger the success message display)
 
-                # Save the updated recommended features to a CSV file (optional but good practice)
-                combined_dataset_file = f"model_{active_model}_dataset.csv"
-                st.session_state.recommended_features.to_csv(combined_dataset_file, index=False)
+    except Exception as e:
+        st.error(f"An unexpected error occurred during multi-feature transformations: {str(e)}")
+        # Update error message for the model state
+        model_state["multi_transform_success"] = "❌ Multi-feature transformations failed."
 
-                # Display success message and list of successful transformations
-                if successful_transformations:
-                     st.session_state.multi_transform_success = "✅ Multi-feature transformations applied successfully!"
-                     st.info("Successful transformations:\n" + "\n".join(successful_transformations)) # Display list
+# --- Display Success/Error Message for Multi-Feature Transformation ---
+# This block should be placed directly after the "Apply all transformations" button section.
+if model_state.get("multi_transform_success"): # Use .get() for safety
+    if "✅" in model_state["multi_transform_success"]:
+        st.success(model_state["multi_transform_success"])
+    elif "❌" in model_state["multi_transform_success"]:
+        st.error(model_state["multi_transform_success"])
+    elif "⚠️" in model_state["multi_transform_success"]:
+        st.warning(model_state["multi_transform_success"])
 
-
-                model_state["multi_transform_blocks"] = []
-                st.rerun()
-        except Exception as e:
-            st.error(f"An unexpected error occurred during multi-feature transformations: {str(e)}")
+    # IMPORTANT: Clear the message after displaying it so it doesn't persist
+    model_state["multi_transform_success"] = None
 
 
-    if st.session_state.multi_transform_success:
-        st.success(st.session_state.multi_transform_success)
-        # The info message is displayed immediately after successful application, so no need to clear here.
-        st.session_state.multi_transform_success = None
 
 
-# --- Initialize Session State ---
-# Ensure these are initialized for the active model as well
-active_model = st.session_state.active_model
-
-if f"{active_model}_final_dataset" not in st.session_state:
-    st.session_state[f"{active_model}_final_dataset"] = pd.DataFrame()  # Initialize as an empty DataFrame
-if f"{active_model}_recommended_features" not in st.session_state:
-    st.session_state[f"{active_model}_recommended_features"] = pd.DataFrame()  # Initialize as an empty DataFrame
-# Note: transformed_features and final_transformed_features are now handled within recommended_features
-# if f"{active_model}_transformed_features" not in st.session_state:
-#     st.session_state[f"{active_model}_transformed_features"] = pd.DataFrame()  # Initialize as an empty DataFrame
-# if f"{active_model}_final_transformed_features" not in st.session_state:
-#     st.session_state[f"{active_model}_final_transformed_features"] = pd.DataFrame()  # Initialize as an empty DataFrame
-if f"{active_model}_selected_features" not in st.session_state:
-    st.session_state[f"{active_model}_selected_features"] = []  # Initialize as an empty list
-if f"{active_model}_feature_checkboxes" not in st.session_state:
-    st.session_state[f"{active_model}_feature_checkboxes"] = {}  # Initialize as an empty dictionary
-if f"{active_model}_show_filter" not in st.session_state:
-    st.session_state[f"{active_model}_show_filter"] = False
-if f"{active_model}_filtered_features" not in st.session_state:
-    st.session_state[f"{active_model}_filtered_features"] = []
-if f"{active_model}_filter_text" not in st.session_state:
-    st.session_state[f"{active_model}_filter_text"] = ""
 
 
-# --- Data Selection Section ---
+###################################################################################################################################################
+
+# --- Data Selection Section (Start of the requested section) ---
 st.markdown("### 🔎 Feature Selection")
 
-# Load the combined dataset (recommended features) from the active model's state
-combined_data = st.session_state.get(f"{active_model}_recommended_features", pd.DataFrame())
+# --- Target Variable Selection ---
+st.subheader("🎯 Target Variable Selection")
 
-if combined_data.empty:
-     # Fallback to loading from file if session state is empty
-     try:
-         # Assuming the file is named based on the active model
-         combined_dataset_file = f"model_{active_model}_dataset.csv"
-         if os.path.exists(combined_dataset_file):
-             combined_data = pd.read_csv(combined_dataset_file)
-             # Store loaded data in session state for the active model
-             st.session_state[f"{active_model}_recommended_features"] = combined_data
-         else:
-             st.warning(f"No combined dataset found for '{active_model}'. Please complete the merging and transformation steps.")
-             combined_data = pd.DataFrame() # Ensure combined_data is an empty DataFrame if file not found
-     except FileNotFoundError:
-         st.warning(f"No combined dataset file found for '{active_model}'. Please complete the merging and transformation steps.")
-         combined_data = pd.DataFrame() # Ensure combined_data is an empty DataFrame on error
-     except Exception as e:
-         st.error(f"Error loading combined dataset for '{active_model}': {str(e)}")
-         combined_data = pd.DataFrame() # Ensure combined_data is an empty DataFrame on error
+# Get the dataset after multi-feature transformation
+input_df_for_target = model_state.get("final_transformed_features", pd.DataFrame())
+
+if not input_df_for_target.empty:
+    # Get all column names from the transformed dataset
+    available_target_columns = input_df_for_target.columns.tolist()
+
+    # Allow the user to select a target variable
+    target_column_selected = st.selectbox(
+        "Select Target Variable",
+        available_target_columns,
+        # Set default value to the previously selected target_column if it exists and is in available columns
+        index=available_target_columns.index(model_state.get("target_column")) if model_state.get("target_column") in available_target_columns else 0,
+        key=f"target_column_select_{active_model}"
+    )
+
+    if st.button("Select Target Variable", key=f"add_target_btn_{active_model}"):
+        try:
+            target_feature_name = target_column_selected
+            model_state[f"target_column"] = target_column_selected
+            model_state[f"target_feature"] = target_feature_name
+
+            # Create a new DataFrame with all features EXCEPT the target column
+            # This will be the input for mandatory and good-to-have features
+            features_for_mandatory_df = input_df_for_target.drop(columns=[target_feature_name], errors='ignore').copy()
+            model_state["features_for_mandatory"] = features_for_mandatory_df
+
+            # The final_dataset will be constructed later after good-to-have features
+            # For now, it holds the full dataset from which features are being selected
+            model_state["final_dataset"] = input_df_for_target.copy()
+
+            st.success(f"Target variable '{target_column_selected}' selected successfully! Remaining features are ready for selection.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error selecting target variable: {str(e)}")
+else:
+    st.info("Please complete multi-feature transformations first to select a target variable.")
+
+st.markdown("---") # Separator after target selection
 
 
-# Define mandatory features
-mandatory_features = ["OPB", "interest_rate", "tenure", "credit_score_band", "LTV"]
+# --- Mandatory Features Section ---
+st.subheader("📌 Mandatory Features")
 
-# Define feature descriptions
-feature_descriptions = {
-    "OPB": "Outstanding Principal Balance of the customer's loan",
-    "interest_rate": "Current interest rate applicable to the customer's loan",
-    "tenure": "Duration of the loan in months",
-    "credit_score_band": "Customer's credit score category (Excellent, Good, Fair, Poor)",
-    "LTV": "Loan-to-Value ratio indicating the risk level of the loan",
-}
+# Load the dataset for mandatory features (this DataFrame will NOT contain the target column)
+combined_data_for_mandatory = model_state.get("features_for_mandatory", pd.DataFrame())
 
-# Add descriptions for combined features from the loaded data
-if not combined_data.empty:
-    for feature in combined_data.columns:
+if combined_data_for_mandatory.empty:
+     st.warning(f"No features available after target variable selection. Please ensure a target variable is selected.")
+else:
+    # Call backend to get mandatory features
+    mandatory_features = feat_engg_backend.select_mandatory_features(combined_data_for_mandatory)
+
+    # Store the list of mandatory features in model_state for persistence
+    model_state["selected_mandatory_features"] = mandatory_features
+
+    # Create the dataset *after* mandatory features have been conceptually "removed"
+    # This will be the input for the "Good-to-Have Features" section
+    features_after_mandatory_df = combined_data_for_mandatory.drop(
+        columns=[f for f in mandatory_features if f in combined_data_for_mandatory.columns],
+        errors='ignore'
+    ).copy()
+    model_state["features_after_mandatory"] = features_after_mandatory_df
+
+
+    # Define feature descriptions (can be expanded)
+    feature_descriptions = {
+        "OPB": "Outstanding Principal Balance of the customer's loan",
+        "interest_rate": "Current interest rate applicable to the customer's loan",
+        "tenure": "Duration of the loan in months",
+        "credit_score_band": "Customer's credit score category (Excellent, Good, Fair, Poor)",
+        "LTV": "Loan-to-Value ratio indicating the risk level of the loan",
+        # Add descriptions for other potential mandatory features
+        "loan_amount": "The total amount of the loan",
+        "age": "Age of the customer",
+        "employment_status": "Current employment status of the customer"
+    }
+
+    # Add descriptions for combined features from the loaded data
+    for feature in combined_data_for_mandatory.columns:
         if feature not in feature_descriptions:
-            # You might generate a more specific description here if possible
             feature_descriptions[feature] = f"Transformed or engineered feature based on original data."
 
 
-# Show mandatory features
-st.subheader("📌 Mandatory Features")
-# Filter mandatory features to only show those present in the combined data
-present_mandatory_features = [feat for feat in mandatory_features if feat in combined_data.columns]
-if present_mandatory_features:
-    st.dataframe(pd.DataFrame({"Mandatory Features": present_mandatory_features}), hide_index=True)
-    # Check if all defined mandatory features are present
-    if len(present_mandatory_features) == len(mandatory_features):
-         st.success("All mandatory attributes are available")
+    # Filter mandatory features to only show those present in the combined data
+    present_mandatory_features = [feat for feat in mandatory_features if feat in combined_data_for_mandatory.columns]
+    if present_mandatory_features:
+        st.dataframe(pd.DataFrame({"Mandatory Features": present_mandatory_features}), hide_index=True)
+        # Check if all defined mandatory features are present (from the backend's selection)
+        if len(present_mandatory_features) == len(mandatory_features):
+             st.success("All mandatory attributes are available and selected by the model.")
+        else:
+             missing_mandatory = [feat for feat in mandatory_features if feat not in combined_data_for_mandatory.columns]
+             st.warning(f"Some mandatory features selected by the model are missing in the current dataset: {', '.join(missing_mandatory)}")
     else:
-         missing_mandatory = [feat for feat in mandatory_features if feat not in combined_data.columns]
-         st.warning(f"Missing mandatory features: {', '.join(missing_mandatory)}")
-else:
-    st.warning("No mandatory features found in the combined dataset.")
+        st.info("No mandatory features identified by the model in the current dataset.")
 
 
 st.markdown("---")
 
-# Get all available features from the combined dataset
-all_features = combined_data.columns.tolist()
-# Filter out mandatory features that are present in the combined data from optional features
-available_optional_features = [feat for feat in all_features if feat not in present_mandatory_features]
+# --- Good-to-Have Features Section ---
+# Get all available features from the dataset after target selection (excluding mandatory ones already displayed)
+all_features_after_mandatory = combined_data_for_mandatory.columns.tolist()
+available_optional_features = [feat for feat in all_features_after_mandatory if feat not in present_mandatory_features]
 
 
 # Initialize feature checkboxes in session state for the active model if not exists
@@ -1894,14 +2075,12 @@ if f"{active_model}_feature_checkboxes" not in st.session_state:
 st.subheader("✨ Good-to-Have Features")
 
 if available_optional_features:
-    # Create a dataframe for the features
     features_df = pd.DataFrame({
         "Feature": available_optional_features,
         "Description": [feature_descriptions.get(feat, "No description available") for feat in available_optional_features],
-        "Select": [feat in st.session_state.get(f"{active_model}_selected_features", []) for feat in available_optional_features]
+        "Select": [bool(st.session_state[f"{active_model}_feature_checkboxes"].get(feat, True)) for feat in available_optional_features]
     })
 
-    # Display the features in a dataframe with custom styling
     edited_df = st.data_editor(
         features_df,
         column_config={
@@ -1927,35 +2106,51 @@ if available_optional_features:
         key=f"{active_model}_feature_editor"
     )
 
-    # Update selected features based on the user's interaction with the data editor
     st.session_state[f"{active_model}_selected_features"] = [
         feature for feature, is_selected in zip(available_optional_features, edited_df["Select"])
         if is_selected
     ]
 else:
-    st.info("No optional features available in the combined dataset.")
+    st.info("No optional features available in the current dataset (after target selection).")
 
 st.markdown("---")
 
-# Combine and preview
 if st.button("📊 Show Selected Attributes"):
-    # Create a summary of all selected features
     all_features_summary = []
     feature_types = []
 
-    # Add mandatory features that are present in the data
-    for feature in present_mandatory_features:
+    # Add mandatory features (from the backend's selection)
+    selected_mandatory_features = model_state.get("selected_mandatory_features", [])
+    for feature in selected_mandatory_features:
         all_features_summary.append(feature)
         feature_types.append("Mandatory")
 
-    # Add selected optional features
-    # Use the model-specific selected features
+    # Add good-to-have features selected by the user
     for feature in st.session_state.get(f"{active_model}_selected_features", []):
         all_features_summary.append(feature)
         feature_types.append("Selected")
 
+    # --- IMPORTANT: Recommended features are NOT added to all_features_summary here ---
+    # They are independent as per your request.
+
+    original_df_for_final_dataset = model_state.get("final_transformed_features", pd.DataFrame()).copy()
+    target_col_name = model_state.get("target_feature")
+
+    if target_col_name and target_col_name in original_df_for_final_dataset.columns:
+        all_features_summary.append(target_col_name)
+        feature_types.append("Target")
+        features_to_include_in_final = [f for f in all_features_summary if f in original_df_for_final_dataset.columns]
+        features_to_include_in_final = list(dict.fromkeys(features_to_include_in_final)) # Remove duplicates
+    else:
+        features_to_include_in_final = [f for f in all_features_summary if f in original_df_for_final_dataset.columns]
+        features_to_include_in_final = list(dict.fromkeys(features_to_include_in_final)) # Remove duplicates
+        if not target_col_name:
+            st.warning("No target variable selected. The final dataset will not include a target column.")
+        else:
+            st.warning(f"Selected target variable '{target_col_name}' not found in the transformed dataset. The final dataset will not include it.")
+
+
     if all_features_summary:
-        # Create and display the summary dataframe
         summary_df = pd.DataFrame({
             "Feature": all_features_summary,
             "Type": feature_types
@@ -1964,99 +2159,112 @@ if st.button("📊 Show Selected Attributes"):
         st.subheader("Selected Features Summary")
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
-        # Store the final dataset in session state for the active model
-        working_df = combined_data.copy()
-        # Filter working_df to include only the features in all_features_summary
-        features_to_include = [f for f in all_features_summary if f in working_df.columns]
-        if features_to_include:
-            st.session_state[f"{active_model}_final_dataset"] = working_df[features_to_include]
+        if features_to_include_in_final and not original_df_for_final_dataset.empty:
+            model_state[f"final_dataset"] = original_df_for_final_dataset[features_to_include_in_final].copy()
         else:
-            st.warning("None of the selected features are present in the combined data.")
-            st.session_state[f"{active_model}_final_dataset"] = pd.DataFrame() # Set to empty if no features
+            st.warning("No features selected to create the final dataset.")
+            model_state[f"final_dataset"] = pd.DataFrame()
 
-    else:
-        st.info("No features selected (mandatory or optional).")
-        st.session_state[f"{active_model}_final_dataset"] = pd.DataFrame() # Set to empty if no features
-
-# Collapsible section to display the merged dataset
-st.subheader("Merged dataset preview")
-# Collapsible section to display the merged dataset
-
-
-# Retrieve the merged dataset from model_state
-merged_dataset = model_state.get("merged dataset", pd.DataFrame())
-
-if merged_dataset is not None and not merged_dataset.empty:
-    with st.expander("📂 View Merged Dataset", expanded=False):
-        st.markdown("### Merged Dataset")
-        st.write(f"Shape: {merged_dataset.shape}")
-        st.dataframe(merged_dataset)
-else:
-    st.warning("Merged dataset is empty or not available. Please complete the merge operations first.")
-#Target Variable Selection
-st.subheader("🎯 Target Variable Selection")
-
-# Define the target variable options and their corresponding feature names
-target_variable_mapping = {
-    "Profitability": "Profitability_GBP_x",
-    "Charge-Off": "COF_EVENT_LABEL_x",
-    "Prepayment": "PREPAYMENT_EVENT_LABEL_x"
-}
-
-# Get the final dataset from session state for the active model
-# Retrieve the merged dataset from model_state
-# Retrieve the merged dataset from model_state
-final_dataset = model_state.get("merged dataset", pd.DataFrame())
-
-if not final_dataset.empty:
-    # Allow the user to select a target variable
-    target_column = st.selectbox("Select Target Variable", list(target_variable_mapping.keys()), key=f"target_column_select_{active_model}")
-
-    if st.button("Add Target Variable to Dataset", key=f"add_target_btn_{active_model}"):
-        try:
-            # Get the target feature name from the mapping
-            target_feature = target_variable_mapping[target_column]
-
-            # Ensure the target column exists in the merged dataset
-            if target_feature not in final_dataset.columns:
-                st.error(f"Target variable '{target_feature}' is not present in the merged dataset. Please ensure it is included in the data.")
-                st.stop()
-
-            # Add the target column to the dataset if not already present
-            if target_feature not in final_dataset.columns:
-                st.error(f"Target variable '{target_feature}' is missing from the dataset.")
-                st.stop()
-
-            # Update the final dataset in session state to include the entire dataset along with the target column
-            st.session_state[f"{active_model}_final_dataset"] = final_dataset.copy()
-
-            # Store target variable in model-specific session state
-            st.session_state[f"{active_model}_target_column"] = target_column
-            st.session_state[f"{active_model}_target_feature"] = target_feature
-
-            # Save the final dataset (with target) as a Parquet file in a subfolder within `data_registry`
-            final_dataset_with_target = st.session_state.get(f"{active_model}_final_dataset", pd.DataFrame())
-            if not final_dataset_with_target.empty:
+        # --- PARQUET FILE SAVING LOGIC (NOW HERE at the very end) ---
+        final_dataset_with_target = model_state.get("final_dataset", pd.DataFrame())
+        if not final_dataset_with_target.empty:
                 # Create a subfolder in `data_registry` for the active model
                 data_registry_subfolder = os.path.join("data_registry", active_model)
                 os.makedirs(data_registry_subfolder, exist_ok=True)
 
                 # Save the final dataset as a Parquet file
-                final_dataset_path = os.path.join(data_registry_subfolder, f"{target_column}_final_dataset.parquet")
+                final_dataset_path = os.path.join(data_registry_subfolder, f"{model_state[f"target_feature"]}_final_dataset.parquet")
                 final_dataset_with_target.to_parquet(final_dataset_path, index=False)
 
                 # Save the file path in session state for use in the next page
                 st.session_state[f"{active_model}_final_dataset_path"] = final_dataset_path
 
                 st.success(f"Target variable '{target_column}' added to the final dataset successfully! Dataset saved as '{final_dataset_path}'.")
-            else:
-                st.warning("Final dataset is empty, cannot save Parquet file.")
+        else:
+            st.warning("Final dataset is empty, cannot save Parquet file.")
 
-        except Exception as e:
-            st.error(f"Error adding target variable: {str(e)}")
+        
 else:
     st.info("Please select and show your features first to enable target variable selection.")
 
+# # Collapsible section to display the merged dataset
+# st.subheader("Merged dataset preview")
+# # Collapsible section to display the merged dataset
+
+
+# # Retrieve the merged dataset from model_state
+# merged_dataset = model_state.get("merged dataset", pd.DataFrame())
+
+# if merged_dataset is not None and not merged_dataset.empty:
+#     with st.expander("📂 View Merged Dataset", expanded=False):
+#         st.markdown("### Merged Dataset")
+#         st.write(f"Shape: {merged_dataset.shape}")
+#         st.dataframe(merged_dataset)
+# else:
+#     st.warning("Merged dataset is empty or not available. Please complete the merge operations first.")
+# #Target Variable Selection
+# st.subheader("🎯 Target Variable Selection")
+
+# # Define the target variable options and their corresponding feature names
+# target_variable_mapping = {
+#     "Profitability": "Profitability_GBP",
+#     "Charge-Off": "COF_EVENT_LABEL",
+#     "Prepayment": "PREPAYMENT_EVENT_LABEL"
+# }
+
+# # Get the final dataset from session state for the active model
+# # Retrieve the merged dataset from model_state
+# # Retrieve the merged dataset from model_state
+# final_dataset = model_state.get("merged dataset", pd.DataFrame())
+# final_dataset = final_dataset.dropna()
+# if not final_dataset.empty:
+#     # Allow the user to select a target variable
+#     target_column = st.selectbox("Select Target Variable", list(target_variable_mapping.keys()), key=f"target_column_select_{active_model}")
+
+#     if st.button("Add Target Variable to Dataset", key=f"add_target_btn_{active_model}"):
+#         try:
+#             # Get the target feature name from the mapping
+#             target_feature = target_variable_mapping[target_column]
+
+#             # Ensure the target column exists in the merged dataset
+#             if target_feature not in final_dataset.columns:
+#                 st.error(f"Target variable '{target_feature}' is not present in the merged dataset. Please ensure it is included in the data.")
+#                 st.stop()
+
+#             # Add the target column to the dataset if not already present
+#             if target_feature not in final_dataset.columns:
+#                 st.error(f"Target variable '{target_feature}' is missing from the dataset.")
+#                 st.stop()
+
+#             # Update the final dataset in session state to include the entire dataset along with the target column
+#             st.session_state[f"{active_model}_final_dataset"] = final_dataset.copy()
+
+#             # Store target variable in model-specific session state
+#             st.session_state[f"{active_model}_target_column"] = target_column
+#             st.session_state[f"{active_model}_target_feature"] = target_feature
+
+#             # Save the final dataset (with target) as a Parquet file in a subfolder within `data_registry`
+#             final_dataset_with_target = st.session_state.get(f"{active_model}_final_dataset", pd.DataFrame())
+#             if not final_dataset_with_target.empty:
+#                 # Create a subfolder in `data_registry` for the active model
+#                 data_registry_subfolder = os.path.join("data_registry", active_model)
+#                 os.makedirs(data_registry_subfolder, exist_ok=True)
+
+#                 # Save the final dataset as a Parquet file
+#                 final_dataset_path = os.path.join(data_registry_subfolder, f"{target_column}_final_dataset.parquet")
+#                 final_dataset_with_target.to_parquet(final_dataset_path, index=False)
+
+#                 # Save the file path in session state for use in the next page
+#                 st.session_state[f"{active_model}_final_dataset_path"] = final_dataset_path
+
+#                 st.success(f"Target variable '{target_column}' added to the final dataset successfully! Dataset saved as '{final_dataset_path}'.")
+#             else:
+#                 st.warning("Final dataset is empty, cannot save Parquet file.")
+
+#         except Exception as e:
+#             st.error(f"Error adding target variable: {str(e)}")
+# else:
+#     st.info("Please select and show your features first to enable target variable selection.")
 
 
 
@@ -2066,4 +2274,5 @@ else:
 
 
 
-####################################################################################################
+
+# ####################################################################################################

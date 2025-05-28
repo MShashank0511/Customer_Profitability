@@ -72,7 +72,7 @@ def generate_default_confirmed_outputs():
     df_on_us_default = st.session_state["on_us_data"] # This is the DataFrame
 
     all_potential_target_names = [task_cfg["target"] for task_cfg in modeling_tasks_configs]
-    common_non_features = ["Timestamp_x", "timestamp", "ID", "AccountID", "account_id"] # Add any other known non-features
+    common_non_features = ["Timestamp", "timestamp", "ID", "AccountID", "account_id"] # Add any other known non-features
 
     # Derive a common list of features from default_on_us_data, excluding all targets and common non-features
     base_default_features = [
@@ -153,11 +153,11 @@ def process_models_from_session():
     source_of_config = "User Confirmed (Model Development)" # Default assumption
 
     if not confirmed_models_data:
-        st.info("backend.py/process_models: No user-confirmed models found. Attempting to generate and use default configurations.")
+        st.info("back.py/process_models: No user-confirmed models found. Attempting to generate and use default configurations.")
         confirmed_models_data = generate_default_confirmed_outputs()
         source_of_config = "Default Configuration"
         if not confirmed_models_data:
-            st.error("backend.py/process_models: Failed to generate default model configurations. Cannot proceed.")
+            st.error("back.py/process_models: Failed to generate default model configurations. Cannot proceed.")
             return []
 
     processed_dataframes_list = []
@@ -238,7 +238,22 @@ def process_models_from_session():
             model_instance_proc.fit(X_train_here, y_train_fit)
             
             # Predictions on the *entire* X_data from df_source_for_task
-            y_pred_full_task = model_instance_proc.predict(X_data)
+            if model_problem_type_proc == "Classification":
+                try:
+                    # Predict probabilities for the positive class (class 1)
+                    y_proba_full_task = model_instance_proc.predict_proba(X_data)[:, 1]
+                    df_with_attrs['Predicted_Probability'] = y_proba_full_task
+                except AttributeError:
+                    # If the model does not support predict_proba, fallback to predicted labels
+                    st.warning(f"Model for task '{task_key_proc}' does not support probability prediction. Using predicted labels instead.")
+                    y_pred_full_task = model_instance_proc.predict(X_data)
+                    df_with_attrs['Predicted_Probability'] = y_pred_full_task
+            else:
+                # For regression tasks, use the predicted values directly
+                y_pred_full_task = model_instance_proc.predict(X_data)
+                df_with_attrs['Predicted_Target'] = y_pred_full_task
+
+            # Add predictions to the DataFrame
             df_with_attrs['Predicted_Target'] = y_pred_full_task
 
             # If label encoding was applied, try to map predictions back to original labels for a new column
@@ -337,7 +352,7 @@ def main_backtesting_page():
 
             st.markdown(f"**Key Metrics (from Development Step Test Set {'- N/A for Defaults' if is_using_defaults_for_display and dev_metrics_disp.get('Info') else ''}):**")
             if dev_metrics_disp and not dev_metrics_disp.get("Info"): # Check if not placeholder
-                 problem_type_for_metrics = "Regression" if target_disp == "Profitability_GBP" else "Classification"
+                 problem_type_for_metrics = "Regression" if target_disp == "Profitability_GBP_x" else "Classification"
                  num_cols_for_metrics = 3 if problem_type_for_metrics == "Regression" else 5
                  metric_cols_on_page = st.columns(num_cols_for_metrics)
                  

@@ -31,17 +31,17 @@ DATA_REGISTRY_BASE_DIR = "data_registry"
 MODEL_INPUT_SOURCES = {
     "Default Model Data (for Profitability)": {
         "session_state_key_suffix": "Default Model",
-        "target_column_primary": "Profitability_GBP_x",  # Correct target variable name
+        "target_column_primary": "Profitability_GBP",  # Correct target variable name
         "data_registry_subfolder_actual": "Default_Model"
     },
     "Charge-Off Model Data (for COF)": {
         "session_state_key_suffix": "Charge-Off Model",
-        "target_column_primary": "COF_EVENT_LABEL_x",  # Correct target variable name
+        "target_column_primary": "COF_EVENT_LABEL",  # Correct target variable name
         "data_registry_subfolder_actual": "Charge-Off_Model"
     },
     "Prepayment Model Data (for Prepayment)": {
         "session_state_key_suffix": "Prepayment Model",
-        "target_column_primary": "PREPAYMENT_EVENT_LABEL_x",  # Correct target variable name
+        "target_column_primary": "PREPAYMENT_EVENT_LABEL",  # Correct target variable name
         "data_registry_subfolder_actual": "Prepayment_Model"
     }
 }
@@ -164,7 +164,7 @@ if 'timestamp' in df_full.columns:
     df_full = df_full.drop(columns=['timestamp'])
 
 # Define target variables and check their existence in the loaded df_full
-target_variables_list = ["Profitability_GBP_x", "COF_EVENT_LABEL_x", "PREPAYMENT_EVENT_LABEL_x"]
+target_variables_list = ["Profitability_GBP", "COF_EVENT_LABEL", "PREPAYMENT_EVENT_LABEL"]
 # Crucial check: Does the loaded df_full actually contain the target for the selected task?
 if target_column not in df_full.columns:
     st.error(f"FATAL ERROR: The target variable '{target_column}' (for selected task '{selected_input_source_display_name}') is NOT PRESENT in the currently loaded dataset sourced from '{data_source_message}'. Please ensure the data source is correct or select a different model task.")
@@ -284,12 +284,12 @@ st.subheader("📊 Select Features & Split Data")
 # Define excluded columns
 timestamp_cols = ["Timestamp_x", "Timestamp_y", "TERM_OF_LOAN_y"]
 # Define target_variables_list with the expected target variables
-target_variables_list = ["Profitability_GBP_x", "COF_EVENT_LABEL_x", "PREPAYMENT_EVENT_LABEL_x"]
+target_variables_list = ["Profitability_GBP", "COF_EVENT_LABEL", "PREPAYMENT_EVENT_LABEL"]
 
 excluded_cols_from_features = target_variables_list + timestamp_cols
 
 # Select features by excluding the specified columns
-selectable_features = [col for col in df_full.columns if col not in excluded_cols_from_features and col != target_column]
+selectable_features = [col for col in df_full.columns if col not in excluded_cols_from_features and col != target_column and col != "Application_ID"]
 
 # Default selected features should also be filtered to ensure they exist in the DataFrame
 selected_features_default = current_task_state.get("feature_columns", selectable_features)
@@ -313,7 +313,7 @@ if not feature_columns:
 # Define X and y for model training
 X = df_full[feature_columns]  # Include only selected features
 y = df_full[target_column]
-
+original_indices = df_full.index  # Store original indices for later use
 if not feature_columns:
     st.warning("Please select at least one feature to proceed with model training.")
 else:
@@ -324,7 +324,23 @@ else:
     )
     current_task_state["test_size"] = test_size
 
-    
+    # Drop rows with NaN in the target variable
+    # Drop rows with NaN in either X or y
+    if y.isnull().any() or X.isnull().any().any():
+        st.warning(f"The target variable '{target_column}' contains {y.isnull().sum()} missing values, and the feature set contains {X.isnull().sum().sum()} missing values. These rows will be dropped.")
+        
+        # Get valid indices where neither X nor y has NaN
+        valid_indices = X.dropna().index.intersection(y.dropna().index)
+        
+        # Filter X, y, and original_indices using valid_indices
+        X = X.loc[valid_indices]
+        y = y.loc[valid_indices]
+        original_indices = original_indices[valid_indices]
+
+# Validate that X, y, and original_indices have the same length
+    if len(X) != len(y) or len(X) != len(original_indices):
+        st.error(f"Inconsistent lengths after dropping NaN values: X ({len(X)}), y ({len(y)}), original_indices ({len(original_indices)}). Please check the data.")
+        st.stop()
 
     stratify_y = None
     if target_type == "Classification":
@@ -334,13 +350,14 @@ else:
         elif len(unique_classes) > 1:
             st.warning(f"Stratification skipped for target '{target_column}': Some classes have fewer than 2 samples. Minimum counts per class: {np.min(counts)}.")
 
-    original_indices = df_full.index
+    
+    
+    
     X_train, X_test, y_train, y_test, train_indices, test_indices = train_test_split(
-        X, y, original_indices, test_size=test_size, random_state=42, stratify=stratify_y
-    )
+    X, y, original_indices, test_size=test_size, random_state=42, stratify=stratify_y)
 
     st.info(f"Train set size: {len(X_train)} rows | Test set size: {len(X_test)} rows for '{selected_input_source_display_name}'.")
-
+    st.write("Reached model selection step.")
 
     # --- Step 5: Model Selection ---
     st.subheader("📚 Select Model Type")
@@ -485,6 +502,7 @@ else:
 
 
 # --- Display Iteration Results ---
+task_key = f"{selected_input_source_display_name.replace(' ', '_')}_task"
 iteration_results_for_task_display = st.session_state.get(f"iteration_results_{task_key}", []) # Use a distinct var name
 if iteration_results_for_task_display:
     st.subheader(f"📊 Iteration Results (Model: {selected_model})")
@@ -637,7 +655,7 @@ if feature_columns and iteration_results_for_task_display: # Check if results ex
             else:
                 try:
                     # Start with selected features and target column
-                    columns_to_save_final = list(feature_columns) + [target_column] + ["Timestamp_x", "Timestamp_y", "TERM_OF_LOAN_y"]
+                    columns_to_save_final = list(feature_columns) + [target_column] + timestamp_cols
 
                     # Ensure all columns to save exist in the DataFrame
                     columns_to_save_final = [col for col in columns_to_save_final if col in df_full.columns]

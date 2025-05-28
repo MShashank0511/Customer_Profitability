@@ -60,6 +60,7 @@ def get_recommended_features_gemini(dataset_description: str):
         "and whether it's most relevant for Charge-Off, Prepayment, or Both.\n"
         "4. Provide a Ranked List in this exact format for each feature (ensure to strictly follow this multi-line format for each feature):\n"
         "- Engineered Feature Name: [Name]\n"
+        "- Description: [Brief description of the feature]\n"
         "- Derivation: [Explanation of how to compute the feature]\n"
         "- Justification: [Why this feature is valuable]\n"
         "- Primary Event Impact: [Charge-Off / Prepayment / Both]\n\n"
@@ -109,6 +110,7 @@ def parse_gemini_recommendations(text: str) -> pd.DataFrame:
             derivation_match = re.search(r"- Derivation:\s*(.*)", block, re.DOTALL)
             justification_match = re.search(r"- Justification:\s*(.*)", block, re.DOTALL)
             impact_match = re.search(r"- Primary Event Impact:\s*(.*)", block)
+            description_match = re.search(r"- Description:\s*(.*)", block, re.DOTALL)
 
             if name_match:
                 feature_data['Feature'] = name_match.group(1).strip()
@@ -133,12 +135,12 @@ def parse_gemini_recommendations(text: str) -> pd.DataFrame:
 
             derivation_text = derivation_match.group(1) if derivation_match else "N/A"
             justification_text = justification_match.group(1) if justification_match else "N/A"
-            
+            description_text = description_match.group(1) if description_match else "N/A"
             feature_data['Derivation'] = clean_multiline_field(block, derivation_text)
             feature_data['Justification'] = clean_multiline_field(block, justification_text)
             feature_data['Primary Event Impact'] = impact_match.group(1).strip() if impact_match else "N/A"
             
-            feature_data['Description'] = f"Derivation: {feature_data.get('Derivation', 'N/A')}. Justification: {feature_data.get('Justification', 'N/A')}"
+            feature_data['Description'] = clean_multiline_field(block, description_text)
             
             feature_data['Min'] = 'N/A'
             feature_data['Max'] = 'N/A'

@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import itertools
+import pickle  # Import pickle
 
 st.set_page_config(page_title="Loan Profitability Dashboard", layout="wide")
+
 
 # -----------------------
 # Load and preprocess data with bucketing
@@ -12,52 +14,69 @@ st.set_page_config(page_title="Loan Profitability Dashboard", layout="wide")
 @st.cache_data
 def load_and_bucket_data():
     """
-    Loads data from 'final_loan_simulation.csv', preprocesses it, and creates buckets for selected features.
+    Loads data from 'combined_df.pkl', preprocesses it, and creates buckets for selected features.
 
     Returns:
-        pd.DataFrame: The processed DataFrame.
+        pd.DataFrame: The processed DataFrame. Returns None on error.
     """
     try:
-        df = pd.read_csv("final_loan_simulation.csv")
+        with open("combined_df.pkl", "rb") as f:
+            df = pickle.load(f)  # Deserialize the DataFrame
     except FileNotFoundError:
         st.error(
-            "Error: \'final_loan_simulation.csv\' not found. Please ensure the file is in the correct directory.")
+            "Error: 'combined_df.pkl' not found. Please run Valid.py first to generate the data.")
+        return None  # Explicitly return None on error
+    except Exception as e:
+        st.error(f"An error occurred while loading the data: {e}")
         return None
 
-    # Basic data type conversions
-    df['YEAR'] = df['YEAR'].astype(int)
-    df['Origination_year'] = df['Origination_year'].astype(int)
-    df['Months_elapsed'] = df['Months_elapsed'].astype(int)
+    # Basic data type conversions. Check if columns exist before converting.
+    for col in ['Origination_Year', 'TERM_OF_LOAN', 'Month']:
+        if col in df.columns:
+            # Replace infinite values with NaN
+            df[col] = df[col].replace([np.inf, -np.inf], np.nan)
+            # Fill NaN values with a default value (e.g., 0)
+            df[col] = df[col].fillna(0)
+            # Convert to integer
+            df[col] = df[col].astype(int)
+
+    # Calculate Profitability_Cal
+    df['Profitability_Cal'] = (
+        df['Interest_Amount'] + df['Fees'] + df['Recovery_Amount'] - df['Charge_Off_Bal']
+    )
 
     # Create buckets for numerical features
-    def create_buckets(series, low_q, high_q, labels):
-        """Creates buckets based on quantiles."""
-        quantiles = series.quantile([0, low_q, high_q, 1]).unique().tolist()
-        if len(quantiles) > 1:
-            # Ensure that the number of labels is one less than the number of bins
-            if len(quantiles) - 1 < len(labels):
-                labels = labels[:len(quantiles) - 1]  # Truncate labels to match
-            return pd.cut(series, bins=quantiles, labels=labels,
-                          include_lowest=True, duplicates='drop').astype(str)
+    def create_buckets(series, labels):
+        """Creates buckets for the given Series."""
+        unique_vals = sorted(series.unique())
+        if len(unique_vals) > 1:
+            return pd.cut(series, bins=unique_vals, labels=labels, include_lowest=True, duplicates='drop').astype(str)
         return pd.Series(['NA'] * len(series), dtype=str)
 
-    df['OPB_BUCKET'] = create_buckets(df['OPB'], 0.33, 0.67, ['Low', 'Medium', 'High'])
-    df['PAYMENT_AMOUNT_BUCKET'] = create_buckets(df['PAYMENT_AMOUNT'], 0.33, 0.67,
-                                                ['Low', 'Medium', 'High'])
-    df['AUTO_PTI_TOTAL_BUCKET'] = create_buckets(df['AUTO_PTI_TOTAL'], 0.33, 0.67,
-                                                ['Low', 'Medium', 'High'])
+    # Origination_Year and TERM_OF_LOAN are now categorical.
+    if 'Origination_Year' in df.columns:
+        df['Origination_Year_BUCKET'] = df['Origination_Year'].astype(str)
+        # Filter out 0 from Origination_Year_BUCKET
+        df = df[df['Origination_Year'] != 0]
 
-    # Create custom buckets for 'CREDIT_SCORE_AVG_CALC'
-    df['CREDIT_SCORE_BUCKET'] = pd.cut(df['CREDIT_SCORE_AVG_CALC'], bins=[0, 600, 660, float('inf')],
-                                       labels=['<600', '600-660', '660+'], include_lowest=True).astype(str)
+    if 'TERM_OF_LOAN' in df.columns:
+        df['TERM_OF_LOAN_BUCKET'] = df['TERM_OF_LOAN'].astype(str)
+        # Filter out 0 from TERM_OF_LOAN_BUCKET
+        df = df[df['TERM_OF_LOAN'] != 0]
 
-    # Create buckets for categorical features by converting to string.
-    df['TERM_OF_LOAN_BUCKET'] = df['TERM_OF_LOAN'].astype(str)
-    df['Origination_year_BUCKET'] = df['Origination_year'].astype(str)
+    # Create OPB_BUCKET based on percentiles
+    if 'OPB' in df.columns:
+        percentiles = np.percentile(df['OPB'], [33, 67])
+        df['OPB_BUCKET'] = pd.cut(
+            df['OPB'],
+            bins=[-np.inf, percentiles[0], percentiles[1], np.inf],
+            labels=['Low', 'Medium', 'High']
+        )
+
     return df
 
 
-# Ensure data is loaded
+
 data = load_and_bucket_data()
 
 if data is None:
@@ -75,15 +94,15 @@ st.sidebar.markdown("Currently on: **Results Page**")
 st.title("📊 Loan Profitability Overview")
 
 # Get available origination years
-orig_years_available = sorted(data['Origination_year'].unique())
+orig_years_available = sorted(data['Origination_Year'].unique())
 
-# Set default value only if it exists in the available options
-default_orig_year = 2018 if 2018 in orig_years_available else None
+# Set default value dynamically if it exists in the available options
 
+# Create the multiselect widget
 selected_orig_years = st.multiselect(
     "Select Origination Year(s) to Show (Default: 2018)",
-    orig_years_available,
-    default=[default_orig_year] if default_orig_year else []
+    options=orig_years_available,
+    
 )
 
 thresholds = {2018: float('inf'), 2019: 72, 2020: 60, 2021: 48, 2022: 36, 2023: 24, 2024: 12}
@@ -91,22 +110,22 @@ thresholds = {2018: float('inf'), 2019: 72, 2020: 60, 2021: 48, 2022: 36, 2023: 
 overview_fig = go.Figure()
 
 for year in selected_orig_years:
-    df_year = data[data['Origination_year'] == year].copy()  # Filter by selected year
+    df_year = data[data['Origination_Year'] == year].copy()  # Filter by selected year
     if df_year.empty:
         continue
 
-    grouped = df_year.groupby(["Months_elapsed", "Origination_year"])[
+    grouped = df_year.groupby(["Month", "Origination_Year"])[
         "Profitability_Cal"].sum().reset_index()
 
-    for orig_year in grouped["Origination_year"].unique():
+    for orig_year in grouped["Origination_Year"].unique():
         threshold = thresholds.get(orig_year, 0)
-        df_solid = grouped[(grouped["Origination_year"] == orig_year) & (
-            grouped["Months_elapsed"] <= threshold)]
-        df_dash = grouped[(grouped["Origination_year"] == orig_year) & (
-            grouped["Months_elapsed"] > threshold)]
+        df_solid = grouped[(grouped["Origination_Year"] == orig_year) & (
+            grouped["Month"] <= threshold)]
+        df_dash = grouped[(grouped["Origination_Year"] == orig_year) & (
+            grouped["Month"] > threshold)]
 
         overview_fig.add_trace(go.Scatter(
-            x=df_solid["Months_elapsed"],
+            x=df_solid["Month"],
             y=df_solid["Profitability_Cal"],
             mode="lines+markers",
             name=f"{orig_year} (Actual)",
@@ -114,7 +133,7 @@ for year in selected_orig_years:
         ))
         if not df_dash.empty:
             overview_fig.add_trace(go.Scatter(
-                x=df_dash["Months_elapsed"],
+                x=df_dash["Month"],
                 y=df_dash["Profitability_Cal"],
                 mode="lines+markers",
                 name=f"{orig_year} (Predicted)",
@@ -123,7 +142,7 @@ for year in selected_orig_years:
 
 overview_fig.update_layout(
     title="Loan Profitability Overview",
-    xaxis_title="Months Elapsed",
+    xaxis_title="Month",
     yaxis_title="Total Profitability",
     showlegend=True
 )
@@ -134,21 +153,20 @@ st.plotly_chart(overview_fig, use_container_width=True)
 # -----------------------
 st.subheader("📌 Analyze Profitability by Segments")
 
-available_bucket_features = [col for col in data.columns if col.endswith('_BUCKET')]
+# Add OPB_BUCKET and LOAN_ID to available bucket features
+available_bucket_features = [col for col in data.columns if col.endswith('_BUCKET')] + ['LOAN_ID']
 feature_display_names = {col: col.replace("_BUCKET", "") for col in available_bucket_features}
-
-available_bucket_features.extend(['Origination_year_BUCKET', 'TERM_OF_LOAN_BUCKET'])
-feature_display_names['Origination_year_BUCKET'] = 'Origination_year'
+feature_display_names['Origination_Year_BUCKET'] = 'Origination_Year'
 feature_display_names['TERM_OF_LOAN_BUCKET'] = 'TERM_OF_LOAN'
+feature_display_names['OPB_BUCKET'] = 'OPB'
+feature_display_names['LOAN_ID'] = 'Loan ID'
 
 with st.expander("ℹ️ Feature Descriptions"):
     st.markdown("""
-    - **OPB**: Remaining unpaid loan balance.
-    - **PAYMENT_AMOUNT**: Monthly payment made by the borrower.
-    - **AUTO_PTI_TOTAL**: Payment-to-Income ratio for auto loans.
-    - **CREDIT_SCORE_BUCKET**: Categorized credit score range.
     - **TERM_OF_LOAN**: Duration of the loan in months.
-    - **Origination_year**: Year in which the loan originated.
+    - **Origination_Year**: Year in which the loan originated.
+    - **OPB**: Original Principal Balance.
+    - **LOAN_ID**: Unique identifier for each loan.
     """)
 
 selected_features = st.multiselect(
@@ -189,6 +207,7 @@ def add_simulation_row():
     st.rerun()
 
 
+
 def remove_simulation_row(index):
     if index < len(st.session_state.simulation_rows):
         removed_col = st.session_state.get(f'selected_col_{index}')
@@ -205,8 +224,9 @@ def remove_simulation_row(index):
     st.rerun()
 
 
-modified_data = data.copy()
-available_cols = [col for col in new_columns]  # Initialize available_cols
+
+modified_data = data.copy() # start with initial data.
+available_cols = [col for col in new_columns if col in modified_data.columns]  # Initialize available_cols
 
 for index in st.session_state.simulation_rows:
     st.markdown(f"**Transformation #{index + 1}**")
@@ -214,7 +234,11 @@ for index in st.session_state.simulation_rows:
 
     with col1:
         if available_cols:
-            selected_col = st.selectbox("Select Feature", options=available_cols, key=f"col_{index}")
+            selected_col = st.selectbox(
+                "Select Feature", 
+                options=available_cols, 
+                key=f"col_{index}"
+            )
         else:
             selected_col = None
 
@@ -229,11 +253,20 @@ for index in st.session_state.simulation_rows:
         if st.button("❌ Remove", key=f"remove_{index}"):
             remove_simulation_row(index)
 
+    # Handle feature changes
     if selected_col:
+        # Reset adjustment for previously selected feature
+        previous_col = st.session_state.get(f'selected_col_{index}')
+        if previous_col and previous_col != selected_col:
+            st.session_state.selected_adjustments[previous_col[0]] = 1.0  # Reset to default
+
+        # Update session state for the current selection
         st.session_state.selected_cols.append(selected_col)
         st.session_state[f'selected_col_{index}'] = [selected_col]  # Store selected column
         st.session_state[f'adjustment_{index}'] = adjustment
         st.session_state.selected_adjustments[selected_col] = adjustment
+
+        # Remove the selected column from available columns
         if selected_col in available_cols:
             available_cols.remove(selected_col)
 
@@ -272,18 +305,18 @@ def calculate_and_plot_profitability(df_to_plot, title_prefix=""):
 
             if not filtered_df.empty:
                 has_data = True
-                grouped = filtered_df.groupby(["Months_elapsed", "Origination_year"])[
+                grouped = filtered_df.groupby(["Month", "Origination_Year"])[  # Use 'Month' here
                     "Profitability_Cal"].sum().reset_index()
 
-                for orig_year in grouped["Origination_year"].unique():
+                for orig_year in grouped["Origination_Year"].unique():
                     threshold = thresholds.get(orig_year, 0)
-                    df_solid = grouped[(grouped["Origination_year"] == orig_year) & (
-                        grouped["Months_elapsed"] <= threshold)]
-                    df_dash = grouped[(grouped["Origination_year"] == orig_year) & (
-                        grouped["Months_elapsed"] > threshold)]
+                    df_solid = grouped[(grouped["Origination_Year"] == orig_year) & (
+                        grouped["Month"] <= threshold)]  # Use 'Month' here
+                    df_dash = grouped[(grouped["Origination_Year"] == orig_year) & (
+                        grouped["Month"] > threshold)]  # Use 'Month' here
 
                     fig.add_trace(go.Scatter(
-                        x=df_solid["Months_elapsed"],
+                        x=df_solid["Month"],  # Use 'Month' here
                         y=df_solid["Profitability_Cal"],
                         mode="lines+markers",
                         name=f"{label} | {orig_year} (Actual)",
@@ -291,7 +324,7 @@ def calculate_and_plot_profitability(df_to_plot, title_prefix=""):
                     ))
                     if not df_dash.empty:
                         fig.add_trace(go.Scatter(
-                            x=df_dash["Months_elapsed"],
+                            x=df_dash["Month"],  # Use 'Month' here
                             y=df_dash["Profitability_Cal"],
                             mode="lines+markers",
                             name=f"{label} | {orig_year} (Predicted)",
@@ -300,8 +333,8 @@ def calculate_and_plot_profitability(df_to_plot, title_prefix=""):
 
         if has_data:
             fig.update_layout(
-                title=f"{title_prefix}Profitability vs Months Elapsed for Selected Feature Combinations",
-                xaxis_title="Months Elapsed",
+                title=f"{title_prefix}Profitability vs Months  for Selected Feature Combinations", # Changed title
+                xaxis_title="Month",  # Changed x axis
                 yaxis_title="Total Profitability",
                 showlegend=True,
                 legend=dict(
@@ -324,12 +357,13 @@ def calculate_and_plot_profitability(df_to_plot, title_prefix=""):
         st.stop()  # added stop()
 
 
+
 if selected_buckets and all(selected_buckets.values()):
     calculate_and_plot_profitability(data)  # function call
 
     if proceed_button:
         # Always start with the original data
-        modified_data = data.copy()  # Create a fresh copy of the original data
+        modified_data = data.copy()
 
         # Apply adjustments within the Profitability_Cal calculation
         interest_adjustment = st.session_state.selected_adjustments.get(
@@ -345,7 +379,6 @@ if selected_buckets and all(selected_buckets.values()):
             modified_data['Recovery_Amount'] * recovery_adjustment -
             modified_data['Charge_Off_Bal'] * charge_off_adjustment
         )
-
         # Store the modified data in session state
         st.session_state.modified_data = modified_data
         st.session_state.simulated_once = True
@@ -355,9 +388,8 @@ if selected_buckets and all(selected_buckets.values()):
                                          title_prefix="Simulated ")  # Use the modified data
         st.rerun()
 
-    elif st.session_state.simulated_once:  # Check the flag
+    elif st.session_state.simulated_once:
         calculate_and_plot_profitability(st.session_state.modified_data,
                                          title_prefix="Simulated ")
-
 else:
     st.warning("Please select at least one feature and corresponding bucket to proceed.")
