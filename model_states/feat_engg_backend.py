@@ -477,7 +477,7 @@ def apply_merge_blocks(datasets: Dict[str, pd.DataFrame], merge_blocks: List[Dic
         # Get the left and right dataframes from the available datasets
         left_df = available_datasets.get(left_table_name)
         right_df = available_datasets.get(right_table_name)
-
+         
         # Check if the input tables are available for merging
         if left_df is None:
             raise ValueError(f"Merge block {i+1}: Left table '{left_table_name}' not found in available datasets for merging.")

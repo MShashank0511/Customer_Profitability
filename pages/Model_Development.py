@@ -326,16 +326,16 @@ else:
 
     # Drop rows with NaN in the target variable
     # Drop rows with NaN in either X or y
-    if y.isnull().any() or X.isnull().any().any():
-        st.warning(f"The target variable '{target_column}' contains {y.isnull().sum()} missing values, and the feature set contains {X.isnull().sum().sum()} missing values. These rows will be dropped.")
+    # if y.isnull().any() or X.isnull().any().any():
+    #     st.warning(f"The target variable '{target_column}' contains {y.isnull().sum()} missing values, and the feature set contains {X.isnull().sum().sum()} missing values. These rows will be dropped.")
         
-        # Get valid indices where neither X nor y has NaN
-        valid_indices = X.dropna().index.intersection(y.dropna().index)
+    #     # Get valid indices where neither X nor y has NaN
+    #     valid_indices = X.dropna().index.intersection(y.dropna().index)
         
-        # Filter X, y, and original_indices using valid_indices
-        X = X.loc[valid_indices]
-        y = y.loc[valid_indices]
-        original_indices = original_indices[valid_indices]
+    #     # Filter X, y, and original_indices using valid_indices
+    #     X = X.loc[valid_indices]
+    #     y = y.loc[valid_indices]
+    #     original_indices = original_indices[valid_indices]
 
 # Validate that X, y, and original_indices have the same length
     if len(X) != len(y) or len(X) != len(original_indices):

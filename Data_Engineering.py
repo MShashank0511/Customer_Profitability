@@ -6,7 +6,13 @@ from datetime import datetime, timedelta
 import os
 # import shutil # Not used in the provided snippet after clearing function was simplified
 # import uuid # No longer needed for historical_insights keys
-
+# Set page config must be the first Streamlit command
+st.set_page_config(
+    page_title="Profitability Prediction Platform",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 # Path to the default data directory
 DEFAULT_DATA_DIR = "default_data" # Not actively used in this script, but defined
 DATA_REGISTRY_DIR = "data_registry"
@@ -587,7 +593,7 @@ st.sidebar.header("Upload Files")
 # Use unique keys for each file uploader
 on_us_file = st.sidebar.file_uploader("Upload On-Us File", type=["csv", "xlsx"], key="on_us_uploader_unique")
 bureau_file = st.sidebar.file_uploader("Upload Bureau File", type=["csv", "xlsx"], key="bureau_uploader_unique")
-installments_file = st.sidebar.file_uploader("Upload Installments File", type=["csv", "xlsx"], key="installments_uploader_unique")
+installments_file = st.sidebar.file_uploader("Upload Applications Data File", type=["csv", "xlsx"], key="installments_uploader_unique")
 
 if on_us_file is not None:
     on_us_data = load_data(on_us_file, feature_mapping)
@@ -617,7 +623,7 @@ if bureau_file is not None:
                 bureau_data.to_parquet(data_path, index=False)
                 st.session_state["bureau_data_path"] = data_path
                 
-                st.success("Bureau data processed and saved to data_registry.")
+                
             except Exception as e:
                 st.error(f"Failed to save Bureau data as parquet: {e}")
         else:
@@ -627,13 +633,13 @@ if installments_file is not None:
     installments_data = load_data(installments_file, feature_mapping)
     if installments_data is not None:
         if 'Timestamp' in installments_data.columns and not installments_data['Timestamp'].isnull().all():
-            display_insights(installments_data, "Installments", feature_mapping)
+            display_insights(installments_data, "Applications Data", feature_mapping)
             save_dir = DATA_REGISTRY_DIR
             data_path = os.path.join(save_dir, "installments_data.parquet")
             try:
                 installments_data.to_parquet(data_path, index=False)
                 st.session_state["installments_data_path"] = data_path
-                st.success("Installments data processed and saved to data_registry.")
+                
             except Exception as e:
                 st.error(f"Failed to save Installments data as parquet: {e}")
         else:

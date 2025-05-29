@@ -19,6 +19,10 @@ try:
         summarize_dataset_columns,
         get_recommended_features_gemini,
         parse_gemini_recommendations,
+        apply_recommended_features,
+        validate_code_snippet,
+        sanitize_code_snippet,
+        _dedent_code,
         GEMINI_API_KEY_CONFIGURED
     )
 except ImportError:
@@ -148,7 +152,7 @@ def initialize_new_model_state(model_name):
         "Loan Data": initial_loan_data.copy(),
         "Bureau Data": initial_bureau_data.copy(),
         "On-Us Data": initial_on_us_data.copy(),
-        "Installments Data": initial_installments_data.copy(),
+        "Applications Data": initial_installments_data.copy(),
     }
     filtered_datasets = {}
 
@@ -159,7 +163,7 @@ def initialize_new_model_state(model_name):
         "loan_data": raw_datasets["Loan Data"], # Point to the raw_datasets version
         "bureau_data": raw_datasets["Bureau Data"], # Point to the raw_datasets version
         "onus_data": raw_datasets["On-Us Data"], # Point to the raw_datasets version
-        "installments_data": raw_datasets["Installments Data"], # Point to the raw_datasets version
+        "installments_data": raw_datasets["Applications Data"], # Point to the raw_datasets version
         "show_popup1": False,
         "transform_blocks": [],
         "multi_transform_blocks": [],
@@ -649,7 +653,7 @@ col1, col2, col3 = st.columns(3)
 # Ensure the datasets are stored in session state
 bureau_name = "Bureau Data"
 onus_name = "On-Us Data"
-installments_name = "Installments Data"
+installments_name = "Applications Data"
 
 # Store the names and dataframes in a dictionary for easy access
 dataset_mapping = {
@@ -657,28 +661,59 @@ dataset_mapping = {
     onus_name: model_state["onus_data"],
     installments_name: model_state["installments_data"],
 }
-print(bureau_name, onus_name, installments_name)
+
+# Initialize visibility state for each dataset
+if "show_bureau_data" not in st.session_state:
+    st.session_state.show_bureau_data = False
+if "show_onus_data" not in st.session_state:
+    st.session_state.show_onus_data = False
+if "show_installments_data" not in st.session_state:
+    st.session_state.show_installments_data = False
+
+# Create buttons for each dataset
 with col1:
-    st.markdown(
-        f"<div style='border: 1px solid #e0e0e0; border-radius: 4px; padding: 10px; text-align: center;'>"
-        f"<p style='margin: 0;'>{bureau_name}</p>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
+    if st.button(bureau_name, key="bureau_data_button"):
+        st.session_state.show_bureau_data = not st.session_state.show_bureau_data
+
 with col2:
-    st.markdown(
-        f"<div style='border: 1px solid #e0e0e0; border-radius: 4px; padding: 10px; text-align: center;'>"
-        f"<p style='margin: 0;'>{onus_name}</p>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
+    if st.button(onus_name, key="onus_data_button"):
+        st.session_state.show_onus_data = not st.session_state.show_onus_data
+
 with col3:
-    st.markdown(
-        f"<div style='border: 1px solid #e0e0e0; border-radius: 4px; padding: 10px; text-align: center;'>"
-        f"<p style='margin: 0;'>{installments_name}</p>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
+    if st.button(installments_name, key="installments_data_button"):
+        st.session_state.show_installments_data = not st.session_state.show_installments_data
+
+# Display the selected dataset
+if st.session_state.show_bureau_data:
+    st.subheader(f"{bureau_name} Preview")
+    bureau_data = dataset_mapping[bureau_name]
+    if bureau_data is not None and not bureau_data.empty:
+        st.dataframe(bureau_data.head(), use_container_width=True)
+    else:
+        st.warning(f"{bureau_name} is empty or not loaded.")
+
+if st.session_state.show_onus_data:
+    st.subheader(f"{onus_name} Preview")
+    onus_data = dataset_mapping[onus_name]
+    if onus_data is not None and not onus_data.empty:
+        st.dataframe(onus_data.head(), use_container_width=True)
+    else:
+        st.warning(f"{onus_name} is empty or not loaded.")
+
+if st.session_state.show_installments_data:
+    st.subheader(f"{installments_name} Preview")
+    installments_data = dataset_mapping[installments_name]
+    if installments_data is not None and not installments_data.empty:
+        st.dataframe(installments_data.head(), use_container_width=True)
+    else:
+        st.warning(f"{installments_name} is empty or not loaded.")
+
+# Store the names and dataframes in a dictionary for easy access
+dataset_mapping = {
+    bureau_name: model_state["bureau_data"],
+    onus_name: model_state["onus_data"],
+    installments_name: model_state["installments_data"],
+}
 
 # --- Further operations ---
 # You can now easily replace the datasets in session state
@@ -1386,7 +1421,7 @@ if model_state.get("show_merge", False): # Check the show_merge state within the
                  model_state["combined_dataset"] = None # Set combined_dataset to None
 
             # Set merge operation as complete in model-specific state
-            model_state["operations_complete"]["merge"] = True
+            # model_state["operations_complete"]["merge"] = True
             st.session_state[f"{active_model}_state"] = model_state # Update session state
 
             # Clear the merge blocks after successful application (optional, depends on desired workflow)
@@ -1457,6 +1492,7 @@ with col2:
                                 st.session_state.feature_info = recommended_features_df
                                 st.session_state.recommended_features = recommended_features_df.copy()
                                 
+                                
                                 st.session_state[f"{active_model}_operations_complete"]["recommend"] = True
                                 st.success("AI Recommended features generated!")
                                 st.rerun()
@@ -1479,7 +1515,7 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
     
     display_df = st.session_state.feature_info.copy()
     # Ensure all expected columns exist for data_editor for consistent display
-    expected_cols_display = ["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type", "Derivation", "Justification"]
+    expected_cols_display = ["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type", "Derivation", "Justification","Raw Features", "Code Snippet"]
     for col in expected_cols_display:
         if col not in display_df.columns:
             display_df[col] = "N/A" 
@@ -1504,6 +1540,18 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
             disabled=True, 
             help=display_df["Primary Event Impact"].to_list()  # Convert Series to list
         ),
+        "Raw Features": st.column_config.TextColumn(
+            "Raw Features", 
+            width="medium",
+            disabled=True,
+            help=display_df["Raw Features"].to_list()  # Convert Series to list
+        ),
+        "Code Snippet": st.column_config.TextColumn(
+            "Code Snippet",
+            width="medium",
+            disabled=True,
+            help=display_df["Code Snippet"].to_list()  # Convert Series to list
+        ),
         "Min": st.column_config.TextColumn("Min", width="small", disabled=True),
         "Max": st.column_config.TextColumn("Max", width="small", disabled=True),
         "Mean": st.column_config.TextColumn("Mean", width="small", disabled=True),
@@ -1511,16 +1559,80 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
     }
 
     st.data_editor(
-        display_df[["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type"]],
+        display_df[["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type","Raw Features", "Code Snippet"]],
         column_config=column_config,
         hide_index=True,
         use_container_width=True,
         key="recommended_features_ai_editor"
     )
     with st.expander("See Full Derivations and Justifications"):
-        st.dataframe(display_df[["Feature", "Derivation", "Justification", "Primary Event Impact"]], use_container_width=True)
+        st.dataframe(display_df[["Feature", "Derivation", "Justification", "Primary Event Impact","Raw Features", "Code Snippet"]], use_container_width=True)
 
-# --- Accept Recommended Features Button ---
+# Check if recommended features exist in session state
+if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
+   hasattr(st.session_state, 'recommended_features') and \
+   isinstance(st.session_state.recommended_features, pd.DataFrame) and \
+   not st.session_state.recommended_features.empty:
+    
+    # Get the current dataset and recommended features
+    current_dataset = model_state.get("merged dataset", pd.DataFrame())
+    recommended_features = st.session_state.recommended_features
+
+    # Ensure the dataset is not empty
+    if current_dataset.empty:
+        st.warning("The merged dataset is empty. Cannot execute recommended features.")
+    else:
+        try:
+            # Ensure recommended_features contains the required column
+            if "Code Snippet" not in recommended_features.columns:
+                raise ValueError("Recommended features DataFrame must contain a 'Code Snippet' column.")
+
+            # Debugging: Display the generated code snippets
+            for feature_info in recommended_features.to_dict(orient="records"):
+                feature_name = feature_info.get("Feature")
+                generated_code = feature_info.get("Code Snippet")
+                st.text_area(f"Generated Code for '{feature_name}'", generated_code, height=150, disabled=True)
+
+                # Extract the actual code between delimiters ''' if present
+                if generated_code.startswith("'''") and generated_code.endswith("'''"):
+                    extracted_code = generated_code.strip("'''")
+                else:
+                    extracted_code = generated_code  # Use the original code if no delimiters
+
+                # Dedent the extracted code to fix indentation issues
+                dedented_code = _dedent_code(extracted_code)
+
+                # Execute the validated and dedented code snippet
+                try:
+                    execution_context = {'df': current_dataset, 'np': np, 'pd': pd}  # Execution context
+                    exec(dedented_code, {}, execution_context)
+
+                    # After exec, update current_dataset from execution_context if modified
+                    if 'df' in execution_context:
+                        current_dataset = execution_context['df']
+
+                    st.success(f"Successfully created feature '{feature_name}'.")
+                except Exception as e:
+                    st.error(f"Failed to create feature '{feature_name}'. Error: {e}")
+
+            # Execute the function to apply recommended features (if this is your custom function)
+            updated_dataset = apply_recommended_features(current_dataset, recommended_features.to_dict(orient="records"))
+
+            # Store the updated dataset in session state for persistence
+            st.session_state[f"{active_model}_updated_dataset"] = updated_dataset
+
+            # Display the updated dataset as a collapsible section
+            with st.expander("📂 View Updated Dataset with Recommended Features", expanded=False):
+                st.markdown("### Updated Dataset")
+                st.write(f"Shape: {updated_dataset.shape}")
+                st.dataframe(updated_dataset.head(), use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Error applying recommended features: {str(e)}")
+else:
+    st.info("No recommended features available. Please complete the recommendation process first.")
+    
+#Accept Recommended Features Button ---
 if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
    hasattr(st.session_state, 'recommended_features') and \
    isinstance(st.session_state.recommended_features, pd.DataFrame) and \
