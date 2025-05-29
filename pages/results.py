@@ -93,16 +93,9 @@ st.sidebar.markdown("Currently on: **Results Page**")
 # -----------------------
 st.title("📊 Loan Profitability Overview")
 
-# Get available origination years
 orig_years_available = sorted(data['Origination_Year'].unique())
-
-# Set default value dynamically if it exists in the available options
-
-# Create the multiselect widget
 selected_orig_years = st.multiselect(
-    "Select Origination Year(s) to Show (Default: 2018)",
-    options=orig_years_available,
-    
+    "Select Origination Year(s) to Show (Default: 2018)", orig_years_available, default=[2018]
 )
 
 thresholds = {2018: float('inf'), 2019: 72, 2020: 60, 2021: 48, 2022: 36, 2023: 24, 2024: 12}
@@ -207,7 +200,6 @@ def add_simulation_row():
     st.rerun()
 
 
-
 def remove_simulation_row(index):
     if index < len(st.session_state.simulation_rows):
         removed_col = st.session_state.get(f'selected_col_{index}')
@@ -224,8 +216,7 @@ def remove_simulation_row(index):
     st.rerun()
 
 
-
-modified_data = data.copy() # start with initial data.
+modified_data = data.copy()  # Start with initial data.
 available_cols = [col for col in new_columns if col in modified_data.columns]  # Initialize available_cols
 
 for index in st.session_state.simulation_rows:
@@ -235,26 +226,34 @@ for index in st.session_state.simulation_rows:
     with col1:
         if available_cols:
             selected_col = st.selectbox(
-                "Select Feature", 
-                options=available_cols, 
+                "Select Feature",
+                options=available_cols,
                 key=f"col_{index}"
             )
         else:
             selected_col = None
 
     with col2:
-        adjustment = st.selectbox(
-            "Select Adjustment Factor",
-            options=[0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4],
+        # Replace dropdown with a text input for adjustment factor
+        adjustment_input = st.text_input(
+            "Enter Adjustment Factor",
+            value="1.0",  # Default value as a string
             key=f"adj_{index}",
         )
+
+        # Validate the input to ensure it's a valid float
+        try:
+            adjustment = float(adjustment_input)
+        except ValueError:
+            st.warning(f"Please enter a valid float value for the adjustment factor in Transformation #{index + 1}.")
+            adjustment = None
 
     with col3:
         if st.button("❌ Remove", key=f"remove_{index}"):
             remove_simulation_row(index)
 
     # Handle feature changes
-    if selected_col:
+    if selected_col and adjustment is not None:
         # Reset adjustment for previously selected feature
         previous_col = st.session_state.get(f'selected_col_{index}')
         if previous_col and previous_col != selected_col:

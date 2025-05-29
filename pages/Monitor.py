@@ -73,7 +73,7 @@ def split_and_distribute_with_normalization(df, prob_col='Predicted_Probability'
 
 def split_and_distribute_with_credit_risk(df, prob_col='Predicted_Probability', term_col='TERM_OF_LOAN',
                                            max_value=0.3, scaling_factor=1.2,
-                                           credit_col='CREDIT_SCORE_AVG_CALC' , delinq_col='DELINQ_CNT_30_DAY_TOTAL' ):
+                                           credit_col='CREDIT_SCORE_AVG_CALC', delinq_col='DELINQ_CNT_30_DAY_TOTAL'):
     """
     Splits and distributes probabilities per loan using risk-adjusted temporal patterns.
 
@@ -207,60 +207,79 @@ def get_combined_df() -> pd.DataFrame:
 # --- Function to add OPB column ---
 def add_opb_column(df, loan_data_path='loan_data.csv'):
     """
-    Adds the OPB column to the DataFrame if it is not already present.
-    The OPB values are mapped using the Timestamp_x column from loan_data.csv.
+    Adds the OPB, CREDIT_SCORE_AVG_CALC, and DELINQ_CNT_30_DAY_TOTAL columns to the DataFrame if they are not already present.
+    The values are mapped using the Timestamp column from loan_data.csv.
 
     Args:
-        df (pd.DataFrame): The DataFrame to which the OPB column will be added.
+        df (pd.DataFrame): The DataFrame to which the columns will be added.
         loan_data_path (str): Path to the loan_data.csv file.
 
     Returns:
-        pd.DataFrame: The updated DataFrame with the OPB column.
+        pd.DataFrame: The updated DataFrame with the required columns.
     """
-    if 'OPB' not in df.columns:
-        try:
-            # Load loan_data.csv
-            loan_data = pd.read_csv(loan_data_path)
+    try:
+        # Load loan_data.csv
+        loan_data = pd.read_csv(loan_data_path)
 
-            # Ensure Timestamp_x column exists in both DataFrames
-            if 'Timestamp_x' in df.columns and 'Timestamp_x' in loan_data.columns:
-                # Convert Timestamp_x columns to datetime for alignment
-                loan_data['Timestamp_x'] = pd.to_datetime(loan_data['Timestamp_x'], errors='coerce')
-                df['Timestamp_x'] = pd.to_datetime(df['Timestamp_x'], errors='coerce')
+        # Ensure Timestamp column exists in both DataFrames
+        if 'Timestamp' in df.columns and 'Timestamp' in loan_data.columns:
+            # Convert Timestamp columns to datetime for alignment
+            loan_data['Timestamp'] = pd.to_datetime(loan_data['Timestamp'], errors='coerce')
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
 
-                # Map OPB values from loan_data.csv to the DataFrame using the Timestamp_x column
-                df = df.merge(loan_data[['Timestamp_x', 'OPB']], on='Timestamp_x', how='left')
+            # Map OPB values if not present
+            if 'OPB' not in df.columns:
+                df = df.merge(loan_data[['Timestamp', 'OPB']], on='Timestamp', how='left')
                 st.write("Added OPB column to the DataFrame using loan_data.csv.")
             else:
-                st.warning("Timestamp_x column is missing in either the DataFrame or loan_data.csv. Cannot map OPB values.")
-        except FileNotFoundError:
-            st.error(f"Error: The file '{loan_data_path}' was not found. Please ensure it exists.")
-        except Exception as e:
-            st.error(f"Error adding OPB column: {e}")
-    else:
-        st.write("OPB column already exists in the DataFrame.")
+                st.write("OPB column already exists in the DataFrame.")
+
+            # Map CREDIT_SCORE_AVG_CALC values if not present
+            if 'CREDIT_SCORE_AVG_CALC' not in df.columns:
+                df = df.merge(loan_data[['Timestamp', 'CREDIT_SCORE_AVG_CALC']], on='Timestamp', how='left')
+                st.write("Added CREDIT_SCORE_AVG_CALC column to the DataFrame using loan_data.csv.")
+            else:
+                st.write("CREDIT_SCORE_AVG_CALC column already exists in the DataFrame.")
+
+            # Map DELINQ_CNT_30_DAY_TOTAL values if not present
+            if 'DELINQ_CNT_30_DAY_TOTAL' not in df.columns:
+                df = df.merge(loan_data[['Timestamp', 'DELINQ_CNT_30_DAY_TOTAL']], on='Timestamp', how='left')
+                st.write("Added DELINQ_CNT_30_DAY_TOTAL column to the DataFrame using loan_data.csv.")
+            else:
+                st.write("DELINQ_CNT_30_DAY_TOTAL column already exists in the DataFrame.")
+        else:
+            st.warning("Timestamp column is missing in either the DataFrame or loan_data.csv. Cannot map values.")
+
+    except FileNotFoundError:
+        st.error(f"Error: The file '{loan_data_path}' was not found. Please ensure it exists.")
+    except Exception as e:
+        st.error(f"Error adding columns: {e}")
+
     return df
 
-# Function to add loan metrics
-def add_loan_metrics_updated(df, interest_rate=0.012, fee_rate=0.005):
+import numpy_financial as npf  # Ensure numpy_financial is installed
+
+def add_loan_metrics_updated(df, APR=0.144, fee_rate=0.005):
     """
-    Adds loan metrics to the DataFrame.
+    Adds loan metrics to the DataFrame using amortization calculations.
 
     Args:
         df (pd.DataFrame): The input DataFrame.
-        interest_rate (float): The interest rate to calculate interest amount.
+        APR (float): Annual Percentage Rate (default is 14.4%).
         fee_rate (float): The fee rate to calculate fees.
 
     Returns:
         pd.DataFrame: The updated DataFrame with new loan metrics.
     """
-    r = 0.012  # Monthly interest rate (1.2% per month)
-    # Step 1: Calculate Outstanding Principal
-    df['Outstanding_Principal'] = df['OPB'] * (
-    (1 + r) ** df['TERM_OF_LOAN'] - (1 + r) ** df['Month']
-) / (
-    (1 + r) ** df['TERM_OF_LOAN'] - 1
-)
+    interest_rate = APR / 12  # Monthly interest rate
+
+    # Calculate Outstanding Principal for existing rows
+    df['Outstanding_Principal'] = df.apply(
+        lambda row: row['OPB'] - np.sum(-npf.ppmt(interest_rate, np.arange(1, row['Month'] + 1), row['TERM_OF_LOAN'], row['OPB'])),
+        axis=1
+    )
+
+    # Clip Outstanding Principal to ensure no negative values
     df['Outstanding_Principal'] = df['Outstanding_Principal'].clip(lower=0)
 
     # Step 2: Calculate Remaining Balance based on Total_Probability
@@ -277,8 +296,8 @@ def add_loan_metrics_updated(df, interest_rate=0.012, fee_rate=0.005):
 #Function to apply cumulative columns
 def apply_cumulative_columns(df, loan_id_cols=['OPB', 'TERM_OF_LOAN']):
     """
-    Overwrites existing columns with their cumulative values, except for 'Charge_Off_Bal',
-    which retains its actual values.
+    Overwrites existing columns with their cumulative values, except for 'Charge_Off_Bal' and 'Interest_Amount',
+    which retain their actual values.
 
     Args:
         df (pd.DataFrame): The input DataFrame.
@@ -295,10 +314,10 @@ def apply_cumulative_columns(df, loan_id_cols=['OPB', 'TERM_OF_LOAN']):
     # Sort by LOAN_ID and Month to ensure proper cumsum order
     df = df.sort_values(by=['LOAN_ID', 'Month'])
 
-    # Overwrite the selected columns with their cumulative sums, except 'Charge_Off_Bal'
+    # Overwrite the selected columns with their cumulative sums, except 'Charge_Off_Bal' and 'Interest_Amount'
     cumulative_cols = ['Charge_Off_Bal', 'Interest_Amount', 'Fees', 'Recovery_Amount']
     for col in cumulative_cols:
-        if col != 'Charge_Off_Bal':  # Skip cumulative sum for 'Charge_Off_Bal'
+        if col not in ['Charge_Off_Bal', 'Interest_Amount']:  # Skip cumulative sum for these columns
             df[col] = df.groupby('LOAN_ID')[col].cumsum()
 
     return df
@@ -310,354 +329,338 @@ def main():
     """
     Main function to run the Streamlit application.
     """
-    processed_dataframes = process_models_from_session()  # <-- Use this function
+    global combined_df  # Ensure combined_df is globally accessible
 
+    # --- 0. Instruction Message ---
+    st.markdown("### Instruction")
+    st.info("Please select all three models in the **Model** section to check the combined DataFrame.")
+
+    # --- 1. Model Selection ---
+    st.header("1. Model Selection")
+
+    # Attempt to retrieve processed dataframes
+    try:
+        processed_dataframes = process_models_from_session()  # <-- Use this function
+    except Exception as e:
+        st.warning(f"An issue occurred while processing data: {e}")
+        processed_dataframes = None
+
+    # Fallback to default CSV files if no data is available
     if processed_dataframes is None or not processed_dataframes:
-        st.error("Failed to retrieve data from the processing step.")
-        return
+        st.warning("No processed data available. Loading default data.")
 
-    # --- 1. Data Source Selection ---
-    st.header("1. Data Source Selection")
+        try:
+            # Load default CSV files into DataFrames
+            profitability_df = pd.read_csv("Linear_Regression_(Profitability_GBP)_preview.csv")
+            cof_df = pd.read_csv("Logistic_Regression_(COF_EVENT_LABEL)_preview.csv")
+            prepayment_df = pd.read_csv("Logistic_Regression_(PREPAYMENT_EVENT_LABEL)_preview.csv")
+
+            # Assign names to the DataFrames for identification
+            profitability_df.attrs['name'] = "Linear Regression (Profitability_GBP)"
+            cof_df.attrs['name'] = "Logistic Regression (COF_EVENT_LABEL)"
+            prepayment_df.attrs['name'] = "Logistic Regression (PREPAYMENT_EVENT_LABEL)"
+
+            # Combine the DataFrames into a list
+            processed_dataframes = [profitability_df, cof_df, prepayment_df]
+
+        except FileNotFoundError as e:
+            st.error(f"Error: Required default CSV file not found. {e}")
+            st.stop()
+        except Exception as e:
+            st.error(f"An unexpected error occurred while loading default data: {e}")
+            st.stop()
+
+    # Create a dictionary of available data sources
     available_data_sources = {df.attrs.get('name', f'Unnamed DataFrame {i}'): df for i, df in enumerate(processed_dataframes)}
 
     if not available_data_sources:
         st.warning("No data available. Please ensure data has been processed.")
-        return
+        st.stop()
 
+    # Allow the user to select a data source
     data_source_name = st.selectbox(
-        "Select Data Source (Model)", options=list(available_data_sources.keys())
+        "Select Model (Target_Variable)", options=list(available_data_sources.keys())
     )
     selected_df = available_data_sources[data_source_name]
     st.session_state.data_source = data_source_name
 
-    # --- 2. Data Preprocessing (Origination_Year, Year, Months_elapsed) ---
+    # --- Display Data Preview ---
+    st.subheader("Data Preview")
+    st.write("Preview of the selected Model:")
+
+    # Ensure Origination_Year is displayed correctly without commas
+    if 'Origination_Year' in selected_df.columns:
+        selected_df['Origination_Year'] = selected_df['Origination_Year'].astype(int)
+
+    st.dataframe(selected_df.head())
+
+    # --- Check for Missing Columns ---
+    required_columns = ['OPB', 'TERM_OF_LOAN', 'Timestamp']
+    missing_columns = [col for col in required_columns if col not in selected_df.columns]
+
+    if missing_columns:
+        st.warning(f"Warning: The selected model does not contain the required columns: {missing_columns}. Please select all three models in the Data Source section to avoid errors.")
+        return
+
+    # --- 2. Data Preprocessing ---
     df_edited = selected_df.copy()
-    
-    # Add OPB column if not present
     df_edited = add_opb_column(df_edited)
+
+    # Ensure `Origination_Year` exists
+    if 'Origination_Year' not in df_edited.columns:
+        if 'Timestamp' in df_edited.columns:
+            df_edited['Origination_Year'] = pd.to_datetime(df_edited['Timestamp'], errors='coerce').dt.year
+        else:
+            st.error("The 'Origination_Year' column could not be created because 'Timestamp' is missing.")
+            return
+
+    # Convert TERM_OF_LOAN values to 60 or 84
+    df_edited['TERM_OF_LOAN'] = df_edited['TERM_OF_LOAN'].apply(lambda x: 60 if x <= 60 else 84)
+
+    # Display the preprocessed data
+    st.subheader("Preprocessed Data")
+    st.write("Preview of the preprocessed data:")
+    st.dataframe(df_edited.head())
+
+    # --- 3. Filtering Options ---
+    st.header("2. Filtering Options")
+
+    # Extract unique values from the preprocessed data
+    origination_years = sorted(df_edited['Origination_Year'].dropna().unique())
+    term_of_loans = sorted(df_edited['TERM_OF_LOAN'].dropna().unique())
+
+    # Create multiselect options for filtering
+    selected_years = st.multiselect("Filter by Origination Year", options=origination_years, default=origination_years)
+    selected_terms = st.multiselect("Filter by TERM_OF_LOAN", options=term_of_loans, default=term_of_loans)
+
+    # Apply filters to the preprocessed data
+    filtered_df = df_edited.copy()
+    if selected_years:
+        filtered_df = filtered_df[filtered_df['Origination_Year'].isin(selected_years)]
+    if selected_terms:
+        filtered_df = filtered_df[filtered_df['TERM_OF_LOAN'].isin(selected_terms)]
+
+    # Display the filtered data
+    st.subheader("Filtered Data")
+    st.write("Preview of the filtered data:")
+    st.dataframe(filtered_df.head())
 
     # Determine the target variable
     target_variable_present = None
-    if 'Profitability_GBP' in df_edited.columns:
+    if 'Profitability_GBP' in filtered_df.columns:
         target_variable_present = 'Profitability_GBP'
-    elif 'COF_EVENT_LABEL' in df_edited.columns:
+    elif 'COF_EVENT_LABEL' in filtered_df.columns:
         target_variable_present = 'COF_EVENT_LABEL'
-    elif 'PREPAYMENT_EVENT_LABEL' in df_edited.columns:
+    elif 'PREPAYMENT_EVENT_LABEL' in filtered_df.columns:
         target_variable_present = 'PREPAYMENT_EVENT_LABEL'
-    
-    # Convert TERM_OF_LOAN values to either 60 or 84 for non-Profitability_GBP target variables
-    if target_variable_present in ['COF_EVENT_LABEL', 'PREPAYMENT_EVENT_LABEL']:
-        if 'TERM_OF_LOAN' in df_edited.columns:
-            df_edited['TERM_OF_LOAN'] = df_edited['TERM_OF_LOAN'].apply(lambda x: 60 if x <= 60 else 84)
-            st.write("Converted TERM_OF_LOAN values to either 60 or 84.")
-    
-    # Calculate Origination Year for all DataFrames
-    if 'Timestamp_x' in df_edited.columns:
-        df_edited['Origination_Year'] = pd.to_datetime(df_edited['Timestamp_x'], errors='coerce').dt.year
-    elif 'date' in df_edited.columns:
-        df_edited['Origination_Year'] = pd.to_datetime(df_edited['date'], errors='coerce').dt.year
-    elif 'loan_start_date' in df_edited.columns:
-        df_edited['Origination_Year'] = pd.to_datetime(df_edited['loan_start_date'], errors='coerce').dt.year
-    else:
-        df_edited['Origination_Year'] = None
 
-    # --- 2. Input Data Overview ---
-    st.header("2. Input Data Overview")
-    st.subheader("2.1. Key Columns")
-    st.dataframe(df_edited.head(), use_container_width=True)
-
-    # --- 3. Feature Selection ---
-    st.header("3. Feature Selection")
-    available_features = ['Origination_Year', 'TERM_OF_LOAN']
-    selected_features = st.multiselect(
-        "Select feature(s) to filter by:", 
-        available_features, 
-        default=available_features  # Make both features selected by default
-    )
-
-    # --- 4. Bucket Selection ---
-    bucket_filters = {}
-    for feature in selected_features:
-        if feature in df_edited.columns:
-            # Get unique values for the feature
-            values = df_edited[feature].dropna().unique().tolist()
-            # Sort the values for better user experience
-            values = sorted(values)
-            # Create a multiselect widget for the feature
-            selected_values = st.multiselect(
-                f"Select values for {feature}:", 
-                values, 
-                key=f"bucket_sel_{feature}"
-            )
-            if selected_values:
-                bucket_filters[feature] = selected_values
-
-    # --- 5. Apply Filters ---
-    df_filtered = df_edited.copy()
-    if selected_features and bucket_filters:
-        query_parts = []
-        for feature, selected_values in bucket_filters.items():
-            if feature in df_filtered.columns:
-                query_parts.append(df_filtered[feature].isin(selected_values))
-        if query_parts:
-            query = np.logical_and.reduce(query_parts)
-            df_filtered = df_filtered[query]
-
-    # Ensure required columns are present
-    required_columns = ['OPB', 'Predicted_Probability', 'Timestamp_x', 'TERM_OF_LOAN', 
-                        'COF_EVENT_LABEL', 'PREPAYMENT_EVENT_LABEL', 
-                        'CREDIT_SCORE_AVG_CALC', 'DELINQ_CNT_30_DAY_TOTAL','CREDIT_SCORE_AVG_CALC_x','DELINQ_CNT_30_DAY_TOTAL_x']
-    for col in required_columns:
-        if col not in df_filtered.columns and col in df_edited.columns:
-            df_filtered[col] = df_edited[col]
-
-    if df_filtered.empty:
-        st.error("No data matches the selected filters.")
-        st.stop()
-
-    # Process the selected dataframe
-    df_edited = df_filtered.copy()
-
-    # Split rows for the current DataFrame using credit risk
-    try:
-        df_model_split = split_and_distribute_with_credit_risk(df_edited)
-        st.write("Applied split_and_distribute_with_credit_risk to the data.")
-    except Exception as e:
-        st.error(f"Error applying split_and_distribute_with_credit_risk: {e}")
-        return
-
-    # --- 6. Model Evaluation ---
-    st.header("4. Model Evaluation")
+    # --- 4. Model Evaluation ---
+    st.header("3. Model Evaluation")
 
     if target_variable_present == 'Profitability_GBP':
-        # --- 6.1 Profitability Analysis ---
-        st.subheader("4.1 Profitability Analysis")
-        actual_col = 'Profitability_GBP'
+        # Calculate evaluation metrics
+        actual_values = filtered_df['Profitability_GBP']
+        predicted_values = filtered_df['Predicted_Target']
 
-        if actual_col in df_edited.columns and 'Origination_Year' in df_edited.columns and 'Year' in df_edited.columns and 'Months_elapsed' in df_edited.columns:
+        # Avoid division by zero by replacing zeros in actual values with a small number
+        actual_values = actual_values.replace(0, np.finfo(float).eps)
 
-            # Group by 'Months_elapsed' and sum 'Profitability_GBP' and 'Predicted_Target'
-            grouped_df = df_edited.groupby('Months_elapsed').agg({
-                'Profitability_GBP': 'sum',
-                'Predicted_Target': 'sum'
-            }).reset_index()
+        # Calculate metrics
+        average_error = np.mean(np.abs((actual_values - predicted_values) / actual_values)) * 100  # Average Error %
+        mse = mean_squared_error(actual_values, predicted_values)  # Mean Squared Error
+        rmse = np.sqrt(mse)  # Root Mean Squared Error
+        mae = np.mean(np.abs(actual_values - predicted_values))  # Mean Absolute Error
 
-            if (grouped_df.shape[0] > 1):
-                # Plotting
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(x=grouped_df['Months_elapsed'], y=grouped_df['Profitability_GBP'], mode='lines', name='Actual Profitability'))
-                fig.add_trace(go.Scatter(x=grouped_df['Months_elapsed'], y=grouped_df['Predicted_Target'], mode='lines', name='Predicted Profitability'))
-                fig.update_layout(title=f"Total Profitability and Prediction Over Time - {data_source_name}",
-                                    xaxis_title="Months Elapsed",
-                                    yaxis_title="Total Profitability GBP")
-                st.plotly_chart(fig, use_container_width=True)
+        # Display metrics
+        st.subheader("Evaluation Metrics for Profitability")
+        st.write(f"**Average Error (%):** {average_error:.2f}%")
+        st.write(f"**Mean Squared Error (MSE):** {mse:.2f}")
+        st.write(f"**Root Mean Squared Error (RMSE):** {rmse:.2f}")
+        st.write(f"**Mean Absolute Error (MAE):** {mae:.2f}")
 
-                # Calculate and display error metrics
-                mse = mean_squared_error(grouped_df['Profitability_GBP'], grouped_df['Predicted_Target'])
-                avg_error = np.mean(np.abs(grouped_df['Profitability_GBP'] - grouped_df['Predicted_Target']))
-                st.write(f"Mean Squared Error: {mse:.2f}")
-                st.write(f"Average Error: {avg_error:.2f}")
-            else:
-                st.write("Not enough data to plot.")
+        # Group data by Origination_Year and calculate the sum for Predicted_Target and Profitability_GBP
+        grouped_df = filtered_df.groupby('Origination_Year').agg({
+            'Predicted_Target': 'sum',
+            'Profitability_GBP': 'sum'
+        }).reset_index()
 
-        else:
-            st.write("Profitability data is not available for the selected model.")
+        # Plot Predicted_Target and Profitability_GBP vs. Origination_Year
+        st.subheader("Predicted Target vs. Profitability (Grouped by Origination Year)")
+        fig = go.Figure()
 
-    elif target_variable_present in ['COF_EVENT_LABEL', 'PREPAYMENT_EVENT_LABEL']:
-        # --- 6.2 Charge-Off and Prepayment Analysis ---
-        st.subheader("4.2 Charge-Off and Prepayment Analysis")
-        model_name = st.session_state.data_source
-        df_model = df_edited
-        
-        # Display ROC AUC Curve based on predictions before splitting rows
-        if target_variable_present in df_model.columns and 'Predicted_Probability' in df_model.columns:
-            y_true = df_model[target_variable_present]
-            y_pred_proba = df_model['Predicted_Probability']
+        # Add Predicted_Target line
+        fig.add_trace(go.Scatter(
+            x=grouped_df['Origination_Year'],
+            y=grouped_df['Predicted_Target'],
+            mode='lines+markers',
+            name='Predicted Target'
+        ))
 
-            if len(y_true.unique()) <= 2:  # Ensure binary classification
-                fpr, tpr, _ = roc_curve(y_true, y_pred_proba)
-                auc = roc_auc_score(y_true, y_pred_proba)
+        # Add Profitability_GBP line
+        fig.add_trace(go.Scatter(
+            x=grouped_df['Origination_Year'],
+            y=grouped_df['Profitability_GBP'],
+            mode='lines+markers',
+            name='Profitability GBP'
+        ))
 
-                # Plot ROC Curve
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines', name=f'ROC Curve (AUC = {auc:.2f})'))
-                fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines', name='Random Guess', line=dict(dash='dash', color='gray')))
-                fig.update_layout(
-                    title=f"ROC Curve for {target_variable_present} - {model_name}",
-                    xaxis_title='False Positive Rate',
-                    yaxis_title='True Positive Rate',
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                st.write(f"ROC AUC Score: {auc:.4f}")
-        
-        
-            # Convert TERM_OF_LOAN values to either 60 or 84
-        if 'TERM_OF_LOAN' in df_model.columns:
-            df_model['TERM_OF_LOAN'] = df_model['TERM_OF_LOAN'].apply(lambda x: 60 if x <= 60 else 84)
+        # Update layout
+        fig.update_layout(
+            title="Predicted Target vs. Profitability (Grouped by Origination Year)",
+            xaxis_title="Origination Year",
+            yaxis_title="Sum of Values",
+            template="plotly_white"
+        )
 
-        # Ensure 'Predicted_Probability' exists
-        if 'Predicted_Probability' not in df_model.columns:
-            if 'Predicted_Target' in df_model.columns:
-                df_model['Predicted_Probability'] = df_model['Predicted_Target']
-                st.write("Mapped 'Predicted_Probability' from 'Predicted_Target'.")
-            else:
-                st.error("The required column 'Predicted_Probability' is missing. Please ensure the model outputs probabilities.")
-                return
+        # Display the graph
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        # Add a button to show the ROC curve for other target variables
+        if target_variable_present in ['COF_EVENT_LABEL', 'PREPAYMENT_EVENT_LABEL']:
+            if st.button("Show ROC Curve"):
+                # Display ROC AUC Curve
+                if target_variable_present in filtered_df.columns and 'Predicted_Probability' in filtered_df.columns:
+                    y_true = filtered_df[target_variable_present]
+                    y_pred_proba = filtered_df['Predicted_Probability']
 
+                    if len(y_true.unique()) <= 2:  # Ensure binary classification
+                        fpr, tpr, _ = roc_curve(y_true, y_pred_proba)
+                        auc = roc_auc_score(y_true, y_pred_proba)
 
-        # Split rows for the current DataFrame
-        try:
-            df_model_split = split_and_distribute_with_normalization(df_model)
-            st.write("Applied split_and_distribute_with_normalization to the data.")
-        except Exception as e:
-            st.error(f"Error applying split_and_distribute_with_normalization: {e}")
-            return
+                        # Plot ROC Curve
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines', name=f'ROC Curve (AUC = {auc:.2f})'))
+                        fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines', name='Random Guess', line=dict(dash='dash', color='gray')))
+                        fig.update_layout(
+                            title=f"ROC Curve for {target_variable_present} - {data_source_name}",
+                            xaxis_title='False Positive Rate',
+                            yaxis_title='True Positive Rate',
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        st.write(f"ROC AUC Score: {auc:.4f}")
 
-        # Store the processed data for the current target variable
+        # Process and store combined_df for COF and Prepayment models
         if target_variable_present == 'COF_EVENT_LABEL':
-            st.session_state.cof_event_df = df_model_split
+            st.session_state.cof_event_df = split_and_distribute_with_normalization(filtered_df)
         elif target_variable_present == 'PREPAYMENT_EVENT_LABEL':
-            st.session_state.prepayment_event_df = df_model_split
-        
-        # Combine DataFrames if both are available
+            st.session_state.prepayment_event_df = split_and_distribute_with_normalization(filtered_df)
+
+        # --- Combine DataFrames for COF and Prepayment Models ---
         if 'cof_event_df' in st.session_state and 'prepayment_event_df' in st.session_state:
             cof_event_df = st.session_state.cof_event_df
             prepayment_event_df = st.session_state.prepayment_event_df
 
-            # Merge the two DataFrames on Timestamp_x and Month
+            # Merge COF and Prepayment DataFrames
             combined_df = pd.merge(
-                cof_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
-                prepayment_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
-                on=['Timestamp_x', 'Month'],
+                cof_event_df[['Timestamp', 'Month', 'Distributed_Probability']],
+                prepayment_event_df[['Timestamp', 'Month', 'Distributed_Probability']],
+                on=['Timestamp', 'Month'],
                 how='outer',
                 suffixes=('_COF', '_PREPAYMENT')
             )
 
-            # Add OPB, Origination_Year, TERM_OF_LOAN, and target columns
+            # Merge with additional columns from df_edited
             combined_df = combined_df.merge(
-                df_model[['Timestamp_x', 'OPB', 'Origination_Year', 'TERM_OF_LOAN']].drop_duplicates(),
-                on='Timestamp_x',
+                df_edited[['Timestamp', 'OPB', 'Origination_Year', 'TERM_OF_LOAN']].drop_duplicates(),
+                on='Timestamp',
                 how='left'
             )
-            combined_df['COF_EVENT_LABEL'] = combined_df['Distributed_Probability_COF']
-            combined_df['PREPAYMENT_EVENT_LABEL'] = combined_df['Distributed_Probability_PREPAYMENT']
+
+            # Populate COF_EVENT_LABEL and PREPAYMENT_EVENT_LABEL
+            combined_df['COF_EVENT_LABEL'] = combined_df['Distributed_Probability_COF'].fillna(0)
+            combined_df['PREPAYMENT_EVENT_LABEL'] = combined_df['Distributed_Probability_PREPAYMENT'].fillna(0)
 
             # Calculate Total_Probability
             combined_df['Total_Probability'] = combined_df[['Distributed_Probability_COF', 'Distributed_Probability_PREPAYMENT']].sum(axis=1)
 
-            # Select relevant columns
-            combined_df = combined_df[['Timestamp_x', 'OPB', 'COF_EVENT_LABEL', 'PREPAYMENT_EVENT_LABEL', 'Origination_Year', 'TERM_OF_LOAN', 'Month', 'Total_Probability']]
-
-            # Add loan metrics to the combined DataFrame
+            # Add Loan Metrics
             combined_df = add_loan_metrics_updated(combined_df)
 
-            # Apply cumulative values to the existing columns
+            # Apply Cumulative Columns
             combined_df = apply_cumulative_columns(combined_df)
 
-            # Store the combined DataFrame with cumulative values
+            # Store the combined DataFrame globally
             store_processed_data(combined_df, "Combined_COFPREPAYMENT")
 
-            
+    # --- 5. Button to Show Results ---
+    st.header("4. Results")
 
-            # Send the DataFrame to the next page
-            st.session_state.final_combined_df = combined_df
-            st.write("DataFrame has been sent to the next page.")
-        else:
-            st.error("No predictions available for COF_EVENT_LABEL or PREPAYMENT_EVENT_LABEL.")
+    # Debugging: Check if cof_event_df and prepayment_event_df are present
+    if 'cof_event_df' not in st.session_state:
+        st.warning("COF Event DataFrame is not available.")
+    if 'prepayment_event_df' not in st.session_state:
+        st.warning("Prepayment Event DataFrame is not available.")
+
+    # Display the Show Results button if at least one of the models is processed
+    if 'cof_event_df' in st.session_state or 'prepayment_event_df' in st.session_state:
+        if st.button("Show Results"):
+            # Ensure the COF combined_df is available
+            if 'cof_combined_df' not in st.session_state or st.session_state.cof_combined_df is None:
+                # Attempt to retrieve the COF combined_df from the pickle file
+                try:
+                    with open("combined_df.pkl", "rb") as f:
+                        st.session_state.cof_combined_df = pickle.load(f)
+                        st.success("Loaded the combined DataFrame from the pickle file.")
+                except FileNotFoundError:
+                    st.error("The combined DataFrame for the COF model is not available. Please ensure the COF model is selected and processed.")
+                    return
+
+            # Use the COF combined_df for plotting
+            combined_df_to_use = st.session_state.cof_combined_df
+
+            # Check if combined_df_to_use is valid
+            if combined_df_to_use is None:
+                st.error("The combined DataFrame is not available. Please ensure the COF model is selected and processed.")
+                return
+
+            # Filter rows where OPB is not None
+            filtered_combined_df = combined_df_to_use[combined_df_to_use['OPB'].notna()]
+
+            # Group data by Month and calculate the mean for plotting
+            grouped_df = filtered_combined_df.groupby('Month').agg({
+                'Outstanding_Principal': 'mean',
+                'Charge_Off_Bal': 'mean'
+            }).reset_index()
+
+            # Plot Outstanding_Principal vs. Month
+            st.subheader("Outstanding Principal vs. Month")
+            fig1 = go.Figure()
+            fig1.add_trace(go.Scatter(
+                x=grouped_df['Month'],
+                y=grouped_df['Outstanding_Principal'],
+                mode='lines+markers',
+                name='Outstanding Principal'
+            ))
+            fig1.update_layout(
+                title="Outstanding Principal vs. Month",
+                xaxis_title="Month",
+                yaxis_title="Outstanding Principal",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig1, use_container_width=True)
+
+            # Plot Charge Off Amount vs. Month
+            st.subheader("Charge Off Amount vs. Month")
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(
+                x=grouped_df['Month'],
+                y=grouped_df['Charge_Off_Bal'],
+                mode='lines+markers',
+                name='Charge Off Amount'
+            ))
+            fig2.update_layout(
+                title="Charge Off Amount vs. Month",
+                xaxis_title="Month",
+                yaxis_title="Charge Off Amount",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+
+            # Pass the COF combined_df to the next page
+            st.session_state.final_combined_df = filtered_combined_df
+            store_processed_data(filtered_combined_df, "Combined_COFPREPAYMENT")
     else:
-        st.write("Charge-Off or Prepayment data is not available for the selected model.")
-        if target_variable_present is not None:
-            final_df_to_store = df_edited.copy()
-            try:
-                final_df_to_store = split_and_distribute_with_normalization(final_df_to_store)
-                st.write("Applied split_and_distribute_with_normalization to the data.")
-            except Exception as e:
-                st.error(f"Error applying split_and_distribute_with_normalization: {e}")
-
-            store_processed_data(final_df_to_store, data_source_name)
-
-    # --- Combine DataFrames for COF_EVENT_LABEL and PREPAYMENT_EVENT_LABEL ---
-    st.header("4. Combined DataFrame for COF and Prepayment")
-
-    # Retrieve processed DataFrames from session state
-    cof_event_df = st.session_state.get('cof_event_df', None)
-    prepayment_event_df = st.session_state.get('prepayment_event_df', None)
-
-    # Ensure 'Timestamp_x' exists and is consistent in all DataFrames
-    if cof_event_df is not None:
-        cof_event_df['Timestamp_x'] = pd.to_datetime(cof_event_df['Timestamp_x'], errors='coerce')
-    if prepayment_event_df is not None:
-        prepayment_event_df['Timestamp_x'] = pd.to_datetime(prepayment_event_df['Timestamp_x'], errors='coerce')
-    df_edited['Timestamp_x'] = pd.to_datetime(df_edited['Timestamp_x'], errors='coerce')
-
-    # Merge the two DataFrames
-    if cof_event_df is not None and prepayment_event_df is not None:
-        combined_df = pd.merge(
-            cof_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']].rename(
-                columns={'Distributed_Probability': 'Distributed_Probability_COF'}
-            ),
-            prepayment_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']].rename(
-                columns={'Distributed_Probability': 'Distributed_Probability_PREPAYMENT'}
-            ),
-            on=['Timestamp_x', 'Month'],
-            how='outer'
-        )
-    elif cof_event_df is not None:
-        combined_df = cof_event_df.rename(
-            columns={'Distributed_Probability': 'Distributed_Probability_COF'}
-        )
-        combined_df['Distributed_Probability_PREPAYMENT'] = 0
-    elif prepayment_event_df is not None:
-        combined_df = prepayment_event_df.rename(
-            columns={'Distributed_Probability': 'Distributed_Probability_PREPAYMENT'}
-        )
-        combined_df['Distributed_Probability_COF'] = 0
-    else:
-        st.error("No data available for COF_EVENT_LABEL or PREPAYMENT_EVENT_LABEL.")
-        return
-
-    # Add OPB, Origination_Year, TERM_OF_LOAN, and other columns
-    combined_df = combined_df.merge(
-        df_edited[['Timestamp_x', 'OPB', 'Origination_Year', 'TERM_OF_LOAN']].drop_duplicates(),
-        on='Timestamp_x',
-        how='left'
-    )
-
-    # Ensure no None values in Distributed_Probability columns
-    combined_df['Distributed_Probability_COF'] = combined_df['Distributed_Probability_COF'].fillna(0)
-    combined_df['Distributed_Probability_PREPAYMENT'] = combined_df['Distributed_Probability_PREPAYMENT'].fillna(0)
-
-    # Map probabilities to target columns
-    combined_df['COF_EVENT_LABEL'] = combined_df['Distributed_Probability_COF']
-    combined_df['PREPAYMENT_EVENT_LABEL'] = combined_df['Distributed_Probability_PREPAYMENT']
-
-    # Handle cases where only one DataFrame is selected
-    if 'cof_event_df' in st.session_state and 'Distributed_Probability_COF' in combined_df.columns:
-        combined_df['COF_EVENT_LABEL'] = combined_df['Distributed_Probability_COF']
-    if 'prepayment_event_df' in st.session_state and 'Distributed_Probability_PREPAYMENT' in combined_df.columns:
-        combined_df['PREPAYMENT_EVENT_LABEL'] = combined_df['Distributed_Probability_PREPAYMENT']
-
-    # Calculate Total_Probability
-    combined_df['Total_Probability'] = combined_df[['Distributed_Probability_COF', 'Distributed_Probability_PREPAYMENT']].sum(axis=1)
-
-    # Add loan metrics to the combined DataFrame
-    combined_df = add_loan_metrics_updated(combined_df) 
-
-    # Apply cumulative values to the existing columns
-    combined_df = apply_cumulative_columns(combined_df)
-
-    # Display the combined DataFrame with cumulative values
-    st.write("Combined DataFrame:")
-    columns_to_exclude = ['Distributed_Probability_COF', 'Distributed_Probability_PREPAYMENT', 'COF_EVENT_LABEL', 'PREPAYMENT_EVENT_LABEL']
-    columns_to_display = [col for col in combined_df.columns if col not in columns_to_exclude]
-    st.dataframe(combined_df[columns_to_display])
-
-    # Store the combined DataFrame globally
-    store_processed_data(combined_df, "Combined_COFPREPAYMENT")
-
-    # Send the DataFrame to the next page
-    st.session_state.final_combined_df = combined_df
-    st.write("DataFrame has been sent to the next page.")
+        st.warning("Please select all three models to generate the combined DataFrame.")
 
 def map_credit_risk_params(credit_score, delinquency_count):
     """

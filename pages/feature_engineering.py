@@ -13,6 +13,9 @@ import re # For parsing Gemini output
 import google.generativeai as genai
 from dotenv import load_dotenv
 import shutil
+import sys
+import os
+
 
 try:
     from genai_recommend_features import (
@@ -23,10 +26,12 @@ try:
         validate_code_snippet,
         sanitize_code_snippet,
         _dedent_code,
+        extract_code_block,
+        
         GEMINI_API_KEY_CONFIGURED
     )
 except ImportError:
-    st.error("Failed to import 'genai_utils.py'. Make sure it's in the same directory or Python path.")
+    st.error("Failed to import 'genai_recommend_features.py'. Make sure it's in the same directory or Python path.")
     # Stop execution if utils can't be imported
     GEMINI_API_KEY_CONFIGURED = False # Assume not configured
     st.stop()
@@ -1568,6 +1573,7 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
     with st.expander("See Full Derivations and Justifications"):
         st.dataframe(display_df[["Feature", "Derivation", "Justification", "Primary Event Impact","Raw Features", "Code Snippet"]], use_container_width=True)
 
+
 # Check if recommended features exist in session state
 if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
    hasattr(st.session_state, 'recommended_features') and \
@@ -1578,84 +1584,59 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
     current_dataset = model_state.get("merged dataset", pd.DataFrame())
     recommended_features = st.session_state.recommended_features
 
+    # Debugging: Check the type and content of recommended_features
+    # st.write(f"Type of recommended_features: {type(recommended_features)}")
+    # st.write(f"Content of recommended_features: {recommended_features}")
+
     # Ensure the dataset is not empty
     if current_dataset.empty:
         st.warning("The merged dataset is empty. Cannot execute recommended features.")
     else:
         try:
-            # Ensure recommended_features contains the required column
-            if "Code Snippet" not in recommended_features.columns:
-                raise ValueError("Recommended features DataFrame must contain a 'Code Snippet' column.")
+            # Ensure recommended_features is a DataFrame
+            if not isinstance(recommended_features, pd.DataFrame):
+                raise ValueError("Recommended features must be a DataFrame. Please check the recommendation process.")
 
-            # Debugging: Display the generated code snippets
-            for feature_info in recommended_features.to_dict(orient="records"):
-                feature_name = feature_info.get("Feature")
-                generated_code = feature_info.get("Code Snippet")
-                st.text_area(f"Generated Code for '{feature_name}'", generated_code, height=150, disabled=True)
+            # Convert recommended_features to a list of dictionaries
+            recommended_features_records = recommended_features.to_dict(orient="records")
 
-                # Extract the actual code between delimiters ''' if present
-                if generated_code.startswith("'''") and generated_code.endswith("'''"):
-                    extracted_code = generated_code.strip("'''")
-                else:
-                    extracted_code = generated_code  # Use the original code if no delimiters
-
-                # Dedent the extracted code to fix indentation issues
-                dedented_code = _dedent_code(extracted_code)
-
-                # Execute the validated and dedented code snippet
-                try:
-                    execution_context = {'df': current_dataset, 'np': np, 'pd': pd}  # Execution context
-                    exec(dedented_code, {}, execution_context)
-
-                    # After exec, update current_dataset from execution_context if modified
-                    if 'df' in execution_context:
-                        current_dataset = execution_context['df']
-
-                    st.success(f"Successfully created feature '{feature_name}'.")
-                except Exception as e:
-                    st.error(f"Failed to create feature '{feature_name}'. Error: {e}")
-
-            # Execute the function to apply recommended features (if this is your custom function)
-            updated_dataset = apply_recommended_features(current_dataset, recommended_features.to_dict(orient="records"))
+            # Execute the function to apply recommended features
+            updated_dataset = apply_recommended_features(current_dataset, recommended_features_records)
+            
 
             # Store the updated dataset in session state for persistence
             st.session_state[f"{active_model}_updated_dataset"] = updated_dataset
 
-            # Display the updated dataset as a collapsible section
-            with st.expander("📂 View Updated Dataset with Recommended Features", expanded=False):
-                st.markdown("### Updated Dataset")
-                st.write(f"Shape: {updated_dataset.shape}")
-                st.dataframe(updated_dataset.head(), use_container_width=True)
-
+            
         except Exception as e:
             st.error(f"Error applying recommended features: {str(e)}")
 else:
     st.info("No recommended features available. Please complete the recommendation process first.")
-    
-#Accept Recommended Features Button ---
+
+# Accept Recommended Features Button ---
 if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
    hasattr(st.session_state, 'recommended_features') and \
    isinstance(st.session_state.recommended_features, pd.DataFrame) and \
    not st.session_state.recommended_features.empty:
+    
     col1_accept, col2_accept, col3_accept = st.columns([1, 2, 1])
     with col2_accept:
         if st.button("✅ Accept AI Recommended Features", key="accept_recommended_features_ai", use_container_width=True):
             try:
-                recommended_features_descriptions = st.session_state.recommended_features
+                # Get the updated dataset from session state
+                updated_dataset = st.session_state.get(f"{active_model}_updated_dataset", pd.DataFrame())
 
-                # Store in a more descriptive session state key for clarity
-                st.session_state.final_ai_engineered_features_descriptions = recommended_features_descriptions.copy()
+                if updated_dataset.empty:
+                    st.warning("Updated dataset is empty. Cannot save.")
+                else:
+                    # Save the updated dataset into the model state
+                    model_state = st.session_state[f"{active_model}_state"]
+                    model_state["updated_dataset"] = updated_dataset.copy()
 
-                csv_filename = "ai_recommended_engineered_features.csv"
-                recommended_features_descriptions.to_csv(csv_filename, index=False)
-                st.info(f"AI recommended feature descriptions saved to '{csv_filename}'")
-
-                model_state = st.session_state[f"{active_model}_state"]
-                model_state["ai_recommended_features_descriptions"] = recommended_features_descriptions.copy()
-                
-                st.session_state[f"{active_model}_operations_complete"]["accept_ai"] = True
-                st.session_state.accept_ai_success = True
-                st.rerun()
+                    # Update session state to indicate success
+                    st.session_state[f"{active_model}_operations_complete"]["accept_ai"] = True
+                    st.session_state.accept_ai_success = True
+                    st.rerun()
             except Exception as e:
                 st.error(f"Error accepting AI recommended features: {str(e)}")
 
@@ -1664,8 +1645,15 @@ if st.session_state.get("accept_ai_success", False):
     st.success("✅ AI recommended features (descriptions) have been accepted and their definitions saved!")
     st.session_state.accept_ai_success = False
 
-st.markdown("---")
+# Always display updated dataset if available
+updated_dataset = st.session_state.get(f"{active_model}_updated_dataset", pd.DataFrame())
+if isinstance(updated_dataset, pd.DataFrame) and not updated_dataset.empty:
+    with st.expander("📂 View Updated Dataset with Recommended Features", expanded=False):
+        st.markdown("### Updated Dataset")
+        st.write(f"Shape: {updated_dataset.shape}")
+        st.dataframe(updated_dataset.head(), use_container_width=True)
 
+st.markdown("---")
 
 # --- Data Transformation Buttons ---
 st.subheader("Data Actions")
@@ -1685,7 +1673,7 @@ if model_state["show_popup1"]:
 
     # Get the dataset for single feature transformations
     # This now comes from features_for_single_transform
-    input_features_df = model_state.get("merged dataset", pd.DataFrame())
+    input_features_df = model_state.get("updated_dataset",pd.DataFrame())
 
     if input_features_df.empty:
         st.warning("No features available for single feature transformation. Please acknowledge recommended features first.")

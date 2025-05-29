@@ -1,4 +1,4 @@
-# genai_utils.py
+
 import ast 
 import os
 import pandas as pd
@@ -8,6 +8,7 @@ import re
 import numpy as np
 import streamlit as st
 from typing import List, Dict, Any
+import re
 # Load environment variables and configure Gemini API
 load_dotenv()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -41,8 +42,7 @@ def get_recommended_features_gemini(dataset_description: str):
     if not GEMINI_API_KEY_CONFIGURED:
         return "Error: Gemini API key not configured. Cannot get recommendations."
 
-    llm_prompt = (
-        "You are an expert data science assistant specializing in financial risk modeling.\n\n"
+    llm_prompt = '''"You are an expert data science assistant specializing in financial risk modeling.\n\n"
         "I have a loan dataset intended for profitability prediction. The profitability is calculated by "
         "estimating the probabilities of two key events:\n"
         "1. Charge-Off (COF_EVENT_LABEL) – when a loan is written off.\n"
@@ -61,20 +61,20 @@ def get_recommended_features_gemini(dataset_description: str):
         "1. Always use the provided raw dataset features as the basis for your recommendations. Do not assume any external features.\n"
         "2. Identify Feature Engineering Opportunities from the features.\n"
         "3. Suggest only high-value, business-relevant engineered features.\n"
-        "4. For each engineered feature, clearly state its name, how it's derived, the justification for its inclusion, "
+        "4. For each engineered feature, clearly state its name, how it's derived,python code to derive the engineered feature, the justification for its inclusion, "
         "and whether it's most relevant for Charge-Off, Prepayment, or Both.\n"
         "5. Provide a Ranked List in this exact format for each feature (ensure to strictly follow this multi-line format for each feature):\n"
         "- Engineered Feature Name: [Name]\n"
         "- Description: [Brief description of the feature]\n"
         "- List of Raw Features Used: [List of raw features used to create this engineered feature]\n"
         "- Derivation: [Explanation of how to compute the feature]\n"
-        "- Code Snippet: [Python code snippet to compute the feature]\n"
+        "- Code Snippet: [Python code snippet to compute the feature], give only the pandas operation code without defining extra functions ,my pandas df is df - just 1 line per feature put code inside [[[code]]] everything except code should be removed (justification,primary impact ,etc...)\n"
         "- Justification: [Why this feature is valuable]\n"
         "- Primary Event Impact: [Charge-Off / Prepayment / Both]\n\n"
         "Begin the list directly. Do not include any preamble before the first feature. Ensure each feature block is separated by a double newline if providing multiple features."
-    )
-
-    model = genai.GenerativeModel('gemini-1.5-flash') # Or your preferred Gemini model
+    )'''
+        
+    model = genai.GenerativeModel('gemini-2.0-flash') # Or your preferred Gemini model
 
     try:
         response = model.generate_content(
@@ -87,6 +87,53 @@ def get_recommended_features_gemini(dataset_description: str):
         # Log the error or handle it more gracefully
         print(f"Gemini API Error during generation: {str(e)}")
         return f"An error occurred while contacting Gemini: {str(e)}"
+
+
+def get_code_snippet_gemini(code_snippet: str):
+    """
+    Calls the Gemini API to recommend engineered features for loan profitability prediction.
+    """
+    if not GEMINI_API_KEY_CONFIGURED:
+        return "Error: Gemini API key not configured. Cannot get recommendations."
+
+    llm_prompt = '''You will be given a section labeled as a "Code Snippet" that may contain non-code text or formatting artifacts. Extract and return only the valid, executable Python code found within it. The output must be in the following JSON format:
+    {"code": "<cleaned_python_code>"}
+    
+    Rules:
+
+    1.Only include actual Python code that can be executed with exec().
+    2.Strip away any formatting markers (e.g., [[[code]]], [[[/code]]], markdown formatting, or non-code descriptions).
+    3.Ensure the returned code is syntactically correct.
+    4.Do not include explanations, comments, or additional text — only the JSON object containing the clean Python code.
+
+    Example Input:
+
+    [[[code]]]df['NEW_FEATURE'] = df['COL1'] / df['COL2'][[[/code]]]
+
+    Expected Output:
+
+    {"code": "df['NEW_FEATURE'] = df['COL1'] / df['COL2']"}
+
+    Now process the following input:
+    
+
+    ''' + code_snippet
+        
+    model = genai.GenerativeModel('gemini-2.0-flash') # Or your preferred Gemini model
+
+    try:
+        response = model.generate_content(
+            llm_prompt,
+            generation_config=genai.types.GenerationConfig(temperature=0.2)
+        )
+        import pdb ;pdb.set_trace()
+        return response.text
+    except Exception as e:
+        # Log the error or handle it more gracefully
+        print(f"Gemini API Error during generation: {str(e)}")
+        return f"An error occurred while contacting Gemini: {str(e)}"
+
+
 
 def parse_gemini_recommendations(text: str) -> pd.DataFrame:
     """
@@ -121,7 +168,7 @@ def parse_gemini_recommendations(text: str) -> pd.DataFrame:
             description_match = re.search(r"- Description:\s*(.*)", block, re.DOTALL)
             raw_data_match = re.search(r"- List of Raw Features Used:\s*(.*)", block, re.DOTALL)
             code_snippet_match = re.search(r"- Code Snippet:\s*(.*)", block, re.DOTALL)
-
+            get_code_snippet_gemini(code_snippet_match)
             if name_match:
                 feature_data['Feature'] = name_match.group(1).strip()
             else:
@@ -172,55 +219,74 @@ def parse_gemini_recommendations(text: str) -> pd.DataFrame:
     print(pd.DataFrame(features_list))
     return pd.DataFrame(features_list)
 
-def apply_recommended_features(current_dataset: pd.DataFrame, recommended_features: List[Dict[str, Any]]) -> pd.DataFrame:
+
+def extract_code_block(text):
+    # Pattern matches code blocks with or without 'python' after ```
+    pattern = r"\[\[\[code\]\]\](.*?)\[\[\[/code\]\]\]"
+
+# Extract text
+    match = re.search(pattern, text)
+    if match:
+        extracted_code = match.group(1).strip()
+        return extracted_code
+
+
+
+def apply_recommended_features(current_dataset: pd.DataFrame, recommended_features: Any) -> pd.DataFrame:
     """
     Applies recommended features to the current dataset by executing dynamically generated code.
-
-    Args:
-        current_dataset: The input pandas DataFrame to which recommended features will be added.
-        recommended_features: A list of dictionaries containing recommended features and their generation logic.
-
-    Returns:
-        A new DataFrame with the recommended features appended.
-
-    Raises:
-        ValueError: If the generated code fails or the feature cannot be created.
     """
-    if current_dataset.empty:
-        raise ValueError("The input dataset is empty. Cannot apply recommended features.")
+    if isinstance(recommended_features, list):
+        recommended_features = pd.DataFrame(recommended_features)
 
-    # Create a copy of the dataset to avoid modifying the original
+    if not isinstance(recommended_features, pd.DataFrame):
+        raise ValueError("Recommended features must be a DataFrame or a list of dictionaries.")
+
+    if "Code Snippet" not in recommended_features.columns:
+        raise ValueError("Recommended features DataFrame must contain a 'Code Snippet' column.")
+
     updated_dataset = current_dataset.copy()
 
-    for feature_info in recommended_features:
+    for feature_info in recommended_features.to_dict(orient="records"):
         feature_name = feature_info.get("Feature")
-        generated_code = feature_info.get("Code Snippet")  # Assume this contains the code to generate the feature
+        generated_code = feature_info.get("Code Snippet")
+        print("generated_code:")
+        print(generated_code)
 
         if not feature_name or not generated_code:
-            raise ValueError(f"Invalid feature recommendation: {feature_info}")
+            st.warning(f"Invalid feature info: {feature_info}")
+            continue
 
         try:
+            # Sanitize and extract code
+            sanitized_code = extract_code_block(generated_code)
+            print("sanitized_code")
+            print(sanitized_code)
             # Prepare execution context
-            execution_context = {
-                'df': updated_dataset,  # Pass the dataset into the context
-                'np': np,
-                'pd': pd
-            }
+            execution_context = {'df': updated_dataset.copy(), 'np': np, 'pd': pd}
 
-            # Execute the generated code to create the feature
-            exec(generated_code, {}, execution_context)
+            # Execute code
+            exec(str(sanitized_code), {}, execution_context)
 
-            # Check if the feature was successfully created
-            if feature_name not in updated_dataset.columns:
-                raise ValueError(f"Feature '{feature_name}' was not created by the generated code: {generated_code}")
+            new_df = execution_context.get("df")
+            if new_df is None or not isinstance(new_df, pd.DataFrame):
+                raise ValueError("Executed code did not return a DataFrame.")
 
-            st.success(f"Successfully created feature '{feature_name}' using AI-generated code.")
+            if feature_name not in new_df.columns:
+                st.warning(f"Feature '{feature_name}' not found after execution. Skipping.")
+                continue
+
+            # Successfully added feature
+            updated_dataset = new_df
+            
 
         except Exception as e:
-            st.error(f"Failed to create feature '{feature_name}'. Error: {e}")
-            raise ValueError(f"Error applying recommended feature '{feature_name}': {e}")
+            st.error(f"❌ Failed to create feature '{feature_name}': {e}")
 
     return updated_dataset
+
+
+    
 
 def validate_code_snippet(code: str) -> bool:
     """
@@ -240,27 +306,17 @@ def validate_code_snippet(code: str) -> bool:
 def sanitize_code_snippet(code: str) -> str:
     """
     Extracts and sanitizes the generated code snippet to fix common issues like unterminated string literals.
-    Args:
-        code (str): The code snippet to sanitize.
-    Returns:
-        str: The sanitized code snippet.
     """
     try:
-        # Extract the code between triple quotes
-        if code.startswith("'''") and code.endswith("'''"):
-            start_index = code.find("'''") + len("'''")
-            end_index = code.rfind("'''")
-            extracted_code = code[start_index:end_index].strip()
-        else:
-            raise ValueError("Code snippet does not start and end with ''' or is improperly formatted.")
-
-        # Format the extracted code to fix indentation issues
-        formatted_code = "\n".join([line.strip() for line in extracted_code.splitlines()])
-
-        return formatted_code
+        # Remove surrounding triple quotes if they exist
+        code = code.strip()
+        if (code.startswith("'''") and code.endswith("'''")) or (code.startswith('"""') and code.endswith('"""')):
+            code = code[3:-3].strip()
+        return code
     except Exception as e:
         st.error(f"Error sanitizing code snippet: {e}")
-        return ""
+        return code
+
     
 def _dedent_code(code_str):
     """
@@ -272,3 +328,4 @@ def _dedent_code(code_str):
         if line.strip():  # Ignore empty lines
             min_indent = min(min_indent, len(line) - len(line.lstrip()))
     return "\n".join(line[min_indent:] if line.strip() else "" for line in lines)
+
