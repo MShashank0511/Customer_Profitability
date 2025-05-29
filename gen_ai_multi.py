@@ -23,13 +23,9 @@ class GenAIAgent:
             # Attempt to configure the API
             self._configure_gemini_api()
 
-            # Check if genai.api_key was successfully set by _configure_gemini_api
-            if genai.api_key:
-                self.model = self._initialize_generative_model()
-                GEMINI_API_KEY_CONFIGURED = True # Set global flag if successful
-            else:
-                st.warning("Gemini API key not found or configuration failed. AI features will be unavailable.")
-                GEMINI_API_KEY_CONFIGURED = False # Ensure global flag is false
+            self.model = self._initialize_generative_model()
+            GEMINI_API_KEY_CONFIGURED = True # Set global flag if successful
+            
         except Exception as e:
             st.error(f"Failed to initialize GenAIAgent: {e}. AI features will be unavailable.")
             self.model = None # Ensure model is None if initialization fails

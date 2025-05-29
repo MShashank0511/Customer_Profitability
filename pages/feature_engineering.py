@@ -1955,7 +1955,7 @@ for i, block in enumerate(model_state["multi_transform_blocks"]):
     with col3:
         # The AI backend expects a free-form text description of the operation.
         operation_text = st.text_input(
-             "Describe the transformation (AI will interpret)",
+             "Describe the transformation",
              value=block.get("operation", ""),
              placeholder="e.g.,'ratio of col_A to col_B'",
              key=f"multi_operation_text_{active_model}_{i}" # Explicit key
@@ -1963,41 +1963,12 @@ for i, block in enumerate(model_state["multi_transform_blocks"]):
         model_state["multi_transform_blocks"][i]["operation"] = operation_text
 
     with col4:
-        features_for_name = block.get("features", [])
-        operation_for_name = block.get("operation", "").replace(' ', '').lower()
-
-        if features_for_name and operation_for_name:
-            suggested_output = f"{operation_for_name}_{'_'.join(features_for_name).lower()}"
-            suggested_output = suggested_output[:50] # Limit length
-
-            current_output_name = block.get("output_name", "")
-            # Corrected key for previous suggestion to include active_model
-            prev_suggestion_key = f"multi_prev_suggestion_{active_model}_{i}"
-            prev_suggestion = st.session_state.get(prev_suggestion_key, "")
-
-            if not current_output_name or current_output_name == prev_suggestion:
-                output_name_value = suggested_output
-            else:
-                output_name_value = current_output_name
-
-            output_name = st.text_input(
-                "Name for New Feature",
-                value=output_name_value,
-                key=f"multi_output_name_{active_model}_{i}" # Explicit key
-            )
-            model_state["multi_transform_blocks"][i]["output_name"] = output_name
-            st.session_state[prev_suggestion_key] = suggested_output
-        else:
-            output_name = st.text_input(
-                "Name for New Feature",
-                value=block.get("output_name", ""),
-                key=f"multi_output_name_{active_model}_{i}" # Explicit key
-            )
-            model_state["multi_transform_blocks"][i]["output_name"] = output_name
-            # Corrected key for previous suggestion to include active_model
-            prev_suggestion_key = f"multi_prev_suggestion_{active_model}_{i}"
-            if prev_suggestion_key in st.session_state:
-                 del st.session_state[prev_suggestion_key]
+        output_name = st.text_input(
+            "Name for New Feature",
+            value=block.get("output_name", ""), # Always use the stored user-provided name
+            key=f"multi_output_name_{active_model}_{i}" # Explicit key
+        )
+        model_state["multi_transform_blocks"][i]["output_name"] = output_name
 
 
 if st.button("➕ Add New Feature Combination", key=f"add_multi_transform_button_{active_model}"): # Explicit key
@@ -2285,7 +2256,8 @@ if st.button("📊 Show Selected Attributes"):
                 os.makedirs(data_registry_subfolder, exist_ok=True)
 
                 # Save the final dataset as a Parquet file
-                final_dataset_path = os.path.join(data_registry_subfolder, f"{model_state[f"target_feature"]}_final_dataset.parquet")
+                target_feature = model_state["target_feature"]
+                final_dataset_path = os.path.join(data_registry_subfolder, f"{target_feature}_final_dataset.parquet")
                 final_dataset_with_target.to_parquet(final_dataset_path, index=False)
 
                 # Save the file path in session state for use in the next page
