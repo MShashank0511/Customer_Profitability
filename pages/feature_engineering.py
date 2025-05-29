@@ -1996,8 +1996,12 @@ if st.button("✅ Apply all transformations", key=f"apply_multi_transforms_butto
                 model_state["multi_transform_blocks"] # Pass the entire list of transformation blocks
             )
 
+            
+
             # Store the result in model_state["final_transformed_features"]
             model_state["final_transformed_features"] = final_transformed_df
+
+            st.session_state[f"{active_model}_state"] = model_state # Update session state with the new model state
 
             # Update success message for the model state (handled by the display block below)
             model_state["multi_transform_success"] = "✅ Multi-feature transformations applied successfully!"
@@ -2045,7 +2049,14 @@ st.markdown("### 🔎 Feature Selection")
 st.subheader("🎯 Target Variable Selection")
 
 # Get the dataset after multi-feature transformation
-input_df_for_target = model_state.get("final_transformed_features", pd.DataFrame())
+input_df_for_target = st.session_state[f"{active_model}_state"].get("final_transformed_features", pd.DataFrame())
+
+# --- DEBUGGING STEP 3 ---
+st.markdown("---")
+st.subheader("DEBUG: Feature Selection Section Data")
+st.write("Columns in input_df_for_target:")
+st.write(input_df_for_target.columns.tolist())
+# --- END DEBUGGING STEP 3 ---
 
 if not input_df_for_target.empty:
     # Get all column names from the transformed dataset

@@ -661,108 +661,7 @@ def apply_single_feature_transform(df: pd.DataFrame, transform_block: Dict[str, 
     return transformed_df
 
 
-def apply_multi_feature_transform(df: pd.DataFrame, transform_block: Dict[str, Any]) -> pd.DataFrame:
-    """
-    Applies a multi-feature transformation to a DataFrame and adds the result as a new column.
-
-    Args:
-        df: The input pandas DataFrame.
-        transform_block: A dictionary defining the transformation, containing:
-                         - 'features': A list of names of the columns to combine.
-                         - 'operation': The type of combination operation (str, e.g., 'Sum', 'Mean').
-                         - 'output_name': The name for the new combined column.
-
-    Returns:
-        A new DataFrame with the combined column added.
-        Returns the original DataFrame if the transformation cannot be applied.
-
-    Raises:
-        ValueError: If input features are not found or the operation is invalid for the feature types.
-        Exception: Any error that occurs during the transformation.
-    """
-    features = transform_block.get("features")
-    operation = transform_block.get("operation")
-    output_name = transform_block.get("output_name")
-
-    if not features or not operation or not output_name:
-        print(f"Skipping invalid multi-transformation block: {transform_block}")
-        return df.copy() # Return a copy
-
-    # Check if all input features exist
-    for feature in features:
-        if feature not in df.columns:
-            raise ValueError(f"Input feature '{feature}' not found in the DataFrame for multi-feature transformation.")
-
-    # Create a copy to avoid modifying the original DataFrame
-    transformed_df = df.copy()
-
-    # Check if output column name already exists
-    if output_name in transformed_df.columns:
-         # Option 3: Append a suffix (safer)
-         original_output_name = output_name
-         k = 1
-         while output_name in transformed_df.columns:
-              output_name = f"{original_output_name}_{k}"
-              k += 1
-         print(f"Warning: Output column name '{original_output_name}' already exists. Using '{output_name}' instead.")
-
-
-    try:
-        # Select the columns to operate on
-        data_subset = transformed_df[features]
-
-        # Perform the combination based on the operation
-        if operation.lower() == "sum":
-            # Ensure all selected features are numeric for sum
-            if not all(pd.api.types.is_numeric_dtype(data_subset[col]) for col in features):
-                 raise ValueError("Sum operation requires all selected features to be numeric.")
-            transformed_df[output_name] = data_subset.sum(axis=1)
-        elif operation.lower() == "mean":
-            # Ensure all selected features are numeric for mean
-            if not all(pd.api.types.is_numeric_dtype(data_subset[col]) for col in features):
-                 raise ValueError("Mean operation requires all selected features to be numeric.")
-            transformed_df[output_name] = data_subset.mean(axis=1)
-        elif operation.lower() == "product":
-            # Ensure all selected features are numeric for product
-            if not all(pd.api.types.is_numeric_dtype(data_subset[col]) for col in features):
-                 raise ValueError("Product operation requires all selected features to be numeric.")
-            transformed_df[output_name] = data_subset.prod(axis=1)
-        elif operation.lower() == "max":
-            # Ensure all selected features are numeric for max
-            if not all(pd.api.types.is_numeric_dtype(data_subset[col]) for col in features):
-                 raise ValueError("Max operation requires all selected features to be numeric.")
-            transformed_df[output_name] = data_subset.max(axis=1)
-        elif operation.lower() == "min":
-            # Ensure all selected features are numeric for min
-            if not all(pd.api.types.is_numeric_dtype(data_subset[col]) for col in features):
-                 raise ValueError("Min operation requires all selected features to be numeric.")
-            transformed_df[output_name] = data_subset.min(axis=1)
-        # Add more multi-feature operations here as needed
-        else:
-            raise ValueError(f"Unsupported multi-feature transformation operation: '{operation}'.")
-
-    except (ValueError, TypeError) as e:
-        print(f"Multi-feature transformation configuration error for features '{features}' with operation '{operation}': {e}")
-        # Re-raise the specific error
-        raise e
-    except Exception as e:
-        print(f"An unexpected error occurred during multi-feature transformation for features '{features}' with operation '{operation}': {e}")
-        # Re-raise the unexpected error
-        raise e
-
-
 # --- NEW: Functions for AI-driven Multi-Feature Transformation Section ---
-
-def get_multi_feature_ai_operations() -> List[str]:
-    """
-    Returns a conceptual list of operations for AI-driven multi-feature transformations.
-    In this setup, the user provides free-form text, which an AI model would interpret.
-    This list is primarily for UI guidance, indicating that complex operations are possible.
-    """
-    return [
-        "User-defined (e.g., 'sum of X and Y', 'average of A, B, C', 'product of all features')",
-        # More examples can be added here for UI guidance
-    ]
 
 
 def generate_transform_code_with_llm(features: List[str], user_operation_text: str) -> str:
@@ -822,6 +721,8 @@ def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: D
         # >>>>> MODIFIED LINE: Call the new code generation function <<<<<
         generated_code = generate_transform_code_with_llm(features, user_operation_text)
 
+ 
+
         if generated_code.startswith("ERROR:"):
             raise ValueError(f"AI interpretation failed for '{user_operation_text}': {generated_code}")
 
@@ -834,6 +735,8 @@ def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: D
         # The LLM is instructed to generate a Series.
         result_series = eval(generated_code, {}, execution_context)
 
+      
+
         if not isinstance(result_series, pd.Series):
             raise TypeError(f"AI generated code did not return a pandas Series. Got: {type(result_series)}. Generated code: '{generated_code}'")
 
@@ -843,6 +746,11 @@ def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: D
 
         # Add the new column to the DataFrame
         transformed_df[output_name] = result_series
+
+        # --- DEBUGGING STEP 2c ---
+        print(f"DEBUG: Columns of transformed_df AFTER adding '{output_name}':\n{transformed_df.columns.tolist()}")
+        print(f"DEBUG: Head of transformed_df AFTER adding '{output_name}':\n{transformed_df[[output_name]].head()}")
+        # --- END DEBUGGING STEP 2c ---
 
     except SyntaxError as se:
         st.error(f"Error: AI generated invalid Python code: {generated_code}. Details: {se}")
@@ -886,10 +794,10 @@ def apply_all_ai_driven_multi_feature_transforms(original_df: pd.DataFrame, tran
         user_operation_text = block.get("operation")
         output_name = block.get("output_name")
 
-        # Skip incomplete blocks
-        if not features or not user_operation_text or not output_name:
-            st.warning(f"Skipping incomplete AI-driven multi-feature transform block {i+1}: {block}")
-            continue
+        # # Skip incomplete blocks
+        # if not features or not user_operation_text or not output_name:
+        #     st.warning(f"Skipping incomplete AI-driven multi-feature transform block {i+1}: {block}")
+        #     continue
 
         # Check for feature existence in current_df columns BEFORE applying the transform
         missing_features = [f for f in features if f not in current_df.columns]
