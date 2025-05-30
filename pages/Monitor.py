@@ -208,7 +208,7 @@ def get_combined_df() -> pd.DataFrame:
 def add_opb_column(df, loan_data_path='loan_data.csv'):
     """
     Adds the OPB, CREDIT_SCORE_AVG_CALC, and DELINQ_CNT_30_DAY_TOTAL columns to the DataFrame if they are not already present.
-    The values are mapped using the Timestamp column from loan_data.csv.
+    The values are mapped using the Timestamp_x column from loan_data.csv.
 
     Args:
         df (pd.DataFrame): The DataFrame to which the columns will be added.
@@ -221,34 +221,34 @@ def add_opb_column(df, loan_data_path='loan_data.csv'):
         # Load loan_data.csv
         loan_data = pd.read_csv(loan_data_path)
 
-        # Ensure Timestamp column exists in both DataFrames
-        if 'Timestamp' in df.columns and 'Timestamp' in loan_data.columns:
-            # Convert Timestamp columns to datetime for alignment
-            loan_data['Timestamp'] = pd.to_datetime(loan_data['Timestamp'], errors='coerce')
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        # Ensure Timestamp_x column exists in both DataFrames
+        if 'Timestamp_x' in df.columns and 'Timestamp_x' in loan_data.columns:
+            # Convert Timestamp_x columns to datetime for alignment
+            loan_data['Timestamp_x'] = pd.to_datetime(loan_data['Timestamp_x'], errors='coerce')
+            df['Timestamp_x'] = pd.to_datetime(df['Timestamp_x'], errors='coerce')
 
             # Map OPB values if not present
             if 'OPB' not in df.columns:
-                df = df.merge(loan_data[['Timestamp', 'OPB']], on='Timestamp', how='left')
+                df = df.merge(loan_data[['Timestamp_x', 'OPB']], on='Timestamp_x', how='left')
                 st.write("Added OPB column to the DataFrame using loan_data.csv.")
             else:
                 st.write("OPB column already exists in the DataFrame.")
 
             # Map CREDIT_SCORE_AVG_CALC values if not present
             if 'CREDIT_SCORE_AVG_CALC' not in df.columns:
-                df = df.merge(loan_data[['Timestamp', 'CREDIT_SCORE_AVG_CALC']], on='Timestamp', how='left')
+                df = df.merge(loan_data[['Timestamp_x', 'CREDIT_SCORE_AVG_CALC']], on='Timestamp_x', how='left')
                 st.write("Added CREDIT_SCORE_AVG_CALC column to the DataFrame using loan_data.csv.")
             else:
                 st.write("CREDIT_SCORE_AVG_CALC column already exists in the DataFrame.")
 
             # Map DELINQ_CNT_30_DAY_TOTAL values if not present
             if 'DELINQ_CNT_30_DAY_TOTAL' not in df.columns:
-                df = df.merge(loan_data[['Timestamp', 'DELINQ_CNT_30_DAY_TOTAL']], on='Timestamp', how='left')
+                df = df.merge(loan_data[['Timestamp_x', 'DELINQ_CNT_30_DAY_TOTAL']], on='Timestamp_x', how='left')
                 st.write("Added DELINQ_CNT_30_DAY_TOTAL column to the DataFrame using loan_data.csv.")
             else:
                 st.write("DELINQ_CNT_30_DAY_TOTAL column already exists in the DataFrame.")
         else:
-            st.warning("Timestamp column is missing in either the DataFrame or loan_data.csv. Cannot map values.")
+            st.warning("Timestamp_x column is missing in either the DataFrame or loan_data.csv. Cannot map values.")
 
     except FileNotFoundError:
         st.error(f"Error: The file '{loan_data_path}' was not found. Please ensure it exists.")
@@ -395,7 +395,7 @@ def main():
     st.dataframe(selected_df.head())
 
     # --- Check for Missing Columns ---
-    required_columns = ['OPB', 'TERM_OF_LOAN', 'Timestamp']
+    required_columns = ['OPB', 'TERM_OF_LOAN', 'Timestamp_x']
     missing_columns = [col for col in required_columns if col not in selected_df.columns]
 
     if missing_columns:
@@ -408,10 +408,10 @@ def main():
 
     # Ensure `Origination_Year` exists
     if 'Origination_Year' not in df_edited.columns:
-        if 'Timestamp' in df_edited.columns:
-            df_edited['Origination_Year'] = pd.to_datetime(df_edited['Timestamp'], errors='coerce').dt.year
+        if 'Timestamp_x' in df_edited.columns:
+            df_edited['Origination_Year'] = pd.to_datetime(df_edited['Timestamp_x'], errors='coerce').dt.year
         else:
-            st.error("The 'Origination_Year' column could not be created because 'Timestamp' is missing.")
+            st.error("The 'Origination_Year' column could not be created because 'Timestamp_x' is missing.")
             return
 
     # Convert TERM_OF_LOAN values to 60 or 84
@@ -552,17 +552,17 @@ def main():
 
             # Merge COF and Prepayment DataFrames
             combined_df = pd.merge(
-                cof_event_df[['Timestamp', 'Month', 'Distributed_Probability']],
-                prepayment_event_df[['Timestamp', 'Month', 'Distributed_Probability']],
-                on=['Timestamp', 'Month'],
+                cof_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
+                prepayment_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
+                on=['Timestamp_x', 'Month'],
                 how='outer',
                 suffixes=('_COF', '_PREPAYMENT')
             )
 
             # Merge with additional columns from df_edited
             combined_df = combined_df.merge(
-                df_edited[['Timestamp', 'OPB', 'Origination_Year', 'TERM_OF_LOAN']].drop_duplicates(),
-                on='Timestamp',
+                df_edited[['Timestamp_x', 'OPB', 'Origination_Year', 'TERM_OF_LOAN']].drop_duplicates(),
+                on='Timestamp_x',
                 how='left'
             )
 

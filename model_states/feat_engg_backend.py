@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional , Tuple # Importing List, Dict, Any, Optional, Tuple for type hints
 import streamlit as st # Streamlit might be needed for st.warning/error in backend functions
 import random # Required for random.sample in select_mandatory_features
 from gen_ai_multi import gen_ai_agent
@@ -207,8 +207,9 @@ def _get_filter_mask(df: pd.DataFrame, filter_block: Dict[str, Any]) -> pd.Serie
 
 def apply_filter_block(df: pd.DataFrame, filter_block: Dict[str, Any]) -> pd.DataFrame:
     """
-    Applies a single filter operation to a DataFrame and adds a boolean column
-    indicating which rows satisfy the filter.
+    Applies a single filter operation to a DataFrame and returns the filtered DataFrame.
+    The 'output_name' from the filter_block is no longer used here, as this function
+    directly filters the DataFrame rather than adding a boolean column.
 
     Args:
         df: The input pandas DataFrame.
@@ -216,70 +217,44 @@ def apply_filter_block(df: pd.DataFrame, filter_block: Dict[str, Any]) -> pd.Dat
                       - 'feature': The name of the column to filter on.
                       - 'operation': The type of filter operation (str).
                       - 'value': The value(s) to use for filtering (can be a single value, list, or tuple).
-                      - 'output_name': The name for the new boolean column.
 
     Returns:
-        The DataFrame with a new boolean column added.
-        Returns the original DataFrame if the filter cannot be applied (e.g., invalid feature).
+        The DataFrame containing only the rows that satisfy the filter.
+        Returns the original DataFrame (a copy) if the filter cannot be applied
+        (e.g., invalid feature, or an error occurs during mask generation).
     """
     feature = filter_block.get("feature")
     operation = filter_block.get("operation")
     value = filter_block.get("value")
-    output_name = filter_block.get("output_name")
+    # output_name is no longer used in this function
 
-    if not feature or not operation or not output_name or feature not in df.columns:
-        print(f"Skipping invalid filter block: {filter_block}") # Log for debugging
-        return df # Return original DataFrame if block is invalid
+    # Always work on a copy to avoid modifying the original DataFrame passed in
+    filtered_df = df.copy()
+
+    if not feature or feature not in filtered_df.columns or not operation:
+        print(f"Skipping filter block (invalid or missing feature/operation): {filter_block}")
+        return filtered_df # Return original DataFrame copy if block is invalid
 
     try:
-        # Apply the filter based on the operation
-        if operation == "Greater Than":
-            df[output_name] = df[feature] > value
-        elif operation == "Less Than":
-            df[output_name] = df[feature] < value
-        elif operation == "Equal To":
-            df[output_name] = df[feature] == value
-        elif operation == "Not Equal To":
-            df[output_name] != value
-        elif operation == "Greater Than or Equal To":
-            df[output_name] = df[feature] >= value
-        elif operation == "Less Than or Equal To":
-            df[output_name] = df[feature] <= value
-        elif operation == "Is In List":
-            # Ensure value is a list
-            if isinstance(value, list):
-                df[output_name] = df[feature].isin(value)
-            else:
-                print(f"Warning: 'Is In List' operation requires a list value. Skipping filter for feature '{feature}'.")
-                df[output_name] = False # Mark all rows as False for this filter
-        elif operation == "Between":
-            # Ensure value is a tuple or list of two elements
-            if isinstance(value, (tuple, list)) and len(value) == 2:
-                df[output_name] = df[feature].between(value[0], value[1])
-            else:
-                print(f"Warning: 'Between' operation requires a tuple or list of two values. Skipping filter for feature '{feature}'.")
-                df[output_name] = False # Mark all rows as False for this filter
-        elif operation == "Is Null":
-            df[output_name] = df[feature].isnull()
-        elif operation == "Is Not Null":
-            df[output_name] = df[feature].notnull()
-        elif operation == "Contains String":
-             # Check if the feature column is of object (string) dtype
-            if pd.api.types.is_object_dtype(df[feature].dtype):
-                # Use .str accessor and handle potential NaNs
-                df[output_name] = df[feature].str.contains(str(value), na=False)
-            else:
-                print(f"Warning: 'Contains String' operation is only applicable to string columns. Skipping filter for feature '{feature}'.")
-                df[output_name] = False # Mark all rows as False for this filter
-        else:
-            print(f"Warning: Unsupported operation '{operation}'. Skipping filter for feature '{feature}'.")
-            df[output_name] = False # Mark all rows as False for unsupported ops
+        # Use the helper function to get the boolean mask
+        mask = _get_filter_mask(filtered_df, filter_block)
+
+        # Apply the mask to filter the DataFrame
+        return filtered_df[mask].copy()
 
     except Exception as e:
-        print(f"Error applying filter for feature '{feature}' with operation '{operation}': {e}")
-        df[output_name] = False # Mark all rows as False on error
+        print(f"Error applying filter for feature '{feature}' with operation '{operation}' and value '{value}': {e}")
+        # In case of an error, return the DataFrame as it was before this filter attempt
+        return df.copy() # Return a fresh copy of the original input DataFrame
 
-    return df
+
+def get_features_for_table_df(df: pd.DataFrame) -> List[str]:
+    """
+    Returns a list of feature (column) names for a given DataFrame.
+    """
+    if not df.empty:
+        return df.columns.tolist()
+    return []
 
 
 def apply_all_filters_for_table(original_df: pd.DataFrame, filter_blocks: List[Dict[str, Any]]) -> pd.DataFrame:
@@ -505,7 +480,72 @@ def apply_merge_blocks(datasets: Dict[str, pd.DataFrame], merge_blocks: List[Dic
     return merged_results
 
 # --- Reverted functions for Data Transformation Section ---
+def apply_single_merge(df_left: pd.DataFrame, df_right: pd.DataFrame, how: str, on: List[str] = None, left_on: List[str] = None, right_on: List[str] = None, suffixes: Tuple[str, str] = ("_x", "_y")) -> pd.DataFrame:
+    """
+    Applies a single pandas merge operation between two DataFrames.
 
+    Args:
+        df_left (pd.DataFrame): The left DataFrame.
+        df_right (pd.DataFrame): The right DataFrame.
+        how (str): Type of merge to be performed (e.g., 'inner', 'left', 'right', 'outer').
+        on (List[str], optional): Column or list of column names to join on. Must be found in both DataFrames.
+        left_on (List[str], optional): Column or list of column names from the left DataFrame to use as keys.
+        right_on (List[str], optional): Column or list of column names from the right DataFrame to use as keys.
+        suffixes (Tuple[str, str], optional): Suffixes to apply to overlapping column names. Defaults to ("_x", "_y").
+
+    Returns:
+        pd.DataFrame: The merged DataFrame.
+
+    Raises:
+        ValueError: If merge keys are not specified correctly or tables are empty.
+    """
+    if df_left.empty or df_right.empty:
+        # Using st.warning here is generally not recommended in backend functions
+        # as it ties backend logic to frontend display. Better to raise an error
+        # or return a specific indicator and let the frontend handle the message.
+        # For now, following the pattern in apply_filter_block.
+        # st.warning("One or both DataFrames are empty for merge. Returning empty DataFrame.")
+        return pd.DataFrame()
+
+    if not on and not (left_on and right_on):
+        raise ValueError("Merge requires 'on' or 'left_on' and 'right_on' to be specified.")
+
+    # Ensure 'on' is treated as a list if it's a single string
+    if isinstance(on, str):
+        on = [on]
+    if isinstance(left_on, str):
+        left_on = [left_on]
+    if isinstance(right_on, str):
+        right_on = [right_on]
+
+    # Validate merge keys exist in respective DataFrames
+    if on:
+        for col in on:
+            if col not in df_left.columns or col not in df_right.columns:
+                raise ValueError(f"Merge key '{col}' not found in both DataFrames for 'on' parameter.")
+    if left_on:
+        for col in left_on:
+            if col not in df_left.columns:
+                raise ValueError(f"Left merge key '{col}' not found in left DataFrame.")
+    if right_on:
+        for col in right_on:
+            if col not in df_right.columns:
+                raise ValueError(f"Right merge key '{col}' not found in right DataFrame.")
+
+    try:
+        merged_df = pd.merge(
+            df_left,
+            df_right,
+            how=how,
+            on=on,
+            left_on=left_on,
+            right_on=right_on,
+            suffixes=suffixes
+        )
+        return merged_df
+    except Exception as e:
+        raise ValueError(f"Error performing merge: {e}")
+    
 def get_transformation_operations() -> List[str]:
     """
     Returns a list of supported single feature transformation operations (reverted).
@@ -661,108 +701,7 @@ def apply_single_feature_transform(df: pd.DataFrame, transform_block: Dict[str, 
     return transformed_df
 
 
-def apply_multi_feature_transform(df: pd.DataFrame, transform_block: Dict[str, Any]) -> pd.DataFrame:
-    """
-    Applies a multi-feature transformation to a DataFrame and adds the result as a new column.
-
-    Args:
-        df: The input pandas DataFrame.
-        transform_block: A dictionary defining the transformation, containing:
-                         - 'features': A list of names of the columns to combine.
-                         - 'operation': The type of combination operation (str, e.g., 'Sum', 'Mean').
-                         - 'output_name': The name for the new combined column.
-
-    Returns:
-        A new DataFrame with the combined column added.
-        Returns the original DataFrame if the transformation cannot be applied.
-
-    Raises:
-        ValueError: If input features are not found or the operation is invalid for the feature types.
-        Exception: Any error that occurs during the transformation.
-    """
-    features = transform_block.get("features")
-    operation = transform_block.get("operation")
-    output_name = transform_block.get("output_name")
-
-    if not features or not operation or not output_name:
-        print(f"Skipping invalid multi-transformation block: {transform_block}")
-        return df.copy() # Return a copy
-
-    # Check if all input features exist
-    for feature in features:
-        if feature not in df.columns:
-            raise ValueError(f"Input feature '{feature}' not found in the DataFrame for multi-feature transformation.")
-
-    # Create a copy to avoid modifying the original DataFrame
-    transformed_df = df.copy()
-
-    # Check if output column name already exists
-    if output_name in transformed_df.columns:
-         # Option 3: Append a suffix (safer)
-         original_output_name = output_name
-         k = 1
-         while output_name in transformed_df.columns:
-              output_name = f"{original_output_name}_{k}"
-              k += 1
-         print(f"Warning: Output column name '{original_output_name}' already exists. Using '{output_name}' instead.")
-
-
-    try:
-        # Select the columns to operate on
-        data_subset = transformed_df[features]
-
-        # Perform the combination based on the operation
-        if operation.lower() == "sum":
-            # Ensure all selected features are numeric for sum
-            if not all(pd.api.types.is_numeric_dtype(data_subset[col]) for col in features):
-                 raise ValueError("Sum operation requires all selected features to be numeric.")
-            transformed_df[output_name] = data_subset.sum(axis=1)
-        elif operation.lower() == "mean":
-            # Ensure all selected features are numeric for mean
-            if not all(pd.api.types.is_numeric_dtype(data_subset[col]) for col in features):
-                 raise ValueError("Mean operation requires all selected features to be numeric.")
-            transformed_df[output_name] = data_subset.mean(axis=1)
-        elif operation.lower() == "product":
-            # Ensure all selected features are numeric for product
-            if not all(pd.api.types.is_numeric_dtype(data_subset[col]) for col in features):
-                 raise ValueError("Product operation requires all selected features to be numeric.")
-            transformed_df[output_name] = data_subset.prod(axis=1)
-        elif operation.lower() == "max":
-            # Ensure all selected features are numeric for max
-            if not all(pd.api.types.is_numeric_dtype(data_subset[col]) for col in features):
-                 raise ValueError("Max operation requires all selected features to be numeric.")
-            transformed_df[output_name] = data_subset.max(axis=1)
-        elif operation.lower() == "min":
-            # Ensure all selected features are numeric for min
-            if not all(pd.api.types.is_numeric_dtype(data_subset[col]) for col in features):
-                 raise ValueError("Min operation requires all selected features to be numeric.")
-            transformed_df[output_name] = data_subset.min(axis=1)
-        # Add more multi-feature operations here as needed
-        else:
-            raise ValueError(f"Unsupported multi-feature transformation operation: '{operation}'.")
-
-    except (ValueError, TypeError) as e:
-        print(f"Multi-feature transformation configuration error for features '{features}' with operation '{operation}': {e}")
-        # Re-raise the specific error
-        raise e
-    except Exception as e:
-        print(f"An unexpected error occurred during multi-feature transformation for features '{features}' with operation '{operation}': {e}")
-        # Re-raise the unexpected error
-        raise e
-
-
 # --- NEW: Functions for AI-driven Multi-Feature Transformation Section ---
-
-def get_multi_feature_ai_operations() -> List[str]:
-    """
-    Returns a conceptual list of operations for AI-driven multi-feature transformations.
-    In this setup, the user provides free-form text, which an AI model would interpret.
-    This list is primarily for UI guidance, indicating that complex operations are possible.
-    """
-    return [
-        "User-defined (e.g., 'sum of X and Y', 'average of A, B, C', 'product of all features')",
-        # More examples can be added here for UI guidance
-    ]
 
 
 def generate_transform_code_with_llm(features: List[str], user_operation_text: str) -> str:
@@ -821,7 +760,9 @@ def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: D
     try:
         # >>>>> MODIFIED LINE: Call the new code generation function <<<<<
         generated_code = generate_transform_code_with_llm(features, user_operation_text)
-        import pdb ; pdb.set_trace() # Debugging line to inspect generated_code
+
+ 
+
         if generated_code.startswith("ERROR:"):
             raise ValueError(f"AI interpretation failed for '{user_operation_text}': {generated_code}")
 
@@ -834,8 +775,7 @@ def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: D
         # The LLM is instructed to generate a Series.
         result_series = eval(generated_code, {}, execution_context)
 
-        if isinstance(result_series, np.ndarray):
-            result_series = pd.Series(result_series)
+      
 
         if not isinstance(result_series, pd.Series):
             raise TypeError(f"AI generated code did not return a pandas Series. Got: {type(result_series)}. Generated code: '{generated_code}'")
@@ -846,6 +786,11 @@ def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: D
 
         # Add the new column to the DataFrame
         transformed_df[output_name] = result_series
+
+        # --- DEBUGGING STEP 2c ---
+        print(f"DEBUG: Columns of transformed_df AFTER adding '{output_name}':\n{transformed_df.columns.tolist()}")
+        print(f"DEBUG: Head of transformed_df AFTER adding '{output_name}':\n{transformed_df[[output_name]].head()}")
+        # --- END DEBUGGING STEP 2c ---
 
     except SyntaxError as se:
         st.error(f"Error: AI generated invalid Python code: {generated_code}. Details: {se}")
@@ -889,10 +834,10 @@ def apply_all_ai_driven_multi_feature_transforms(original_df: pd.DataFrame, tran
         user_operation_text = block.get("operation")
         output_name = block.get("output_name")
 
-        # Skip incomplete blocks
-        if not features or not user_operation_text or not output_name:
-            st.warning(f"Skipping incomplete AI-driven multi-feature transform block {i+1}: {block}")
-            continue
+        # # Skip incomplete blocks
+        # if not features or not user_operation_text or not output_name:
+        #     st.warning(f"Skipping incomplete AI-driven multi-feature transform block {i+1}: {block}")
+        #     continue
 
         # Check for feature existence in current_df columns BEFORE applying the transform
         missing_features = [f for f in features if f not in current_df.columns]
@@ -940,7 +885,7 @@ def select_mandatory_features(df: pd.DataFrame) -> List[str]:
 
     # Define a set of "pre-determined" mandatory features for simulation
     potential_mandatory_features = [
-        "OPB", "ApplicationID" , "CREDIT_SCORE_AVG_CALC","DELINQ_CNT_30_DAY_TOTAL","Timestamp_x","Timestamp","TERM_OF_LOAN","PREPAYMENT_EVENT_LABEL","COF_EVENT_LABEL"
+        "OPB", "ApplicationID" , "CREDIT_SCORE_AVG_CALC","DELINQ_CNT_30_DAY_TOTAL","Timestamp_x","TERM_OF_LOAN","PREPAYMENT_EVENT_LABEL","COF_EVENT_LABEL"
     ]
 
     # Filter this list to include only features actually present in the input DataFrame

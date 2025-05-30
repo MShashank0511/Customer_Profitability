@@ -337,7 +337,7 @@ def apply_recommended_features(current_dataset: pd.DataFrame, recommended_featur
 
             # Execute the sanitized code snippet
             exec(str(sanitized_code), {}, execution_context)
-
+            
             # Get the possibly modified DataFrame
             new_df = execution_context.get("df")
 
@@ -370,7 +370,7 @@ def apply_recommended_features(current_dataset: pd.DataFrame, recommended_featur
                 first_new_col = list(new_columns)[0]
                 updated_dataset[feature_name] = new_df[first_new_col]
                 continue
-
+            
             # If none of the above worked, warn and skip
             st.warning(f"Feature '{feature_name}' not found or created after executing code snippet. Skipping.")
 
@@ -423,4 +423,3 @@ def _dedent_code(code_str):
         if line.strip():  # Ignore empty lines
             min_indent = min(min_indent, len(line) - len(line.lstrip()))
     return "\n".join(line[min_indent:] if line.strip() else "" for line in lines)
-

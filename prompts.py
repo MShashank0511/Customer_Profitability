@@ -111,7 +111,7 @@ def get_code_snippet_gemini(code_snippet: str):
             llm_prompt,
             generation_config=genai.types.GenerationConfig(temperature=0.2)
         )
-        import pdb ;pdb.set_trace()
+        
         return response.text
     except Exception as e:
         # Log the error or handle it more gracefully
