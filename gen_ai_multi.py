@@ -5,46 +5,44 @@ import google.generativeai as genai
 import streamlit as st
 import pandas as pd
 import numpy as np
+from dotenv import load_dotenv
 
 class GenAIAgent:
-    """
-    A class to encapsulate interactions with the Google Gemini Generative AI model
-    for generating Python code snippets for feature transformations.
-    """
-    def __init__(self):
-        self.model = None
-        try:
-            self._configure_gemini_api()
-            # Only initialize model if API key was successfully found
-            if genai.api_key: # Check if genai.api_key is set after configuration
-                self.model = self._initialize_generative_model()
-            else:
-                st.warning("Gemini API key not found. AI features will be unavailable.")
-        except Exception as e:
-            st.error(f"Failed to initialize GenAIAgent: {e}")
-            self.model = None # Ensure model is None if initialization fails
+    # def __init__(self):
+    #     self.model = None
+    #     try:
+    #         self._configure_gemini_api()
+    #         # Only initialize model if API key was successfully found
+    #         if genai.api_key:  # Check if genai.api_key is set after configuration
+    #             self.model = self._initialize_generative_model()
+    #         else:
+    #             st.warning("Gemini API key not found. AI features will be unavailable.")
+    #     except Exception as e:
+    #         st.error(f"Failed to initialize GenAIAgent: {e}")
+    #         self.model = None  # Ensure model is None if initialization fails
 
     def _configure_gemini_api(self):
         """
         Configures the Gemini API using an API key from Streamlit secrets or environment variables.
         """
-        GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+        # Load environment variables from .env file
+        load_dotenv()
+
+        # Retrieve the API key from Streamlit secrets or environment variables
+        GEMINI_API_KEY =  os.getenv("GEMINI_API_KEY")
 
         if not GEMINI_API_KEY:
             st.error("Gemini API Key not found. Please set it in Streamlit secrets or as an environment variable.")
-            # Do NOT raise ValueError here, as it prevents Streamlit from running.
-            # Instead, ensure `self.model` remains None and subsequent calls check for it.
-            return # Exit if key not found
+            return  # Exit if key not found
 
         genai.configure(api_key=GEMINI_API_KEY)
-        # st.success("Gemini API configured successfully.") # Good for debugging during setup, remove for production
 
     def _initialize_generative_model(self):
         # ... (rest of _initialize_generative_model method - NO CHANGE) ...
         return genai.GenerativeModel(
-            'gemini-pro',
+            'gemini-2.0-flash',
             generation_config={
-                "temperature": 0.2,
+                "temperature": 0.1,
                 "top_p": 1,
                 "top_k": 1,
                 "max_output_tokens": 500,

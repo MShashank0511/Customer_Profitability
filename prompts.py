@@ -72,3 +72,50 @@ prompt = '''"You are an expert data science assistant specializing in financial 
         "- Primary Event Impact: [Charge-Off / Prepayment / Both]\n\n"
         "Begin the list directly. Do not include any preamble before the first feature. Ensure each feature block is separated by a double newline if providing multiple features."
     )'''
+
+
+def get_code_snippet_gemini(code_snippet: str):
+    """
+    Calls the Gemini API to recommend engineered features for loan profitability prediction.
+    """
+    if not GEMINI_API_KEY_CONFIGURED:
+        return "Error: Gemini API key not configured. Cannot get recommendations."
+
+    llm_prompt = '''You will be given a section labeled as a "Code Snippet" that may contain non-code text or formatting artifacts. Extract and return only the valid, executable Python code found within it. The output must be in the following JSON format:
+    {"code": "<cleaned_python_code>"}
+    
+    Rules:
+
+    1.Only include actual Python code that can be executed with exec().
+    2.Strip away any formatting markers (e.g., [[[code]]], [[[/code]]], markdown formatting, or non-code descriptions).
+    3.Ensure the returned code is syntactically correct.
+    4.Do not include explanations, comments, or additional text — only the JSON object containing the clean Python code.
+
+    Example Input:
+
+    [[[code]]]df['NEW_FEATURE'] = df['COL1'] / df['COL2'][[[/code]]]
+
+    Expected Output:
+
+    {"code": "df['NEW_FEATURE'] = df['COL1'] / df['COL2']"}
+
+    Now process the following input:
+    
+
+    ''' + code_snippet
+        
+    model = genai.GenerativeModel('gemini-2.0-flash') # Or your preferred Gemini model
+
+    try:
+        response = model.generate_content(
+            llm_prompt,
+            generation_config=genai.types.GenerationConfig(temperature=0.2)
+        )
+        import pdb ;pdb.set_trace()
+        return response.text
+    except Exception as e:
+        # Log the error or handle it more gracefully
+        print(f"Gemini API Error during generation: {str(e)}")
+        return f"An error occurred while contacting Gemini: {str(e)}"
+
+

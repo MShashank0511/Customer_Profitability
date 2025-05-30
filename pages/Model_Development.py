@@ -29,10 +29,10 @@ DATA_REGISTRY_BASE_DIR = "data_registry"
 # 'data_registry_subfolder_actual': The actual subfolder name in data_registry (spaces replaced by underscores).
 # 'target_column_primary': The primary target associated with this data source.
 MODEL_INPUT_SOURCES = {
-    "Default Model Data (for Profitability)": {
-        "session_state_key_suffix": "Default Model",
+    "Forecast Model Data (for Profitability)": {
+        "session_state_key_suffix": "Forecast_Model",
         "target_column_primary": "Profitability_GBP",  # Correct target variable name
-        "data_registry_subfolder_actual": "Default_Model"
+        "data_registry_subfolder_actual": "Forecast Model"
     },
     "Charge-Off Model Data (for COF)": {
         "session_state_key_suffix": "Charge-Off Model",
@@ -87,12 +87,29 @@ if "current_task_state" not in st.session_state:
 current_task_state = st.session_state["current_task_state"]
 
 # --- Sidebar Dropdown for Selecting Model Input Data Source ---
+# Sidebar Buttons for Selecting Model Input Data Source
 st.sidebar.title("Select Input Data Source")
-selected_input_source_display_name = st.sidebar.selectbox(
-    "Which model's prepared dataset do you want to work with?",
-    options=list(MODEL_INPUT_SOURCES.keys()),
-    key="model_input_source_selector"
-)
+
+# Initialize session state for button states
+if "model_input_source_states" not in st.session_state:
+    st.session_state["model_input_source_states"] = {key: False for key in MODEL_INPUT_SOURCES.keys()}
+
+# Initialize session state for selected input source
+if "selected_input_source_display_name" not in st.session_state:
+    st.session_state["selected_input_source_display_name"] = None
+
+# Display buttons for each model input source
+for model_name in MODEL_INPUT_SOURCES.keys():
+    button_label = f"Select {model_name}"
+    button_color = "green" if st.session_state["model_input_source_states"][model_name] else "default"
+    if st.sidebar.button(button_label, key=f"button_{model_name}", use_container_width=True):
+        st.session_state["selected_input_source_display_name"] = model_name
+
+# Ensure a model is selected
+selected_input_source_display_name = st.session_state.get("selected_input_source_display_name")
+if not selected_input_source_display_name:
+    st.sidebar.warning("Please select a model input source to proceed.")
+    st.stop()
 
 # Get the selected model's configuration
 selected_source_config = MODEL_INPUT_SOURCES[selected_input_source_display_name]
@@ -129,6 +146,8 @@ if df_full is None:
         f"{target_column}_final_dataset.parquet"
     )
     st.write(f"Attempting constructed path: `{constructed_path}`")  # Debugging aid
+
+    # Check if the constructed path exists
     if os.path.exists(constructed_path):
         try:
             df_full = pd.read_parquet(constructed_path)
@@ -138,7 +157,7 @@ if df_full is None:
             st.error(f"Error loading data from constructed path '{constructed_path}': {e}. Attempting general default data load.")
             df_full = None
     else:
-        st.warning(f"Constructed data path '{constructed_path}' not found. Attempting general default data load.")
+        st.error(f"Constructed data path '{constructed_path}' not found. Please verify the subfolder name and file name.")
 
 # Priority 3: Fallback to general default data loading mechanism ('on_us_data.parquet')
 if df_full is None:
@@ -282,7 +301,7 @@ else: # Classification
 st.subheader("📊 Select Features & Split Data")
 
 # Define excluded columns
-timestamp_cols = ["Timestamp_x", "Timestamp_y", "TERM_OF_LOAN_y"]
+timestamp_cols = ["Timestamp_x", "Timestamp_y", "TERM_OF_LOAN_y","Timestamp","Application_ID_x", "Application_ID_y", "Application_ID"]  # Include all timestamp-related columns
 # Define target_variables_list with the expected target variables
 target_variables_list = ["Profitability_GBP", "COF_EVENT_LABEL", "PREPAYMENT_EVENT_LABEL"]
 
@@ -296,19 +315,24 @@ selected_features_default = current_task_state.get("feature_columns", selectable
 selected_features_default = [f for f in selected_features_default if f in selectable_features]
 
 # Display the multiselect widget with only existing columns
-feature_columns = st.multiselect(
-    "Select features to include in the model",
-    options=selectable_features,
-    default=selected_features_default,
-    key=f"features_{selected_input_source_display_name.replace(' ', '_')}"
-)
+feature_columns = selectable_features
 
+# Store the features in the current task state
 current_task_state["feature_columns"] = feature_columns
 
-# Ensure that at least one feature is selected
+# Ensure that there are features available
 if not feature_columns:
-    st.error("No valid features selected. Please ensure the selected features exist in the dataset.")
+    st.error("No valid features available in the dataset.")
     st.stop()
+
+# Display a collapsible dropdown with all features and their data types
+with st.expander("📂 View All Features and Their Data Types", expanded=False):
+    st.markdown("### Features Overview")
+    features_df = pd.DataFrame({
+        "Feature Name": feature_columns,
+        "Data Type": [df_full[col].dtype for col in feature_columns]
+    })
+    st.dataframe(features_df, use_container_width=True)
 
 # Define X and y for model training
 X = df_full[feature_columns]  # Include only selected features
@@ -702,27 +726,45 @@ st.session_state.model_development_state[task_key] = current_task_state
 st.markdown("---")
 st.subheader("Finalize and Proceed")
 
-confirmed_count_final = len(st.session_state.confirmed_model_outputs)
-# Define modeling_tasks as a list of tasks if not already defined
-modeling_tasks = list(MODEL_INPUT_SOURCES.keys())  # Example: Use keys from MODEL_INPUT_SOURCES
+# Count confirmed model outputs
+confirmed_count_final = len(st.session_state.get("confirmed_model_outputs", {}))
+
+# Define modeling tasks based on MODEL_INPUT_SOURCES
+modeling_tasks = list(MODEL_INPUT_SOURCES.keys())
 all_tasks_count_final = len(modeling_tasks)
 
+# Display confirmed model selections overview
 if confirmed_count_final > 0:
     st.write("Confirmed Model Selections Overview:")
-    for task_name_key_final, conf_output_final in st.session_state.confirmed_model_outputs.items():
-        iter_num_final = conf_output_final.get('iteration_number', 'N/A')
-        model_name_final = conf_output_final.get('model_name', 'N/A')
-        target_var_final = conf_output_final.get('target_variable', 'N/A')
-        test_data_path_final = conf_output_final.get('test_data_path', 'N/A')
+    for task_name_key_final, conf_output_final in st.session_state.get("confirmed_model_outputs", {}).items():
+        iter_num_final = conf_output_final.get("iteration_number", "N/A")
+        model_name_final = conf_output_final.get("model_name", "N/A")
+        target_var_final = conf_output_final.get("target_variable", "N/A")
+        test_data_path_final = conf_output_final.get("test_data_path", "N/A")
         st.markdown(f"- **{conf_output_final['task_name']}**: Iteration `{iter_num_final}` for target `{target_var_final}` (Model: `{model_name_final}`). ")
 
-
+# Check if all tasks are confirmed
 if confirmed_count_final == all_tasks_count_final:
     st.success(f"✅ All {all_tasks_count_final} model tasks have a confirmed selection. You can now proceed to the next page.")
     if st.button("Mark Model Development as Complete & Proceed", key="finalize_model_dev_page"):
+        # Update session state to indicate completion
         st.session_state["model_development_complete"] = True
-        st.info("Model development step completed. You can now proceed to the next step.")
-        # Example: st.switch_page("pages/your_next_page.py") # If using Streamlit's new page structure
-else:
-    st.info(f"Please select and confirm a model iteration for all {all_tasks_count_final} model tasks. Currently {confirmed_count_final}/{all_tasks_count_final} confirmed.")
 
+        # Update button states to green for all tasks
+        for model_name in MODEL_INPUT_SOURCES.keys():
+            st.session_state["model_input_source_states"][model_name] = True
+
+        st.info("Model development step completed. You can now proceed to the next step.")
+        # Example: st.switch_page("pages/your_next_page.py") # Uncomment if using Streamlit's page navigation
+else:
+    st.warning(f"Please select and confirm a model iteration for all {all_tasks_count_final} model tasks. Currently {confirmed_count_final}/{all_tasks_count_final} confirmed.")
+
+    # Display progress for unconfirmed tasks
+    unconfirmed_tasks = [
+        task for task in modeling_tasks
+        if task not in st.session_state.get("confirmed_model_outputs", {})
+    ]
+    if unconfirmed_tasks:
+        st.info("Unconfirmed Tasks:")
+        for task in unconfirmed_tasks:
+            st.markdown(f"- **{task}**: Pending confirmation.")

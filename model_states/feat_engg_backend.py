@@ -821,7 +821,7 @@ def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: D
     try:
         # >>>>> MODIFIED LINE: Call the new code generation function <<<<<
         generated_code = generate_transform_code_with_llm(features, user_operation_text)
-
+        import pdb ; pdb.set_trace() # Debugging line to inspect generated_code
         if generated_code.startswith("ERROR:"):
             raise ValueError(f"AI interpretation failed for '{user_operation_text}': {generated_code}")
 
@@ -833,6 +833,9 @@ def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: D
         }
         # The LLM is instructed to generate a Series.
         result_series = eval(generated_code, {}, execution_context)
+
+        if isinstance(result_series, np.ndarray):
+            result_series = pd.Series(result_series)
 
         if not isinstance(result_series, pd.Series):
             raise TypeError(f"AI generated code did not return a pandas Series. Got: {type(result_series)}. Generated code: '{generated_code}'")
@@ -937,7 +940,7 @@ def select_mandatory_features(df: pd.DataFrame) -> List[str]:
 
     # Define a set of "pre-determined" mandatory features for simulation
     potential_mandatory_features = [
-        "OPB", "ApplicationID" , "CREDIT_SCORE_AVG_CALC","DELINQ_CNT_30_DAY_TOTAL","Timestamp_x","TERM_OF_LOAN","PREPAYMENT_EVENT_LABEL","COF_EVENT_LABEL"
+        "OPB", "ApplicationID" , "CREDIT_SCORE_AVG_CALC","DELINQ_CNT_30_DAY_TOTAL","Timestamp_x","Timestamp","TERM_OF_LOAN","PREPAYMENT_EVENT_LABEL","COF_EVENT_LABEL"
     ]
 
     # Filter this list to include only features actually present in the input DataFrame

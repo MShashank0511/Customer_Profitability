@@ -129,7 +129,7 @@ except Exception as e:
 #             return None
 
 # --- Model Definitions ---
-MODEL_NAMES = ["Default Model", "Charge-Off Model", "Prepayment Model", "Churn Model", "Extrapolation Model"]
+MODEL_NAMES = ["Forecast Model", "Charge-Off Model", "Prepayment Model", "Churn Model", "Extrapolation Model"]
 
 def initialize_new_model_state(model_name):
     """Initialize a fresh state for a new model."""
@@ -1454,22 +1454,30 @@ st.markdown("---")
 
 # --- Recommend Features Button ---
 if 'active_model' not in st.session_state:
-    st.session_state.active_model = "default_model" 
+    st.session_state.active_model = "Forecast_Model"
 active_model = st.session_state.active_model
 
 # Initialize session state dictionaries if not present
 if f"{active_model}_operations_complete" not in st.session_state:
     st.session_state[f"{active_model}_operations_complete"] = {}
-if f"{active_model}_state" not in st.session_state: # This ensures model_state (the dictionary) itself exists
-     st.session_state[f"{active_model}_state"] = {}
+if f"{active_model}_state" not in st.session_state:
+    st.session_state[f"{active_model}_state"] = {}
+
+# Initialize per-model accept flags
+if f"{active_model}_accept_ai_done" not in st.session_state:
+    st.session_state[f"{active_model}_accept_ai_done"] = False
+if f"{active_model}_accept_ai_success" not in st.session_state:
+    st.session_state[f"{active_model}_accept_ai_success"] = False
 
 # --- Recommend Features Button ---
 st.markdown("## AI-Powered Feature Recommendation")
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     if st.button("✨ Recommend Features (AI)", key="recommend_features_ai", use_container_width=True):
-        if not GEMINI_API_KEY_CONFIGURED:
-             st.error("Gemini API Key is not configured. Cannot recommend features. Please check `genai_utils.py` and your .env file.")
+        if st.session_state.get(f"{active_model}_accept_ai_done", False):
+            st.info("AI recommendations have already been accepted for this model. Skipping LLM call.")
+        elif not GEMINI_API_KEY_CONFIGURED:
+            st.error("Gemini API Key is not configured. Cannot recommend features. Please check `genai_utils.py` and your .env file.")
         else:
             try:
                 with st.spinner("🧠 Calling Generative AI for feature recommendations..."):
@@ -1478,10 +1486,10 @@ with col2:
                     if current_dataset is None or not isinstance(current_dataset, pd.DataFrame) or current_dataset.empty:
                         st.error("The 'merged_dataset' is empty or not a DataFrame. Cannot generate recommendations.")
                     else:
-                        dataset_description = summarize_dataset_columns(current_dataset.head()) # Use head() for brevity
+                        dataset_description = summarize_dataset_columns(current_dataset.head())  # Use head() for brevity
                         
                         st.markdown("#### Dataset Summary Sent to AI:")
-                        st.text_area("Input to AI",dataset_description, height=100, disabled=True)
+                        st.text_area("Input to AI", dataset_description, height=100, disabled=True)
 
                         recommendations_text = get_recommended_features_gemini(dataset_description)
 
@@ -1497,66 +1505,34 @@ with col2:
                                 st.session_state.feature_info = recommended_features_df
                                 st.session_state.recommended_features = recommended_features_df.copy()
                                 
-                                
                                 st.session_state[f"{active_model}_operations_complete"]["recommend"] = True
                                 st.success("AI Recommended features generated!")
                                 st.rerun()
                             else:
-                                st.warning("AI recommendations received, but no features could be parsed or extracted. Please check the raw AI response above. The response might be empty or not in the expected format.")
+                                st.warning("AI recommendations received, but no features could be parsed or extracted.")
             except Exception as e:
                 st.error(f"Error during AI feature recommendation process: {str(e)}")
-                # You might want to log the full traceback here for debugging
-                # import traceback
-                # st.text_area("Full Error Traceback", traceback.format_exc(), height=200)
 
-
-# Display recommended features if they exist
 # Display recommended features if they exist
 if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
    hasattr(st.session_state, 'feature_info') and \
    isinstance(st.session_state.feature_info, pd.DataFrame) and \
    not st.session_state.feature_info.empty:
+
     st.markdown("### AI Recommended Engineered Features")
-    
+
     display_df = st.session_state.feature_info.copy()
-    # Ensure all expected columns exist for data_editor for consistent display
-    expected_cols_display = ["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type", "Derivation", "Justification","Raw Features", "Code Snippet"]
+    expected_cols_display = ["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type", "Derivation", "Justification", "Raw Features", "Code Snippet"]
     for col in expected_cols_display:
         if col not in display_df.columns:
-            display_df[col] = "N/A" 
+            display_df[col] = "N/A"
 
-    # Convert any Series in column_config to strings or lists
     column_config = {
-        "Feature": st.column_config.TextColumn(
-            "Feature 💡", 
-            width="medium", 
-            disabled=True, 
-            help=display_df["Feature"].to_list()  # Convert Series to list
-        ),
-        "Description": st.column_config.TextColumn(
-            "Full Description 📝", 
-            width="large", 
-            disabled=True, 
-            help=display_df["Description"].to_list()  # Convert Series to list
-        ),
-        "Primary Event Impact": st.column_config.TextColumn(
-            "Primary Impact 🎯", 
-            width="medium", 
-            disabled=True, 
-            help=display_df["Primary Event Impact"].to_list()  # Convert Series to list
-        ),
-        "Raw Features": st.column_config.TextColumn(
-            "Raw Features", 
-            width="medium",
-            disabled=True,
-            help=display_df["Raw Features"].to_list()  # Convert Series to list
-        ),
-        "Code Snippet": st.column_config.TextColumn(
-            "Code Snippet",
-            width="medium",
-            disabled=True,
-            help=display_df["Code Snippet"].to_list()  # Convert Series to list
-        ),
+        "Feature": st.column_config.TextColumn("Feature 💡", width="medium", disabled=True, help=display_df["Feature"].to_list()),
+        "Description": st.column_config.TextColumn("Full Description 📝", width="large", disabled=True, help=display_df["Description"].to_list()),
+        "Primary Event Impact": st.column_config.TextColumn("Primary Impact 🎯", width="medium", disabled=True, help=display_df["Primary Event Impact"].to_list()),
+        "Raw Features": st.column_config.TextColumn("Raw Features", width="medium", disabled=True, help=display_df["Raw Features"].to_list()),
+        "Code Snippet": st.column_config.TextColumn("Code Snippet", width="medium", disabled=True, help=display_df["Code Snippet"].to_list()),
         "Min": st.column_config.TextColumn("Min", width="small", disabled=True),
         "Max": st.column_config.TextColumn("Max", width="small", disabled=True),
         "Mean": st.column_config.TextColumn("Mean", width="small", disabled=True),
@@ -1564,86 +1540,67 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
     }
 
     st.data_editor(
-        display_df[["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type","Raw Features", "Code Snippet"]],
+        display_df[["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type", "Raw Features", "Code Snippet"]],
         column_config=column_config,
         hide_index=True,
         use_container_width=True,
         key="recommended_features_ai_editor"
     )
+
     with st.expander("See Full Derivations and Justifications"):
-        st.dataframe(display_df[["Feature", "Derivation", "Justification", "Primary Event Impact","Raw Features", "Code Snippet"]], use_container_width=True)
+        st.dataframe(display_df[["Feature", "Derivation", "Justification", "Primary Event Impact", "Raw Features", "Code Snippet"]], use_container_width=True)
 
-
-# Check if recommended features exist in session state
+# Apply recommended features to dataset if not already accepted
 if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
    hasattr(st.session_state, 'recommended_features') and \
    isinstance(st.session_state.recommended_features, pd.DataFrame) and \
-   not st.session_state.recommended_features.empty:
-    
-    # Get the current dataset and recommended features
+   not st.session_state.recommended_features.empty and \
+   not st.session_state.get(f"{active_model}_accept_ai_done", False):
+
     current_dataset = model_state.get("merged dataset", pd.DataFrame())
     recommended_features = st.session_state.recommended_features
 
-    # Debugging: Check the type and content of recommended_features
-    # st.write(f"Type of recommended_features: {type(recommended_features)}")
-    # st.write(f"Content of recommended_features: {recommended_features}")
-
-    # Ensure the dataset is not empty
     if current_dataset.empty:
         st.warning("The merged dataset is empty. Cannot execute recommended features.")
     else:
         try:
-            # Ensure recommended_features is a DataFrame
-            if not isinstance(recommended_features, pd.DataFrame):
-                raise ValueError("Recommended features must be a DataFrame. Please check the recommendation process.")
-
-            # Convert recommended_features to a list of dictionaries
             recommended_features_records = recommended_features.to_dict(orient="records")
-
-            # Execute the function to apply recommended features
             updated_dataset = apply_recommended_features(current_dataset, recommended_features_records)
-            
 
-            # Store the updated dataset in session state for persistence
             st.session_state[f"{active_model}_updated_dataset"] = updated_dataset
-
-            
         except Exception as e:
             st.error(f"Error applying recommended features: {str(e)}")
-else:
-    st.info("No recommended features available. Please complete the recommendation process first.")
 
-# Accept Recommended Features Button ---
+# Accept Recommended Features Button
 if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
    hasattr(st.session_state, 'recommended_features') and \
    isinstance(st.session_state.recommended_features, pd.DataFrame) and \
-   not st.session_state.recommended_features.empty:
-    
+   not st.session_state.recommended_features.empty and \
+   not st.session_state.get(f"{active_model}_accept_ai_done", False):
+
     col1_accept, col2_accept, col3_accept = st.columns([1, 2, 1])
     with col2_accept:
         if st.button("✅ Accept AI Recommended Features", key="accept_recommended_features_ai", use_container_width=True):
             try:
-                # Get the updated dataset from session state
                 updated_dataset = st.session_state.get(f"{active_model}_updated_dataset", pd.DataFrame())
 
                 if updated_dataset.empty:
                     st.warning("Updated dataset is empty. Cannot save.")
                 else:
-                    # Save the updated dataset into the model state
                     model_state = st.session_state[f"{active_model}_state"]
                     model_state["updated_dataset"] = updated_dataset.copy()
 
-                    # Update session state to indicate success
                     st.session_state[f"{active_model}_operations_complete"]["accept_ai"] = True
-                    st.session_state.accept_ai_success = True
+                    st.session_state[f"{active_model}_accept_ai_success"] = True
+                    st.session_state[f"{active_model}_accept_ai_done"] = True
                     st.rerun()
             except Exception as e:
                 st.error(f"Error accepting AI recommended features: {str(e)}")
 
 # Display success message
-if st.session_state.get("accept_ai_success", False):
+if st.session_state.get(f"{active_model}_accept_ai_success", False):
     st.success("✅ AI recommended features (descriptions) have been accepted and their definitions saved!")
-    st.session_state.accept_ai_success = False
+    st.session_state[f"{active_model}_accept_ai_success"] = False
 
 # Always display updated dataset if available
 updated_dataset = st.session_state.get(f"{active_model}_updated_dataset", pd.DataFrame())
@@ -1654,6 +1611,7 @@ if isinstance(updated_dataset, pd.DataFrame) and not updated_dataset.empty:
         st.dataframe(updated_dataset.head(), use_container_width=True)
 
 st.markdown("---")
+
 
 # --- Data Transformation Buttons ---
 st.subheader("Data Actions")
@@ -2175,41 +2133,40 @@ if f"{active_model}_feature_checkboxes" not in st.session_state:
 st.subheader("✨ Good-to-Have Features")
 
 if available_optional_features:
+    # Display editable features DataFrame
     features_df = pd.DataFrame({
         "Feature": available_optional_features,
         "Description": [feature_descriptions.get(feat, "No description available") for feat in available_optional_features],
-        "Select": [bool(st.session_state[f"{active_model}_feature_checkboxes"].get(feat, True)) for feat in available_optional_features]
     })
 
+    # Retrieve previous selections or default all to True
+    previous_selections = st.session_state.get(f"{active_model}_feature_checkboxes", {})
+    features_df["Select"] = [previous_selections.get(feat, True) for feat in available_optional_features]
+
+    # Show editable table
     edited_df = st.data_editor(
         features_df,
         column_config={
-            "Feature": st.column_config.TextColumn(
-                "Feature 🔍",
-                width="medium",
-                disabled=True
-            ),
-            "Description": st.column_config.TextColumn(
-                "Description",
-                width="large",
-                disabled=True
-            ),
-            "Select": st.column_config.CheckboxColumn(
-                "Select",
-                width="small",
-                help="Select this feature",
-                default=False,
-            ),
+            "Feature": st.column_config.TextColumn("Feature 🔍", width="medium", disabled=True),
+            "Description": st.column_config.TextColumn("Description", width="large", disabled=True),
+            "Select": st.column_config.CheckboxColumn("Select", width="small", help="Select this feature"),
         },
         hide_index=True,
         use_container_width=True,
         key=f"{active_model}_feature_editor"
     )
 
+    # Update session state with new checkbox values
+    updated_feature_checks = {
+        feature: is_selected for feature, is_selected in zip(edited_df["Feature"], edited_df["Select"])
+    }
+    st.session_state[f"{active_model}_feature_checkboxes"] = updated_feature_checks
+
+    # Extract only selected features
     st.session_state[f"{active_model}_selected_features"] = [
-        feature for feature, is_selected in zip(available_optional_features, edited_df["Select"])
-        if is_selected
+        feature for feature, is_selected in updated_feature_checks.items() if is_selected
     ]
+
 else:
     st.info("No optional features available in the current dataset (after target selection).")
 
@@ -2219,19 +2176,14 @@ if st.button("📊 Show Selected Attributes"):
     all_features_summary = []
     feature_types = []
 
-    # Add mandatory features (from the backend's selection)
     selected_mandatory_features = model_state.get("selected_mandatory_features", [])
     for feature in selected_mandatory_features:
         all_features_summary.append(feature)
         feature_types.append("Mandatory")
 
-    # Add good-to-have features selected by the user
     for feature in st.session_state.get(f"{active_model}_selected_features", []):
         all_features_summary.append(feature)
         feature_types.append("Selected")
-
-    # --- IMPORTANT: Recommended features are NOT added to all_features_summary here ---
-    # They are independent as per your request.
 
     original_df_for_final_dataset = model_state.get("final_transformed_features", pd.DataFrame()).copy()
     target_col_name = model_state.get("target_feature")
@@ -2239,16 +2191,14 @@ if st.button("📊 Show Selected Attributes"):
     if target_col_name and target_col_name in original_df_for_final_dataset.columns:
         all_features_summary.append(target_col_name)
         feature_types.append("Target")
-        features_to_include_in_final = [f for f in all_features_summary if f in original_df_for_final_dataset.columns]
-        features_to_include_in_final = list(dict.fromkeys(features_to_include_in_final)) # Remove duplicates
     else:
-        features_to_include_in_final = [f for f in all_features_summary if f in original_df_for_final_dataset.columns]
-        features_to_include_in_final = list(dict.fromkeys(features_to_include_in_final)) # Remove duplicates
         if not target_col_name:
             st.warning("No target variable selected. The final dataset will not include a target column.")
         else:
-            st.warning(f"Selected target variable '{target_col_name}' not found in the transformed dataset. The final dataset will not include it.")
+            st.warning(f"Selected target variable '{target_col_name}' not found in the transformed dataset.")
 
+    features_to_include_in_final = [f for f in all_features_summary if f in original_df_for_final_dataset.columns]
+    features_to_include_in_final = list(dict.fromkeys(features_to_include_in_final))  # Remove duplicates
 
     if all_features_summary:
         summary_df = pd.DataFrame({
@@ -2264,6 +2214,7 @@ if st.button("📊 Show Selected Attributes"):
         else:
             st.warning("No features selected to create the final dataset.")
             model_state[f"final_dataset"] = pd.DataFrame()
+
 
         # --- PARQUET FILE SAVING LOGIC (NOW HERE at the very end) ---
         final_dataset_with_target = model_state.get("final_dataset", pd.DataFrame())

@@ -599,18 +599,22 @@ if on_us_file is not None:
     on_us_data = load_data(on_us_file, feature_mapping)
     if on_us_data is not None:
         if 'Timestamp' in on_us_data.columns and not on_us_data['Timestamp'].isnull().all():
-            display_insights(on_us_data, "On-Us",feature_mapping)
+            display_insights(on_us_data, "On-Us", feature_mapping)
             save_dir = DATA_REGISTRY_DIR
             data_path = os.path.join(save_dir, "on_us_data.parquet")
             try:
                 on_us_data.to_parquet(data_path, index=False)
-                
+                st.session_state["on_us_data"] = on_us_data  # Persist data in session state
                 st.session_state["on_us_data_path"] = data_path
             except Exception as e:
                 st.error(f"Failed to save On-Us data as parquet: {e}")
-            
         else:
             st.error("On-Us data loaded but 'Timestamp' column is missing, invalid, or empty. Cannot proceed with insights.")
+elif "on_us_data" in st.session_state:
+    # Load persisted data from session state
+    on_us_data = st.session_state["on_us_data"]
+    display_insights(on_us_data, "On-Us", feature_mapping)
+
 # else :
 #     # Load On-Us_data.csv by default
 #     on_us_data = pd.read_csv(os.path.join(DEFAULT_DATA_DIR, "on_us_data.csv"))
@@ -637,18 +641,22 @@ if bureau_file is not None:
     bureau_data = load_data(bureau_file, feature_mapping)
     if bureau_data is not None:
         if 'Timestamp' in bureau_data.columns and not bureau_data['Timestamp'].isnull().all():
-            display_bureau_insights(bureau_data, "Bureau",feature_mapping)
+            display_bureau_insights(bureau_data, "Bureau", feature_mapping)
             save_dir = DATA_REGISTRY_DIR
             data_path = os.path.join(save_dir, "bureau_data.parquet")
             try:
                 bureau_data.to_parquet(data_path, index=False)
+                st.session_state["bureau_data"] = bureau_data  # Persist data in session state
                 st.session_state["bureau_data_path"] = data_path
-                
-                
             except Exception as e:
                 st.error(f"Failed to save Bureau data as parquet: {e}")
         else:
             st.error("Bureau data loaded but 'Timestamp' column is missing, invalid, or empty. Cannot proceed with insights.")
+elif "bureau_data" in st.session_state:
+    # Load persisted data from session state
+    bureau_data = st.session_state["bureau_data"]
+    display_bureau_insights(bureau_data, "Bureau", feature_mapping)
+
 # else :
 #     # Load Bureau_data.csv by default
 #     bureau_data = pd.read_csv(os.path.join(DEFAULT_DATA_DIR, "bureau_data.csv"))
@@ -680,12 +688,17 @@ if installments_file is not None:
             data_path = os.path.join(save_dir, "installments_data.parquet")
             try:
                 installments_data.to_parquet(data_path, index=False)
+                st.session_state["installments_data"] = installments_data  # Persist data in session state
                 st.session_state["installments_data_path"] = data_path
-                
             except Exception as e:
                 st.error(f"Failed to save Installments data as parquet: {e}")
         else:
             st.error("Installments data loaded but 'Timestamp' column is missing, invalid, or empty. Cannot proceed with insights.")
+elif "installments_data" in st.session_state:
+    # Load persisted data from session state
+    installments_data = st.session_state["installments_data"]
+    display_insights(installments_data, "Applications Data", feature_mapping)
+    
 # else:
 #     # Load Applications_data.csv by default
 #     installments_data = pd.read_csv(os.path.join(DEFAULT_DATA_DIR, "Applications_data.csv"))

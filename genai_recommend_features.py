@@ -1,4 +1,4 @@
-
+# genai_utils.py
 import ast 
 import os
 import pandas as pd
@@ -8,12 +8,42 @@ import re
 import numpy as np
 import streamlit as st
 from typing import List, Dict, Any
-import re
+import google.generativeai as genai
+import time
 # Load environment variables and configure Gemini API
 load_dotenv()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_API_KEY_CONFIGURED = False
-
+GEMINI_MODELS = {
+    'gemini-2.0-flash': {
+        'model': 'gemini-2.0-flash',
+        'temperature': 0.1,
+        'max_retries': 3,
+        'chunk_size': 12000,
+        'chunk_overlap': 1200
+    },
+    'gemini-1.5-flash': {
+        'model': 'gemini-1.5-flash',
+        'temperature': 0.1,
+        'max_retries': 3,
+        'chunk_size': 10000,
+        'chunk_overlap': 1000
+    },
+    'gemini-1.5-pro': {
+        'model': 'gemini-1.5-pro',
+        'temperature': 0.1,
+        'max_retries': 3,
+        'chunk_size': 15000,
+        'chunk_overlap': 1500
+    },
+    'gemini-pro': {
+        'model': 'gemini-pro',
+        'temperature': 0.1,
+        'max_retries': 3,
+        'chunk_size': 12000,
+        'chunk_overlap': 1200
+    }
+}
 if GEMINI_API_KEY:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
@@ -41,8 +71,11 @@ def get_recommended_features_gemini(dataset_description: str):
     """
     if not GEMINI_API_KEY_CONFIGURED:
         return "Error: Gemini API key not configured. Cannot get recommendations."
-
-    llm_prompt = '''"You are an expert data science assistant specializing in financial risk modeling.\n\n"
+    if st.session_state.get("recommend_features_done", False):
+        st.info("Feature recommendations have already been processed. Skipping LLM calls.")
+        return None
+    llm_prompt = (
+        "You are an expert data science assistant specializing in financial risk modeling.\n\n"
         "I have a loan dataset intended for profitability prediction. The profitability is calculated by "
         "estimating the probabilities of two key events:\n"
         "1. Charge-Off (COF_EVENT_LABEL) – when a loan is written off.\n"
@@ -61,34 +94,46 @@ def get_recommended_features_gemini(dataset_description: str):
         "1. Always use the provided raw dataset features as the basis for your recommendations. Do not assume any external features.\n"
         "2. Identify Feature Engineering Opportunities from the features.\n"
         "3. Suggest only high-value, business-relevant engineered features.\n"
-        "4. For each engineered feature, clearly state its name, how it's derived,python code to derive the engineered feature, the justification for its inclusion, "
+        "4. For each engineered feature, clearly state its name, how it's derived, the justification for its inclusion, "
         "and whether it's most relevant for Charge-Off, Prepayment, or Both.\n"
         "5. Provide a Ranked List in this exact format for each feature (ensure to strictly follow this multi-line format for each feature):\n"
         "- Engineered Feature Name: [Name]\n"
         "- Description: [Brief description of the feature]\n"
         "- List of Raw Features Used: [List of raw features used to create this engineered feature]\n"
         "- Derivation: [Explanation of how to compute the feature]\n"
-        "- Code Snippet: [Python code snippet to compute the feature], give only the pandas operation code without defining extra functions ,my pandas df is df - just 1 line per feature put code inside [[[code]]] everything except code should be removed (justification,primary impact ,etc...)\n"
+        "- Code Snippet: [Python code snippet to compute the feature], give only the pandas operation code without defining extra functions ,my pandas df is df - just 1 line per feature put code inside [[[code]]] ,everything except code to be removed (justification,primary impact, etc..)\n"
         "- Justification: [Why this feature is valuable]\n"
         "- Primary Event Impact: [Charge-Off / Prepayment / Both]\n\n"
         "Begin the list directly. Do not include any preamble before the first feature. Ensure each feature block is separated by a double newline if providing multiple features."
-    )'''
-        
-    model = genai.GenerativeModel('gemini-2.0-flash') # Or your preferred Gemini model
+    )
 
-    try:
-        response = model.generate_content(
-            llm_prompt,
-            generation_config=genai.types.GenerationConfig(temperature=0.2)
-        )
-        
-        return response.text
-    except Exception as e:
-        # Log the error or handle it more gracefully
-        print(f"Gemini API Error during generation: {str(e)}")
-        return f"An error occurred while contacting Gemini: {str(e)}"
+    for model_name, config in GEMINI_MODELS.items():
+        genai_model = genai.GenerativeModel(config['model'])
+        retries = 0
 
+        while retries < config['max_retries']:
+            try:
+                print(f"Trying model: {model_name} (attempt {retries + 1})")
+                response = genai_model.generate_content(
+                    llm_prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=config['temperature']
+                    )
+                )
+                return response.text
+            except Exception as e:
+                print(f"⚠️ Error with {model_name}: {e}")
+                retries += 1
+                time.sleep(2 * retries)  # Exponential backoff
 
+        print(f"❌ All retries failed for model: {model_name}")
+
+    # If none of the models succeed
+    return "❌ All Gemini models failed or quota limits were hit. Please try again later."
+    # Or your preferred Gemini model
+
+    
+    
 def get_code_snippet_gemini(code_snippet: str):
     """
     Calls the Gemini API to recommend engineered features for loan profitability prediction.
@@ -119,20 +164,30 @@ def get_code_snippet_gemini(code_snippet: str):
 
     ''' + code_snippet
         
-    model = genai.GenerativeModel('gemini-2.0-flash') # Or your preferred Gemini model
+    for model_name, config in GEMINI_MODELS.items():
+        genai_model = genai.GenerativeModel(config['model'])
+        retries = 0
 
-    try:
-        response = model.generate_content(
-            llm_prompt,
-            generation_config=genai.types.GenerationConfig(temperature=0.2)
-        )
-        import pdb ;pdb.set_trace()
-        return response.text
-    except Exception as e:
-        # Log the error or handle it more gracefully
-        print(f"Gemini API Error during generation: {str(e)}")
-        return f"An error occurred while contacting Gemini: {str(e)}"
+        while retries < config['max_retries']:
+            try:
+                print(f"Trying model: {model_name} (attempt {retries + 1})")
+                response = genai_model.generate_content(
+                    llm_prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=config['temperature']
+                    )
+                )
+                return response.text
+            except Exception as e:
+                print(f"⚠️ Error with {model_name}: {e}")
+                retries += 1
+                time.sleep(2 * retries)  # Exponential backoff
 
+        print(f"❌ All retries failed for model: {model_name}")
+
+    # If none of the models succeed
+    return "❌ All Gemini models failed or quota limits were hit. Please try again later."
+    # Or your preferred Gemini model
 
 
 def parse_gemini_recommendations(text: str) -> pd.DataFrame:
@@ -168,7 +223,7 @@ def parse_gemini_recommendations(text: str) -> pd.DataFrame:
             description_match = re.search(r"- Description:\s*(.*)", block, re.DOTALL)
             raw_data_match = re.search(r"- List of Raw Features Used:\s*(.*)", block, re.DOTALL)
             code_snippet_match = re.search(r"- Code Snippet:\s*(.*)", block, re.DOTALL)
-            get_code_snippet_gemini(code_snippet_match)
+
             if name_match:
                 feature_data['Feature'] = name_match.group(1).strip()
             else:
@@ -220,21 +275,36 @@ def parse_gemini_recommendations(text: str) -> pd.DataFrame:
     return pd.DataFrame(features_list)
 
 
-def extract_code_block(text):
-    # Pattern matches code blocks with or without 'python' after ```
-    pattern = r"\[\[\[code\]\]\](.*?)\[\[\[/code\]\]\]"
 
-# Extract text
-    match = re.search(pattern, text)
-    if match:
-        extracted_code = match.group(1).strip()
-        return extracted_code
+import json
 
+import re
 
-
-def apply_recommended_features(current_dataset: pd.DataFrame, recommended_features: Any) -> pd.DataFrame:
+def extract_code_block(text: str) -> str:
     """
-    Applies recommended features to the current dataset by executing dynamically generated code.
+    Extracts the Python code snippet from a non-JSON string formatted like:
+    ```json
+    {"code": "<code_here>"}
+    ```
+    """
+    if not text or not isinstance(text, str):
+        raise ValueError("Input is not a valid string.")
+    
+    # Use regex to find the code within {"code": "..."} pattern
+    match = re.search(r'{"code":\s*"(.+?)"}', text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    else:
+        raise ValueError("Code block not found or improperly formatted.")
+
+
+
+
+
+
+def apply_recommended_features(current_dataset: pd.DataFrame, recommended_features: any) -> pd.DataFrame:
+    """
+    Applies recommended features to the current dataset by executing dynamically generated code snippets.
     """
     if isinstance(recommended_features, list):
         recommended_features = pd.DataFrame(recommended_features)
@@ -250,40 +320,65 @@ def apply_recommended_features(current_dataset: pd.DataFrame, recommended_featur
     for feature_info in recommended_features.to_dict(orient="records"):
         feature_name = feature_info.get("Feature")
         generated_code = feature_info.get("Code Snippet")
+        generated_code = get_code_snippet_gemini(generated_code)
         print("generated_code:")
         print(generated_code)
+        sanitized_code = extract_code_block(str(generated_code))
+        print("sanitized_code")
+        print(sanitized_code)
 
         if not feature_name or not generated_code:
             st.warning(f"Invalid feature info: {feature_info}")
             continue
 
         try:
-            # Sanitize and extract code
-            sanitized_code = extract_code_block(generated_code)
-            print("sanitized_code")
-            print(sanitized_code)
-            # Prepare execution context
+            # Prepare execution context with a copy of the current dataset, numpy and pandas
             execution_context = {'df': updated_dataset.copy(), 'np': np, 'pd': pd}
 
-            # Execute code
+            # Execute the sanitized code snippet
             exec(str(sanitized_code), {}, execution_context)
 
+            # Get the possibly modified DataFrame
             new_df = execution_context.get("df")
-            if new_df is None or not isinstance(new_df, pd.DataFrame):
-                raise ValueError("Executed code did not return a DataFrame.")
 
-            if feature_name not in new_df.columns:
-                st.warning(f"Feature '{feature_name}' not found after execution. Skipping.")
+            # Defensive: check if new_df is valid
+            if new_df is None or not isinstance(new_df, pd.DataFrame):
+                raise ValueError("Executed code did not return a valid DataFrame.")
+
+            # Check if the feature column exists exactly as expected
+            if feature_name in new_df.columns:
+                updated_dataset = new_df
                 continue
 
-            # Successfully added feature
-            updated_dataset = new_df
-            
+            # Fallback 1: Look for variable in context with underscores replacing spaces and lowercase
+            feature_var_name = feature_name.replace(" ", "_").lower()
+
+            matched_var = None
+            for var_name, var_value in execution_context.items():
+                if var_name.lower() == feature_var_name:
+                    matched_var = var_value
+                    break
+
+            if matched_var is not None:
+                updated_dataset[feature_name] = matched_var
+                continue
+
+            # Fallback 2: Check for any new columns added by the code snippet compared to updated_dataset
+            new_columns = set(new_df.columns) - set(updated_dataset.columns)
+            if new_columns:
+                # Take the first new column and assign it to feature_name
+                first_new_col = list(new_columns)[0]
+                updated_dataset[feature_name] = new_df[first_new_col]
+                continue
+
+            # If none of the above worked, warn and skip
+            st.warning(f"Feature '{feature_name}' not found or created after executing code snippet. Skipping.")
 
         except Exception as e:
             st.error(f"❌ Failed to create feature '{feature_name}': {e}")
 
     return updated_dataset
+
 
 
     
