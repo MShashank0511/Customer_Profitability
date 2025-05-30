@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Tuple, Any, Optional
 import streamlit as st # Streamlit might be needed for st.warning/error in backend functions
 import random # Required for random.sample in select_mandatory_features
 from gen_ai_multi import gen_ai_agent
@@ -207,8 +207,9 @@ def _get_filter_mask(df: pd.DataFrame, filter_block: Dict[str, Any]) -> pd.Serie
 
 def apply_filter_block(df: pd.DataFrame, filter_block: Dict[str, Any]) -> pd.DataFrame:
     """
-    Applies a single filter operation to a DataFrame and adds a boolean column
-    indicating which rows satisfy the filter.
+    Applies a single filter operation to a DataFrame and returns the filtered DataFrame.
+    The 'output_name' from the filter_block is no longer used here, as this function
+    directly filters the DataFrame rather than adding a boolean column.
 
     Args:
         df: The input pandas DataFrame.
@@ -216,70 +217,44 @@ def apply_filter_block(df: pd.DataFrame, filter_block: Dict[str, Any]) -> pd.Dat
                       - 'feature': The name of the column to filter on.
                       - 'operation': The type of filter operation (str).
                       - 'value': The value(s) to use for filtering (can be a single value, list, or tuple).
-                      - 'output_name': The name for the new boolean column.
 
     Returns:
-        The DataFrame with a new boolean column added.
-        Returns the original DataFrame if the filter cannot be applied (e.g., invalid feature).
+        The DataFrame containing only the rows that satisfy the filter.
+        Returns the original DataFrame (a copy) if the filter cannot be applied
+        (e.g., invalid feature, or an error occurs during mask generation).
     """
     feature = filter_block.get("feature")
     operation = filter_block.get("operation")
     value = filter_block.get("value")
-    output_name = filter_block.get("output_name")
+    # output_name is no longer used in this function
 
-    if not feature or not operation or not output_name or feature not in df.columns:
-        print(f"Skipping invalid filter block: {filter_block}") # Log for debugging
-        return df # Return original DataFrame if block is invalid
+    # Always work on a copy to avoid modifying the original DataFrame passed in
+    filtered_df = df.copy()
+
+    if not feature or feature not in filtered_df.columns or not operation:
+        print(f"Skipping filter block (invalid or missing feature/operation): {filter_block}")
+        return filtered_df # Return original DataFrame copy if block is invalid
 
     try:
-        # Apply the filter based on the operation
-        if operation == "Greater Than":
-            df[output_name] = df[feature] > value
-        elif operation == "Less Than":
-            df[output_name] = df[feature] < value
-        elif operation == "Equal To":
-            df[output_name] = df[feature] == value
-        elif operation == "Not Equal To":
-            df[output_name] != value
-        elif operation == "Greater Than or Equal To":
-            df[output_name] = df[feature] >= value
-        elif operation == "Less Than or Equal To":
-            df[output_name] = df[feature] <= value
-        elif operation == "Is In List":
-            # Ensure value is a list
-            if isinstance(value, list):
-                df[output_name] = df[feature].isin(value)
-            else:
-                print(f"Warning: 'Is In List' operation requires a list value. Skipping filter for feature '{feature}'.")
-                df[output_name] = False # Mark all rows as False for this filter
-        elif operation == "Between":
-            # Ensure value is a tuple or list of two elements
-            if isinstance(value, (tuple, list)) and len(value) == 2:
-                df[output_name] = df[feature].between(value[0], value[1])
-            else:
-                print(f"Warning: 'Between' operation requires a tuple or list of two values. Skipping filter for feature '{feature}'.")
-                df[output_name] = False # Mark all rows as False for this filter
-        elif operation == "Is Null":
-            df[output_name] = df[feature].isnull()
-        elif operation == "Is Not Null":
-            df[output_name] = df[feature].notnull()
-        elif operation == "Contains String":
-             # Check if the feature column is of object (string) dtype
-            if pd.api.types.is_object_dtype(df[feature].dtype):
-                # Use .str accessor and handle potential NaNs
-                df[output_name] = df[feature].str.contains(str(value), na=False)
-            else:
-                print(f"Warning: 'Contains String' operation is only applicable to string columns. Skipping filter for feature '{feature}'.")
-                df[output_name] = False # Mark all rows as False for this filter
-        else:
-            print(f"Warning: Unsupported operation '{operation}'. Skipping filter for feature '{feature}'.")
-            df[output_name] = False # Mark all rows as False for unsupported ops
+        # Use the helper function to get the boolean mask
+        mask = _get_filter_mask(filtered_df, filter_block)
+
+        # Apply the mask to filter the DataFrame
+        return filtered_df[mask].copy()
 
     except Exception as e:
-        print(f"Error applying filter for feature '{feature}' with operation '{operation}': {e}")
-        df[output_name] = False # Mark all rows as False on error
+        print(f"Error applying filter for feature '{feature}' with operation '{operation}' and value '{value}': {e}")
+        # In case of an error, return the DataFrame as it was before this filter attempt
+        return df.copy() # Return a fresh copy of the original input DataFrame
 
-    return df
+
+def get_features_for_table_df(df: pd.DataFrame) -> List[str]:
+    """
+    Returns a list of feature (column) names for a given DataFrame.
+    """
+    if not df.empty:
+        return df.columns.tolist()
+    return []
 
 
 def apply_all_filters_for_table(original_df: pd.DataFrame, filter_blocks: List[Dict[str, Any]]) -> pd.DataFrame:
@@ -503,6 +478,73 @@ def apply_merge_blocks(datasets: Dict[str, pd.DataFrame], merge_blocks: List[Dic
             raise e
 
     return merged_results
+
+def apply_single_merge(df_left: pd.DataFrame, df_right: pd.DataFrame, how: str, on: List[str] = None, left_on: List[str] = None, right_on: List[str] = None, suffixes: Tuple[str, str] = ("_x", "_y")) -> pd.DataFrame:
+    """
+    Applies a single pandas merge operation between two DataFrames.
+
+    Args:
+        df_left (pd.DataFrame): The left DataFrame.
+        df_right (pd.DataFrame): The right DataFrame.
+        how (str): Type of merge to be performed (e.g., 'inner', 'left', 'right', 'outer').
+        on (List[str], optional): Column or list of column names to join on. Must be found in both DataFrames.
+        left_on (List[str], optional): Column or list of column names from the left DataFrame to use as keys.
+        right_on (List[str], optional): Column or list of column names from the right DataFrame to use as keys.
+        suffixes (Tuple[str, str], optional): Suffixes to apply to overlapping column names. Defaults to ("_x", "_y").
+
+    Returns:
+        pd.DataFrame: The merged DataFrame.
+
+    Raises:
+        ValueError: If merge keys are not specified correctly or tables are empty.
+    """
+    if df_left.empty or df_right.empty:
+        # Using st.warning here is generally not recommended in backend functions
+        # as it ties backend logic to frontend display. Better to raise an error
+        # or return a specific indicator and let the frontend handle the message.
+        # For now, following the pattern in apply_filter_block.
+        # st.warning("One or both DataFrames are empty for merge. Returning empty DataFrame.")
+        return pd.DataFrame()
+
+    if not on and not (left_on and right_on):
+        raise ValueError("Merge requires 'on' or 'left_on' and 'right_on' to be specified.")
+
+    # Ensure 'on' is treated as a list if it's a single string
+    if isinstance(on, str):
+        on = [on]
+    if isinstance(left_on, str):
+        left_on = [left_on]
+    if isinstance(right_on, str):
+        right_on = [right_on]
+
+    # Validate merge keys exist in respective DataFrames
+    if on:
+        for col in on:
+            if col not in df_left.columns or col not in df_right.columns:
+                raise ValueError(f"Merge key '{col}' not found in both DataFrames for 'on' parameter.")
+    if left_on:
+        for col in left_on:
+            if col not in df_left.columns:
+                raise ValueError(f"Left merge key '{col}' not found in left DataFrame.")
+    if right_on:
+        for col in right_on:
+            if col not in df_right.columns:
+                raise ValueError(f"Right merge key '{col}' not found in right DataFrame.")
+
+    try:
+        merged_df = pd.merge(
+            df_left,
+            df_right,
+            how=how,
+            on=on,
+            left_on=left_on,
+            right_on=right_on,
+            suffixes=suffixes
+        )
+        return merged_df
+    except Exception as e:
+        raise ValueError(f"Error performing merge: {e}")
+
 
 # --- Reverted functions for Data Transformation Section ---
 
