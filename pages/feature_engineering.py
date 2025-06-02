@@ -36,6 +36,10 @@ except ImportError:
     GEMINI_API_KEY_CONFIGURED = False # Assume not configured
     st.stop()
 
+if st.session_state.get("should_rerun", False):
+    st.session_state["should_rerun"] = False  # Reset the flag
+    st.rerun()
+
 def clear_model_states_folder():
     model_states_dir = "model_states"
     exclude_file = "feat_engg_backend.py"  # File to exclude from deletion
@@ -441,7 +445,6 @@ def show_merge_callback():
     # Toggle the show_merge state within the model_state
     model_state["show_merge"] = not model_state.get("show_merge", False)
     st.session_state[f"{active_model}_state"] = model_state # Update session state
-    st.rerun()
 
 
 def recommend_features_callback():
