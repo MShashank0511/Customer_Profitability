@@ -35,7 +35,6 @@ except ImportError:
     # Stop execution if utils can't be imported
     GEMINI_API_KEY_CONFIGURED = False # Assume not configured
     st.stop()
-
 if st.session_state.get("should_rerun", False):
     st.session_state["should_rerun"] = False  # Reset the flag
     st.rerun()
@@ -191,7 +190,7 @@ def initialize_new_model_state(model_name):
             "on": [],
             "left_on": [],
             "right_on": [],
-            "merged_name": "",
+            "merged_name": "Merged_1",
         }],
         "merged_tables": {},
         "combined_dataset": None,
@@ -445,6 +444,7 @@ def show_merge_callback():
     # Toggle the show_merge state within the model_state
     model_state["show_merge"] = not model_state.get("show_merge", False)
     st.session_state[f"{active_model}_state"] = model_state # Update session state
+    
 
 
 def recommend_features_callback():
@@ -1001,10 +1001,10 @@ def filter_data_section():
             st.rerun()
             print("Exiting add filter button click.")
 
-        
+        st.markdown("---") # Separator
 
         # --- Button to apply all filters ---
-        if st.button("✅ Apply All Filters", key="apply_all_filters_button"):
+        if st.button("Apply All Filters", key="apply_all_filters_button"):
             # Prepare a working set of all datasets (raw + intermediate)
             # This allows filters to pick from any available table
             working_datasets = raw_datasets.copy()
@@ -1077,7 +1077,7 @@ def filter_data_section():
             # Save the latest filtered tables of original tables
             # This will update model_state["intermediate_filtered_datasets"] which acts as the saved state
             model_state["filtered_datasets"] = model_state["intermediate_filtered_datasets"].copy()
-            st.info("Latest filtered tables are saved and will be available for merging.")
+            st.info("Latest filtered tables are saved in session state and will be available for merging.")
 
 
     st.session_state[f"{active_model}_state"] = model_state # Always save changes back to session state
@@ -1118,7 +1118,7 @@ if f"{active_model}_merge_blocks" not in st.session_state:
         "on": [],
         "left_on": [],
         "right_on": [],
-        "merged_name": "",
+        "merged_name": "Merged_1",
     }]
 if f"{active_model}_merged_tables" not in st.session_state:
     st.session_state[f"{active_model}_merged_tables"] = {}
@@ -1146,7 +1146,7 @@ if f"{active_model}_merge_blocks" not in st.session_state:
         "on": [],
         "left_on": [],
         "right_on": [],
-        "merged_name": "",
+        "merged_name": "Merged_1",
     }]
 if f"{active_model}_merged_tables" not in st.session_state:
     st.session_state[f"{active_model}_merged_tables"] = {}
@@ -1390,7 +1390,7 @@ if model_state.get("show_merge", False): # Check the show_merge state within the
                 ["inner", "left", "right", "outer", "cross"],
                 key=f"merge_how_{i}",
                 # Set default based on saved state
-                index=["inner", "left", "right", "outer", "cross"].index(block.get("how", "inner").lower())
+                index=["inner", "left", "right", "outer", "cross"].index(block.get("how", "inner"))
             )
             # Update block immediately
             merge_blocks[i]["how"] = how
@@ -1594,13 +1594,9 @@ if model_state.get("show_merge", False): # Check the show_merge state within the
 
         final_merged_df_to_display = model_state.get("combined_dataset")
         if isinstance(final_merged_df_to_display, pd.DataFrame) and not final_merged_df_to_display.empty:
-            with st.expander("📂 Preview of Merged Table", expanded=False):
-                st.markdown("#### Preview of Merged Table")
-                st.write(f"Shape of the last merged dataset: {final_merged_df_to_display.shape}") # Debug print
-                st.dataframe(final_merged_df_to_display.head(10), use_container_width=True, hide_index=True)
-            # st.markdown("#### Preview of Merged Table")
-            # st.write(f"Shape of the last merged dataset: {final_merged_df_to_display.shape}") # Debug print
-            # st.dataframe(final_merged_df_to_display.head(10), use_container_width=True, hide_index= True)
+            st.markdown("#### 🐞 Debug Preview: Last Merged Table")
+            st.write(f"Shape of the last merged dataset: {final_merged_df_to_display.shape}") # Debug print
+            st.dataframe(final_merged_df_to_display.head(20), use_container_width=True)
         elif model_state["merge_status_type"] != "error": # Only show info if not already an error message
             st.info("The last merged dataset is empty. Please check your merge configuration.")
 
@@ -1684,7 +1680,7 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
     st.markdown("### AI Recommended Engineered Features")
 
     display_df = st.session_state.feature_info.copy()
-    expected_cols_display = ["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type", "Derivation", "Justification", "Raw Features", "Code Snippet"]
+    expected_cols_display = ["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type", "Derivation", "Justification"]
     for col in expected_cols_display:
         if col not in display_df.columns:
             display_df[col] = "N/A"
@@ -1693,8 +1689,7 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
         "Feature": st.column_config.TextColumn("Feature 💡", width="medium", disabled=True, help=display_df["Feature"].to_list()),
         "Description": st.column_config.TextColumn("Full Description 📝", width="large", disabled=True, help=display_df["Description"].to_list()),
         "Primary Event Impact": st.column_config.TextColumn("Primary Impact 🎯", width="medium", disabled=True, help=display_df["Primary Event Impact"].to_list()),
-        "Raw Features": st.column_config.TextColumn("Raw Features", width="medium", disabled=True, help=display_df["Raw Features"].to_list()),
-        "Code Snippet": st.column_config.TextColumn("Code Snippet", width="medium", disabled=True, help=display_df["Code Snippet"].to_list()),
+       
         "Min": st.column_config.TextColumn("Min", width="small", disabled=True),
         "Max": st.column_config.TextColumn("Max", width="small", disabled=True),
         "Mean": st.column_config.TextColumn("Mean", width="small", disabled=True),
@@ -1702,7 +1697,7 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
     }
 
     st.data_editor(
-        display_df[["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type", "Raw Features", "Code Snippet"]],
+        display_df[["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type"]],
         column_config=column_config,
         hide_index=True,
         use_container_width=True,
@@ -1710,8 +1705,9 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
     )
 
     with st.expander("See Full Derivations and Justifications"):
-        st.dataframe(display_df[["Feature", "Derivation", "Justification", "Primary Event Impact", "Raw Features", "Code Snippet"]], use_container_width=True)
+        st.dataframe(display_df[["Feature", "Derivation", "Justification", "Primary Event Impact"]], use_container_width=True)
 
+# Apply recommended features to dataset if not already accepted
 # Apply recommended features to dataset if not already accepted
 if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
    hasattr(st.session_state, 'recommended_features') and \
@@ -1727,13 +1723,40 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
     else:
         try:
             recommended_features_records = recommended_features.to_dict(orient="records")
-            updated_dataset = apply_recommended_features(current_dataset, recommended_features_records)
-            
-            st.session_state[f"{active_model}_updated_dataset"] = updated_dataset
-        except Exception as e:
-            st.error(f"Error applying recommended features: {str(e)}")
+            updated_dataset,output_dict = apply_recommended_features(current_dataset, recommended_features_records)
+            retry_no = 0
+            max_retries = 3
 
-# Accept Recommended Features Button
+            while retry_no < max_retries:
+                res_error = output_dict['res_error']
+
+                print("RETRY NO : ",f"{retry_no}")
+
+                if not res_error:
+                    break
+
+                retry_no += 1
+                updated_dataset,output_dict = apply_recommended_features(current_dataset, recommended_features_records)
+            
+        
+            # Save updated dataset in session state
+            st.session_state[f"{active_model}_updated_dataset"] = updated_dataset
+
+            # Save in model_state
+            model_state = st.session_state[f"{active_model}_state"]
+            model_state["updated_dataset"] = updated_dataset.copy()
+
+            # Mark acceptance done
+            st.session_state[f"{active_model}_operations_complete"]["accept_ai"] = True
+            st.session_state[f"{active_model}_accept_ai_success"] = True
+            st.session_state[f"{active_model}_accept_ai_done"] = True
+
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error accepting AI recommended features: {str(e)}")
+
+        
+
 if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
    hasattr(st.session_state, 'recommended_features') and \
    isinstance(st.session_state.recommended_features, pd.DataFrame) and \
@@ -1761,8 +1784,10 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
 
 # Display success message
 if st.session_state.get(f"{active_model}_accept_ai_success", False):
-    st.success("✅ AI recommended features (descriptions) have been accepted and their definitions saved!")
+    st.success("✅ AI recommended features have been accepted and saved!")
     st.session_state[f"{active_model}_accept_ai_success"] = False
+
+
 
 # Always display updated dataset if available
 updated_dataset = st.session_state.get(f"{active_model}_updated_dataset", pd.DataFrame())
@@ -1774,8 +1799,7 @@ if isinstance(updated_dataset, pd.DataFrame) and not updated_dataset.empty:
 
 st.markdown("---")
 
-
-# --- Data Transformation Buttons ---
+############# --- Data Transformation Buttons ---###############
 st.subheader("Data Actions")
 # Create a centered container for the buttons
 col1, col2, col3 = st.columns([1, 2, 1])  # Unequal columns to center the buttons
@@ -1785,14 +1809,12 @@ with col2:  # Middle column
         st.rerun()
 
 # --- Popup 1: Single Feature Transformations ---
-if model_state["show_popup1"]:
+if model_state.get("show_popup1", False):
     st.markdown("### 🔧 Single Feature Transformation")
 
     # --- INPUT CHANGE: Explicitly mention the input dataset ---
-    st.info("Applying single feature transformations to the **Recommended Features**.")
+    st.info("Applying single feature transformations to the **Recommended Features** (from recommendation section).")
 
-    # Get the dataset for single feature transformations
-    # This now comes from features_for_single_transform
     input_features_df = model_state.get("updated_dataset",pd.DataFrame())
 
     if input_features_df.empty:
@@ -2071,47 +2093,41 @@ for i, block in enumerate(model_state["multi_transform_blocks"]):
         model_state["multi_transform_blocks"][i]["operation"] = operation_text
 
     with col4:
-        output_name = st.text_input(
-            "Name for New Feature",
-            value=block.get("output_name", ""),
-            key=f"multi_output_name_{active_model}_{i}" # Explicit key
-            )   
-        model_state["multi_transform_blocks"][i]["output_name"] = output_name
-        # features_for_name = block.get("features", [])
-        # operation_for_name = block.get("operation", "").replace(' ', '').lower()
+        features_for_name = block.get("features", [])
+        operation_for_name = block.get("operation", "").replace(' ', '').lower()
 
-        # if features_for_name and operation_for_name:
-        #     suggested_output = f"{operation_for_name}_{'_'.join(features_for_name).lower()}"
-        #     suggested_output = suggested_output[:50] # Limit length
+        if features_for_name and operation_for_name:
+            suggested_output = f"{operation_for_name}_{'_'.join(features_for_name).lower()}"
+            suggested_output = suggested_output[:50] # Limit length
 
-        #     current_output_name = block.get("output_name", "")
-        #     # Corrected key for previous suggestion to include active_model
-        #     prev_suggestion_key = f"multi_prev_suggestion_{active_model}_{i}"
-        #     prev_suggestion = st.session_state.get(prev_suggestion_key, "")
+            current_output_name = block.get("output_name", "")
+            # Corrected key for previous suggestion to include active_model
+            prev_suggestion_key = f"multi_prev_suggestion_{active_model}_{i}"
+            prev_suggestion = st.session_state.get(prev_suggestion_key, "")
 
-        #     if not current_output_name or current_output_name == prev_suggestion:
-        #         output_name_value = suggested_output
-        #     else:
-        #         output_name_value = current_output_name
+            if not current_output_name or current_output_name == prev_suggestion:
+                output_name_value = suggested_output
+            else:
+                output_name_value = current_output_name
 
-        #     output_name = st.text_input(
-        #         "Name for New Feature",
-        #         value=output_name_value,
-        #         key=f"multi_output_name_{active_model}_{i}" # Explicit key
-        #     )
-        #     model_state["multi_transform_blocks"][i]["output_name"] = output_name
-        #     st.session_state[prev_suggestion_key] = suggested_output
-        # else:
-        #     output_name = st.text_input(
-        #         "Name for New Feature",
-        #         value=block.get("output_name", ""),
-        #         key=f"multi_output_name_{active_model}_{i}" # Explicit key
-        #     )
-        #     model_state["multi_transform_blocks"][i]["output_name"] = output_name
-        #     # Corrected key for previous suggestion to include active_model
-        #     prev_suggestion_key = f"multi_prev_suggestion_{active_model}_{i}"
-        #     if prev_suggestion_key in st.session_state:
-        #          del st.session_state[prev_suggestion_key]
+            output_name = st.text_input(
+                "Name for New Feature",
+                value=output_name_value,
+                key=f"multi_output_name_{active_model}_{i}" # Explicit key
+            )
+            model_state["multi_transform_blocks"][i]["output_name"] = output_name
+            st.session_state[prev_suggestion_key] = suggested_output
+        else:
+            output_name = st.text_input(
+                "Name for New Feature",
+                value=block.get("output_name", ""),
+                key=f"multi_output_name_{active_model}_{i}" # Explicit key
+            )
+            model_state["multi_transform_blocks"][i]["output_name"] = output_name
+            # Corrected key for previous suggestion to include active_model
+            prev_suggestion_key = f"multi_prev_suggestion_{active_model}_{i}"
+            if prev_suggestion_key in st.session_state:
+                 del st.session_state[prev_suggestion_key]
 
 
 if st.button("➕ Add New Feature Combination", key=f"add_multi_transform_button_{active_model}"): # Explicit key
@@ -2218,7 +2234,7 @@ if not input_df_for_target.empty:
             # For now, it holds the full dataset from which features are being selected
             model_state["final_dataset"] = input_df_for_target.copy()
 
-            st.success(f"Target variable '{target_column_selected}' selected successfully! Remaining features are ready for selection.")
+            
             st.rerun()
         except Exception as e:
             st.error(f"Error selecting target variable: {str(e)}")
@@ -2301,19 +2317,47 @@ if f"{active_model}_feature_checkboxes" not in st.session_state:
 st.subheader("✨ Good-to-Have Features")
 
 if available_optional_features:
-    # Display editable features DataFrame
-    features_df = pd.DataFrame({
+    st.subheader("🧠 Optional AI-Recommended Features")
+
+    # --- Search Box ---
+    search_query = st.text_input("🔍 Search Features (name or description)", value="", placeholder="e.g. age, purchase_count")
+
+    # --- Select All Checkbox ---
+    select_all_key = f"{active_model}_select_all"
+    if select_all_key not in st.session_state:
+        st.session_state[select_all_key] = False
+
+    select_all = st.checkbox("Select All Features", value=st.session_state[select_all_key], key=select_all_key)
+
+    # --- Build base features DataFrame ---
+    all_features_df = pd.DataFrame({
         "Feature": available_optional_features,
         "Description": [feature_descriptions.get(feat, "No description available") for feat in available_optional_features],
     })
 
-    # Retrieve previous selections or default all to True
-    previous_selections = st.session_state.get(f"{active_model}_feature_checkboxes", {})
-    features_df["Select"] = [previous_selections.get(feat, True) for feat in available_optional_features]
+    # --- Filter features based on search query ---
+    if search_query:
+        filtered_features_df = all_features_df[
+            all_features_df["Feature"].str.contains(search_query, case=False, na=False) |
+            all_features_df["Description"].str.contains(search_query, case=False, na=False)
+        ]
+    else:
+        filtered_features_df = all_features_df.copy()
 
-    # Show editable table
+    # --- Load previous selections ---
+    previous_selections = st.session_state.get(f"{active_model}_feature_checkboxes", {})
+
+    # --- Apply "Select All" or keep previous state ---
+    if select_all:
+        filtered_features_df["Select"] = True
+    else:
+        filtered_features_df["Select"] = [
+            previous_selections.get(feat, False) for feat in filtered_features_df["Feature"]
+        ]
+
+    # --- Editable Table ---
     edited_df = st.data_editor(
-        features_df,
+        filtered_features_df,
         column_config={
             "Feature": st.column_config.TextColumn("Feature 🔍", width="medium", disabled=True),
             "Description": st.column_config.TextColumn("Description", width="large", disabled=True),
@@ -2324,16 +2368,17 @@ if available_optional_features:
         key=f"{active_model}_feature_editor"
     )
 
-    # Update session state with new checkbox values
-    updated_feature_checks = {
-        feature: is_selected for feature, is_selected in zip(edited_df["Feature"], edited_df["Select"])
-    }
-    st.session_state[f"{active_model}_feature_checkboxes"] = updated_feature_checks
+    # --- Update session state with new selections ---
+    for feature, selected in zip(edited_df["Feature"], edited_df["Select"]):
+        st.session_state.setdefault(f"{active_model}_feature_checkboxes", {})[feature] = selected
 
-    # Extract only selected features
-    st.session_state[f"{active_model}_selected_features"] = [
-        feature for feature, is_selected in updated_feature_checks.items() if is_selected
+    # --- Extract selected features globally ---
+    selected_features = [
+        feature for feature, selected in st.session_state[f"{active_model}_feature_checkboxes"].items() if selected
     ]
+    st.session_state[f"{active_model}_selected_features"] = selected_features
+
+    st.markdown(f"✅ **{len(selected_features)} features selected**.")
 
 else:
     st.info("No optional features available in the current dataset (after target selection).")
@@ -2392,12 +2437,13 @@ if st.button("📊 Show Selected Attributes"):
                 os.makedirs(data_registry_subfolder, exist_ok=True)
 
                 # Save the final dataset as a Parquet file
-                final_dataset_path = os.path.join(data_registry_subfolder, f"{model_state['target_feature']}_final_dataset.parquet")
+                final_dataset_path = os.path.join(data_registry_subfolder, f"{model_state[f"target_feature"]}_final_dataset.parquet")
                 final_dataset_with_target.to_parquet(final_dataset_path, index=False)
 
+                # Save the file path in session state for use in the next page
                 st.session_state[f"{active_model}_final_dataset_path"] = final_dataset_path
 
-                st.success(f"Target variable '{target_column}' added to the final dataset successfully! Dataset saved as '{final_dataset_path}'.")
+                st.success(f"Feature selection for '{active_model}' completed successfully!")
         else:
             st.warning("Final dataset is empty, cannot save Parquet file.")
 
