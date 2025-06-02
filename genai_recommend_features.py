@@ -109,13 +109,28 @@ def get_recommended_features_gemini(dataset_description: str):
 
     for model_name, config in GEMINI_MODELS.items():
         genai_model = genai.GenerativeModel(config['model'])
-        response = genai_model.generate_content(
-            llm_prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=config['temperature']
-            )
-        )
-        return response.text
+        retries = 0
+
+        while retries < config['max_retries']:
+            try:
+                print(f"Trying model: {model_name} (attempt {retries + 1})")
+                response = genai_model.generate_content(
+                    llm_prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=config['temperature']
+                    )
+                )
+                return response.text
+            except Exception as e:
+                print(f"⚠️ Error with {model_name}: {e}")
+                retries += 1
+                time.sleep(2 * retries)  # Exponential backoff
+
+        print(f"❌ All retries failed for model: {model_name}")
+
+    # If none of the models succeed
+    return "❌ All Gemini models failed or quota limits were hit. Please try again later."
+    # Or your preferred Gemini model
             
 
     
@@ -152,13 +167,28 @@ def get_code_snippet_gemini(code_snippet: str):
         
     for model_name, config in GEMINI_MODELS.items():
         genai_model = genai.GenerativeModel(config['model'])
-        response = genai_model.generate_content(
-            llm_prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=config['temperature']
-            )
-        )
-        return response.text
+        retries = 0
+
+        while retries < config['max_retries']:
+            try:
+                print(f"Trying model: {model_name} (attempt {retries + 1})")
+                response = genai_model.generate_content(
+                    llm_prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=config['temperature']
+                    )
+                )
+                return response.text
+            except Exception as e:
+                print(f"⚠️ Error with {model_name}: {e}")
+                retries += 1
+                time.sleep(2 * retries)  # Exponential backoff
+
+        print(f"❌ All retries failed for model: {model_name}")
+
+    # If none of the models succeed
+    return "❌ All Gemini models failed or quota limits were hit. Please try again later."
+    # Or your preferred Gemini model
            
 
 def parse_gemini_recommendations(text: str) -> pd.DataFrame:
@@ -346,7 +376,7 @@ def apply_recommended_features(current_dataset: pd.DataFrame, recommended_featur
                 continue
             
             # If none of the above worked, warn and skip
-            st.warning(f"Feature '{feature_name}' not found or created after executing code snippet. Skipping.")
+            # st.warning(f"Feature '{feature_name}' not found or created after executing code snippet. Skipping.")
 
             # except Exception as e:
             #     st.error(f"❌ Failed to create feature '{feature_name}': {e}")

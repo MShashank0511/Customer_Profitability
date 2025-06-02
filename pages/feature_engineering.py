@@ -192,7 +192,7 @@ def initialize_new_model_state(model_name):
             "on": [],
             "left_on": [],
             "right_on": [],
-            "merged_name": "Merged_1",
+            "merged_name": "",
         }],
         "merged_tables": {},
         "combined_dataset": None,
@@ -1078,7 +1078,7 @@ def filter_data_section():
             # Save the latest filtered tables of original tables
             # This will update model_state["intermediate_filtered_datasets"] which acts as the saved state
             model_state["filtered_datasets"] = model_state["intermediate_filtered_datasets"].copy()
-            st.info("Latest filtered tables are saved in session state and will be available for merging.")
+            st.info("Latest filtered tables are saved and will be available for merging.")
 
 
     st.session_state[f"{active_model}_state"] = model_state # Always save changes back to session state
@@ -1090,12 +1090,13 @@ def show_filter_data_callback():
 
 # Add the button with a callback
 if "show_filter_data" not in st.session_state:
-    st.session_state.show_filter_data = False
+    st.session_state["show_filter_data"] = False
 
 # Filter Data Button
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     st.button("🔄 Filter Data", key="show_filter_data_button", on_click=show_filter_data_callback, use_container_width=True)
+
 
 # Display the filter section only if the button has been clicked
 if st.session_state.show_filter_data:
@@ -1119,7 +1120,7 @@ if f"{active_model}_merge_blocks" not in st.session_state:
         "on": [],
         "left_on": [],
         "right_on": [],
-        "merged_name": "Merged_1",
+        "merged_name": "",
     }]
 if f"{active_model}_merged_tables" not in st.session_state:
     st.session_state[f"{active_model}_merged_tables"] = {}
@@ -1147,7 +1148,7 @@ if f"{active_model}_merge_blocks" not in st.session_state:
         "on": [],
         "left_on": [],
         "right_on": [],
-        "merged_name": "Merged_1",
+        "merged_name": "",
     }]
 if f"{active_model}_merged_tables" not in st.session_state:
     st.session_state[f"{active_model}_merged_tables"] = {}
@@ -1391,7 +1392,7 @@ if model_state.get("show_merge", False): # Check the show_merge state within the
                 ["inner", "left", "right", "outer", "cross"],
                 key=f"merge_how_{i}",
                 # Set default based on saved state
-                index=["inner", "left", "right", "outer", "cross"].index(block.get("how", "inner"))
+                index=["inner", "left", "right", "outer", "cross"].index(block.get("how", "inner").lower())
             )
             # Update block immediately
             merge_blocks[i]["how"] = how
@@ -1595,9 +1596,10 @@ if model_state.get("show_merge", False): # Check the show_merge state within the
 
         final_merged_df_to_display = model_state.get("combined_dataset")
         if isinstance(final_merged_df_to_display, pd.DataFrame) and not final_merged_df_to_display.empty:
-            st.markdown("#### 🐞 Debug Preview: Last Merged Table")
-            st.write(f"Shape of the last merged dataset: {final_merged_df_to_display.shape}") # Debug print
-            st.dataframe(final_merged_df_to_display.head(20), use_container_width=True)
+            with st.expander("📂 Preview of Merged Table", expanded=False):
+                st.markdown("#### Preview of Merged Table")
+                st.write(f"Shape of the last merged dataset: {final_merged_df_to_display.shape}") # Debug print
+                st.dataframe(final_merged_df_to_display.head(10), use_container_width=True, hide_index=True)
         elif model_state["merge_status_type"] != "error": # Only show info if not already an error message
             st.info("The last merged dataset is empty. Please check your merge configuration.")
 
@@ -1726,7 +1728,7 @@ if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommen
             recommended_features_records = recommended_features.to_dict(orient="records")
             updated_dataset,output_dict = apply_recommended_features(current_dataset, recommended_features_records)
             retry_no = 0
-            max_retries = 3
+            max_retries = 4
 
             while retry_no < max_retries:
                 res_error = output_dict['res_error']
@@ -1814,7 +1816,7 @@ if model_state.get("show_popup1", False):
     st.markdown("### 🔧 Single Feature Transformation")
 
     # --- INPUT CHANGE: Explicitly mention the input dataset ---
-    st.info("Applying single feature transformations to the **Recommended Features** (from recommendation section).")
+    st.info("Applying single feature transformations to the **Recommended Features**.")
 
     input_features_df = model_state.get("updated_dataset",pd.DataFrame())
 
@@ -2094,41 +2096,12 @@ for i, block in enumerate(model_state["multi_transform_blocks"]):
         model_state["multi_transform_blocks"][i]["operation"] = operation_text
 
     with col4:
-        features_for_name = block.get("features", [])
-        operation_for_name = block.get("operation", "").replace(' ', '').lower()
-
-        if features_for_name and operation_for_name:
-            suggested_output = f"{operation_for_name}_{'_'.join(features_for_name).lower()}"
-            suggested_output = suggested_output[:50] # Limit length
-
-            current_output_name = block.get("output_name", "")
-            # Corrected key for previous suggestion to include active_model
-            prev_suggestion_key = f"multi_prev_suggestion_{active_model}_{i}"
-            prev_suggestion = st.session_state.get(prev_suggestion_key, "")
-
-            if not current_output_name or current_output_name == prev_suggestion:
-                output_name_value = suggested_output
-            else:
-                output_name_value = current_output_name
-
-            output_name = st.text_input(
-                "Name for New Feature",
-                value=output_name_value,
-                key=f"multi_output_name_{active_model}_{i}" # Explicit key
-            )
-            model_state["multi_transform_blocks"][i]["output_name"] = output_name
-            st.session_state[prev_suggestion_key] = suggested_output
-        else:
-            output_name = st.text_input(
-                "Name for New Feature",
-                value=block.get("output_name", ""),
-                key=f"multi_output_name_{active_model}_{i}" # Explicit key
-            )
-            model_state["multi_transform_blocks"][i]["output_name"] = output_name
-            # Corrected key for previous suggestion to include active_model
-            prev_suggestion_key = f"multi_prev_suggestion_{active_model}_{i}"
-            if prev_suggestion_key in st.session_state:
-                 del st.session_state[prev_suggestion_key]
+        output_name = st.text_input(
+            "Name for New Feature",
+            value=block.get("output_name", ""),
+            key=f"multi_output_name_{active_model}_{i}" # Explicit key
+            )   
+        model_state["multi_transform_blocks"][i]["output_name"] = output_name
 
 
 if st.button("➕ Add New Feature Combination", key=f"add_multi_transform_button_{active_model}"): # Explicit key

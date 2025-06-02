@@ -127,16 +127,10 @@ data_path_from_session = st.session_state.get(data_path_key_from_prev_page)
 if data_path_from_session and os.path.exists(data_path_from_session):
     try:
         df_full = pd.read_parquet(data_path_from_session)
-        data_source_message = f"Data successfully loaded from previous step for '{selected_input_source_display_name}'. Path: `{data_path_from_session}`"
-        st.success(data_source_message)
+        
     except Exception as e:
         st.error(f"Error loading data from session state path '{data_path_from_session}': {e}. Attempting fallbacks.")
         df_full = None
-else:
-    if data_path_from_session:  # Path was in session state but file not found
-        st.warning(f"Path '{data_path_from_session}' (for '{selected_input_source_display_name}') found in session state (key: `{data_path_key_from_prev_page}`), but file does not exist. Attempting to construct path.")
-    else:
-        st.info(f"Path for '{selected_input_source_display_name}' not found in session state (expected key: `{data_path_key_from_prev_page}`). Attempting to construct path.")
 
 # Priority 2: Try constructing the path if session state path failed
 if df_full is None:
@@ -151,8 +145,7 @@ if df_full is None:
     if os.path.exists(constructed_path):
         try:
             df_full = pd.read_parquet(constructed_path)
-            data_source_message = f"Data successfully loaded from constructed path for '{selected_input_source_display_name}'. Path: `{constructed_path}`"
-            st.info(data_source_message)
+            
         except Exception as e:
             st.error(f"Error loading data from constructed path '{constructed_path}': {e}. Attempting general default data load.")
             df_full = None
@@ -192,7 +185,7 @@ if target_column not in df_full.columns:
 # Display a snapshot of the finalized df_full
 st.subheader("📊 Data Overview")
 st.write(f"DataFrame shape: {df_full.shape}")
-if st.checkbox("Show head of the loaded dataset?", key="show_df_full_head_model_dev"):
+if st.checkbox("Show overview of the loaded dataset?", key="show_df_full_head_model_dev"):
     st.dataframe(df_full.head())
 
 # --- Step 2: Sub-sampling ---
