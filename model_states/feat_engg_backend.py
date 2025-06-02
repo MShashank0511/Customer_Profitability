@@ -778,7 +778,7 @@ def apply_ai_driven_multi_feature_transform(df: pd.DataFrame, transform_block: D
       
 
         if not isinstance(result_series, pd.Series):
-            raise TypeError(f"AI generated code did not return a pandas Series. Got: {type(result_series)}. Generated code: '{generated_code}'")
+           result_series = pd.Series(result_series)
 
         if np.isinf(result_series).any():
              result_series = result_series.replace([np.inf, -np.inf], np.nan)

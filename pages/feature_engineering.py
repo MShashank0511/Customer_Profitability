@@ -35,9 +35,11 @@ except ImportError:
     # Stop execution if utils can't be imported
     GEMINI_API_KEY_CONFIGURED = False # Assume not configured
     st.stop()
+
 if st.session_state.get("should_rerun", False):
     st.session_state["should_rerun"] = False  # Reset the flag
     st.rerun()
+
 
 def clear_model_states_folder():
     model_states_dir = "model_states"
@@ -1001,7 +1003,6 @@ def filter_data_section():
             st.rerun()
             print("Exiting add filter button click.")
 
-        st.markdown("---") # Separator
 
         # --- Button to apply all filters ---
         if st.button("Apply All Filters", key="apply_all_filters_button"):
@@ -2313,9 +2314,6 @@ available_optional_features = [feat for feat in all_features_after_mandatory if 
 if f"{active_model}_feature_checkboxes" not in st.session_state:
     st.session_state[f"{active_model}_feature_checkboxes"] = {feat: False for feat in available_optional_features}
 
-# Display good-to-have feature selection
-st.subheader("✨ Good-to-Have Features")
-
 if available_optional_features:
     st.subheader("🧠 Optional AI-Recommended Features")
 
@@ -2380,10 +2378,6 @@ if available_optional_features:
 
     st.markdown(f"✅ **{len(selected_features)} features selected**.")
 
-else:
-    st.info("No optional features available in the current dataset (after target selection).")
-
-st.markdown("---")
 
 if st.button("📊 Show Selected Attributes"):
     all_features_summary = []

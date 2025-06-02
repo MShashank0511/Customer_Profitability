@@ -13,10 +13,10 @@ class GenAIAgent:
         try:
             self._configure_gemini_api()
             # Only initialize model if API key was successfully found
-            if genai.api_key:  # Check if genai.api_key is set after configuration
-                self.model = self._initialize_generative_model()
-            else:
-                st.warning("Gemini API key not found. AI features will be unavailable.")
+            # if genai.api_key:  # Check if genai.api_key is set after configuration
+            self.model = self._initialize_generative_model()
+            # else:
+            #     st.warning("Gemini API key not found. AI features will be unavailable.")
         except Exception as e:
             st.error(f"Failed to initialize GenAIAgent: {e}")
             self.model = None  # Ensure model is None if initialization fails
