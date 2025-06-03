@@ -159,9 +159,22 @@ def initialize_new_model_state(model_name):
         # if they have been loaded previously by the user.
         # If not, provide empty dataframes to avoid errors.
         initial_loan_data = pd.read_csv("loan_data.csv") 
-        initial_bureau_data = bureau_df.copy()
-        initial_loan_level_data = loan_level_df.copy()
-        initial_installments_data = installments_df.copy()
+        try:
+            initial_bureau_data = bureau_df.copy()
+        except NameError:
+            st.warning("Required data 'bureau_df' is not defined. Please upload the required data before proceeding.")
+            initial_bureau_data = pd.DataFrame()
+        try:
+            initial_loan_level_data = loan_level_df.copy()
+        except NameError:
+            st.warning("Required data 'loan_level_df' is not defined. Please upload the required data before proceeding.")
+            initial_loan_level_data = pd.DataFrame()
+
+        try:
+            initial_installments_data = installments_df.copy()
+        except NameError:
+            st.warning("Required data 'installments_df' is not defined. Please upload the required data before proceeding.")
+            initial_installments_data = pd.DataFrame()
     except AttributeError:
         # Handle cases where session_state might not have these attributes yet
         initial_loan_data = pd.DataFrame()
@@ -2596,11 +2609,6 @@ if st.button("📊 Show Selected Attributes"):
 #             st.error(f"Error adding target variable: {str(e)}")
 # else:
 #     st.info("Please select and show your features first to enable target variable selection.")
-
-
-
-
-
 
 
 

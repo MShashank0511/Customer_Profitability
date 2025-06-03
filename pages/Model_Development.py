@@ -71,7 +71,26 @@ def preprocess_dataset(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 st.title("🔧 Model Development")
-
+st.markdown("""
+<div style="border: 2px solid #4CAF50; padding: 15px; border-radius: 10px; background-color: #f9f9f9; color: black;">
+    <h3 style="color: #4CAF50;">📊 Steps to Follow on This Page</h3>
+    <ol>
+        <li><b>Preview the Data</b><br>
+            Begin by reviewing the dataset associated with the model you are currently working on.</li>
+        <li><b>Select Model Type</b><br>
+            Choose the appropriate model type for your selected dataset.</li>
+        <li><b>Set Train-Test Split</b><br>
+            Specify the train-test split ratio to define how your data will be divided for training and evaluation.</li>
+        <li><b>Optimize Hyperparameters</b><br>
+            Identify the best hyperparameters for your model based on the desired evaluation metric. From the suggested options, select the one that best fits your needs.</li>
+        <li><b>Repeat for All Models</b><br>
+            Once you've completed these steps for one model, repeat the same process for the remaining models.</li>
+        <li><b>Proceed to Results Page</b><br>
+            After configuring all three models, continue to the next page to move forward with the project workflow.</li>
+    </ol>
+    
+</div>
+""", unsafe_allow_html=True)
 if "confirmed_model_outputs" not in st.session_state:
     st.session_state["confirmed_model_outputs"] = {}
 
@@ -149,13 +168,15 @@ for model_index, model_name in enumerate(modeling_tasks):
         st.stop()
 
     # --- Data Overview ---
-    st.subheader("📊 Data Overview")
+    st.subheader(f"📊 Data Overview for : {model_name}")
+    
     st.write(f"DataFrame shape: {df_full.shape}")
     if st.checkbox(f"Show overview of the loaded dataset? ({model_name})", key=f"show_df_full_head_model_dev_{model_index}"):
         st.dataframe(df_full.head())
 
     # --- Model Selection (Moved here, after Data Overview, before Sub-sampling) ---
-    st.subheader("📚 Select Model Type")
+    st.subheader(f"📚 Select Model Type for : {model_name}")
+    
     # Infer target type
     if df_full[target_column].nunique() < 10 and df_full[target_column].dtype in ['int64', 'float64', 'object', 'category', 'bool']:
         target_type = "Classification"
@@ -574,7 +595,8 @@ for model_index, model_name in enumerate(modeling_tasks):
             st.success("✅ All models have been completed! You can now proceed to the next page.")
             if st.button("Mark Model Development as Complete & Proceed"):
                 st.session_state["model_development_complete"] = True
-                st.info("Model development step completed. You can now proceed to the next step.")
+                st.info("Model development step completed. You can now proceed to Performance Monitoring.")
+                st.switch_page("pages/Performance Monitoring.py")
     else:
         st.warning(f"Please confirm the selection for {model_name} to proceed.")
 
@@ -595,7 +617,7 @@ unconfirmed_tasks = [
     task for task in modeling_tasks
     if f"{task.replace(' ', '_')}_task" not in st.session_state.get("confirmed_model_outputs", {})
 ]
-if unconfirmed_tasks:
-    st.info("Unconfirmed Tasks:")
-    for task in unconfirmed_tasks:
-        st.markdown(f"- **{task}**: Pending confirmation.")
+# if unconfirmed_tasks:
+#     st.info("Unconfirmed Tasks:")
+#     for task in unconfirmed_tasks:
+#         st.markdown(f"- **{task}**: Pending confirmation.")

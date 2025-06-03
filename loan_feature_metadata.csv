@@ -38,4 +38,4 @@ TOTAL_DOWN_CONTRACT_PERCENT,Down Payment Percentage,Down payment as a percentage
 Origination_Year,Loan Origination Year,Year in which the loan was originated.
 COF_EVENT_LABEL,Charge Off Event,Indicates whether a loan has been charged off meaning the lender has written it off.
 PREPAYMENT_EVENT_LABEL,Prepayment Event,Flags if a borrower paid off the loan before the scheduled end date.
-Loan_Status,Loan Outcome,Final decision or state of the loan.
+Loan_Status,Loan Approval,Final decision or state of the loan.

@@ -350,6 +350,7 @@ def display_insights(data, dataset_name, feature_mapping):
             delta=f"vs {previous_rejected_pct:.2f}% ({comparison_period}, {rejected_change:+.2f}%)",
             delta_color="inverse" if rejected_change >= 0 else "normal"
         )
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
 
     display_historical_insights(data, dataset_name, feature_mapping)
 
@@ -424,7 +425,7 @@ def display_bureau_insights(data, dataset_name, feature_mapping):
             missing_cols_display = [get_display_name(col, feature_mapping) for col in missing_cols]
             with col3_metrics:
                 st.warning(f"Missing one or more required columns for Bureau insights: {', '.join(missing_cols_display)}. Please check your data.")
-
+        st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
         display_historical_insights(data, dataset_name, feature_mapping)  # Pass original data for full historical view
     else:
         st.info(f"No data available for the selected date range in Bureau insights for {dataset_name}.")
@@ -503,7 +504,8 @@ def display_historical_insights(data, dataset_name, feature_mapping):
         # Map the selected feature back to its technical name
         selected_feature = {v: k for k, v in feature_mapping.items()}.get(selected_feature_display_name, selected_feature_display_name)
 
-    st.markdown("---")
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
+
     if not selected_feature:  # Should not happen if features list is populated
         st.warning("No feature selected.")
         return
@@ -580,7 +582,7 @@ def display_historical_insights(data, dataset_name, feature_mapping):
         with stats_col:
             st.markdown("### Top Frequencies")
             st.table(counts_table_df)
-
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
 # --- Main App ---
 st.sidebar.header("Upload Files")
 

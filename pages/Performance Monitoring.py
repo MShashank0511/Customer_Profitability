@@ -110,7 +110,7 @@ def split_and_distribute_with_credit_risk(df, prob_col='Predicted_Probability', 
     return pd.DataFrame(expanded_rows)
 
 st.set_page_config(layout="wide")
-st.title("Model Prediction Monitoring: Profitability, Charge-Off, Prepayment")
+st.title("Comprehensive Model Monitoring: Profitability, Charge-Off, Prepayment")
 
 # --- Backend Function (Now within this file) ---
 def adjust_predicted_target(df: pd.DataFrame, avg_error: float) -> tuple[pd.DataFrame, float]:
@@ -247,9 +247,7 @@ def add_opb_column(df, loan_data_path='loan_data.csv'):
                 st.write("Added DELINQ_CNT_30_DAY_TOTAL column to the DataFrame using loan_data.csv.")
             else:
                 st.write("DELINQ_CNT_30_DAY_TOTAL column already exists in the DataFrame.")
-        else:
-            st.warning("Timestamp_x column is missing in either the DataFrame or loan_data.csv. Cannot map values.")
-
+        
     except FileNotFoundError:
         st.error(f"Error: The file '{loan_data_path}' was not found. Please ensure it exists.")
     except Exception as e:
@@ -331,10 +329,25 @@ def main():
     """
     global combined_df  # Ensure combined_df is globally accessible
 
-    # --- 0. Instruction Message ---
-    st.markdown("### Instruction")
-    st.info("Please select all three models in the **Model** section to check the combined DataFrame.")
-
+    # --- Steps to Follow Section ---
+    st.markdown("""
+    <div style="border: 2px solid #4CAF50; padding: 15px; border-radius: 10px; background-color: #f9f9f9; color: black;">
+        <h3 style="color: #4CAF50;">📊 Steps to Follow on This Page</h3>
+        <ol>
+            <li><b>Select a Model</b><br>
+                Choose any one of the three models (as defined in the Model Development page) using the Model Selection section.</li>
+            <li><b>Explore Evaluation Metrics</b><br>
+                Once a model is selected, explore its evaluation metrics across different segments to understand its performance in detail.</li>
+            <li><b>Repeat for All Models</b><br>
+                After evaluating the first model, repeat the model selection and evaluation steps for the remaining two models.</li>
+            <li><b>Review Profitability Metrics</b><br>
+                Once all three models are selected, view the calculated metrics related to profitability predictions for the given dataset.</li>
+            <li><b>Proceed to Results Page</b><br>
+                After reviewing the evaluation outcomes, move to the Results page to explore profitability insights and simulation options.</li>
+        </ol>
+        <p style="color: red; font-weight: bold;">Note: Please select all three models in the Model Selection section to check the results generated for Profitability Calculation.</p>
+    </div>
+    """, unsafe_allow_html=True)
     # --- 1. Model Selection ---
     st.header("1. Model Selection")
 
@@ -379,14 +392,14 @@ def main():
 
     # Allow the user to select a data source
     data_source_name = st.selectbox(
-        "Select Model (Target_Variable)", options=list(available_data_sources.keys())
+        "Selected Model (Target_Variable)", options=list(available_data_sources.keys())
     )
     selected_df = available_data_sources[data_source_name]
     st.session_state.data_source = data_source_name
 
     # --- Display Data Preview ---
     st.subheader("Data Preview")
-    st.write("Preview of the selected Model:")
+    st.write("Preview of the data for selected Model:")
 
     # Ensure Origination_Year is displayed correctly without commas
     if 'Origination_Year' in selected_df.columns:
@@ -418,27 +431,52 @@ def main():
     df_edited['TERM_OF_LOAN'] = df_edited['TERM_OF_LOAN'].apply(lambda x: 60 if x <= 60 else 84)
 
     # Display the preprocessed data
-    st.subheader("Preprocessed Data")
-    st.write("Preview of the preprocessed data:")
+    st.subheader("Transformed Data")
+    st.write("Preview of the transformed data:")
     st.dataframe(df_edited.head())
 
-    # --- 3. Filtering Options ---
-    st.header("2. Filtering Options")
+    # --- 3. Explore Model Evaluation for Selected Segments ---
+    st.header("2. Explore Model Evaluation for Selected Segments")
 
     # Extract unique values from the preprocessed data
     origination_years = sorted(df_edited['Origination_Year'].dropna().unique())
     term_of_loans = sorted(df_edited['TERM_OF_LOAN'].dropna().unique())
 
-    # Create multiselect options for filtering
+    # Create multiselect options for filtering Origination Year and TERM_OF_LOAN
     selected_years = st.multiselect("Filter by Origination Year", options=origination_years, default=origination_years)
     selected_terms = st.multiselect("Filter by TERM_OF_LOAN", options=term_of_loans, default=term_of_loans)
 
+    # Add a multi-select filter for CREDIT_SCORE_AVG_CALC
+    credit_score_ranges = {
+        '660+': (660, float('inf')),
+        '600-660': (600, 660),
+        '<600': (float('-inf'), 600)
+    }
+    selected_credit_scores = st.multiselect(
+        "Filter by Credit Score Range ",
+        options=list(credit_score_ranges.keys()),
+        default=list(credit_score_ranges.keys())
+    )
+
     # Apply filters to the preprocessed data
     filtered_df = df_edited.copy()
+
+    # Apply Origination Year filter
     if selected_years:
         filtered_df = filtered_df[filtered_df['Origination_Year'].isin(selected_years)]
+
+    # Apply TERM_OF_LOAN filter
     if selected_terms:
         filtered_df = filtered_df[filtered_df['TERM_OF_LOAN'].isin(selected_terms)]
+
+    # Apply CREDIT_SCORE_AVG_CALC filter
+    if selected_credit_scores:
+        credit_score_conditions = []
+        for score_range in selected_credit_scores:
+            lower, upper = credit_score_ranges[score_range]
+            credit_score_conditions.append((filtered_df['CREDIT_SCORE_AVG_CALC'] >= lower) & (filtered_df['CREDIT_SCORE_AVG_CALC'] < upper))
+        if credit_score_conditions:
+            filtered_df = filtered_df[np.logical_or.reduce(credit_score_conditions)]
 
     # Display the filtered data
     st.subheader("Filtered Data")
@@ -455,7 +493,7 @@ def main():
         target_variable_present = 'PREPAYMENT_EVENT_LABEL'
 
     # --- 4. Model Evaluation ---
-    st.header("3. Model Evaluation")
+    st.header("3. Performance metrics and evaluation graphs based on selected filters.")
 
     if target_variable_present == 'Profitability_GBP':
         # Calculate evaluation metrics
@@ -501,14 +539,14 @@ def main():
             x=grouped_df['Origination_Year'],
             y=grouped_df['Profitability_GBP'],
             mode='lines+markers',
-            name='Profitability GBP'
+            name='Profitability'
         ))
 
         # Update layout
         fig.update_layout(
             title="Predicted Target vs. Profitability (Grouped by Origination Year)",
             xaxis_title="Origination Year",
-            yaxis_title="Sum of Values",
+            yaxis_title="Total Profitability",
             template="plotly_white"
         )
 
