@@ -2224,135 +2224,133 @@ st.markdown("---") # Separator after target selection
 # --- Mandatory Features Section ---
 st.subheader("📌 Mandatory Features")
 
-# Load the dataset for mandatory features (this DataFrame will NOT contain the target column)
 combined_data_for_mandatory = model_state.get("features_for_mandatory", pd.DataFrame())
 
 if combined_data_for_mandatory.empty:
-     st.warning(f"No features available after target variable selection. Please ensure a target variable is selected.")
+    st.warning("No features available after target variable selection. Please ensure a target variable is selected.")
 else:
-    # Call backend to get mandatory features
+    # Get mandatory features from backend
     mandatory_features = feat_engg_backend.select_mandatory_features(combined_data_for_mandatory)
-
-    # Store the list of mandatory features in model_state for persistence
     model_state["selected_mandatory_features"] = mandatory_features
 
-    # Create the dataset *after* mandatory features have been conceptually "removed"
-    # This will be the input for the "Good-to-Have Features" section
+    # Remove mandatory features from main dataset
     features_after_mandatory_df = combined_data_for_mandatory.drop(
         columns=[f for f in mandatory_features if f in combined_data_for_mandatory.columns],
         errors='ignore'
     ).copy()
     model_state["features_after_mandatory"] = features_after_mandatory_df
 
-
-    # Define feature descriptions (can be expanded)
+    # Define or expand feature descriptions
     feature_descriptions = {
         "OPB": "Outstanding Principal Balance of the customer's loan",
         "interest_rate": "Current interest rate applicable to the customer's loan",
         "tenure": "Duration of the loan in months",
         "credit_score_band": "Customer's credit score category (Excellent, Good, Fair, Poor)",
         "LTV": "Loan-to-Value ratio indicating the risk level of the loan",
-        # Add descriptions for other potential mandatory features
         "loan_amount": "The total amount of the loan",
         "age": "Age of the customer",
         "employment_status": "Current employment status of the customer"
     }
-
-    # Add descriptions for combined features from the loaded data
     for feature in combined_data_for_mandatory.columns:
-        if feature not in feature_descriptions:
-            feature_descriptions[feature] = f"Transformed or engineered feature based on original data."
+        feature_descriptions.setdefault(feature, "Transformed or engineered feature based on original data.")
 
-
-    # Filter mandatory features to only show those present in the combined data
     present_mandatory_features = [feat for feat in mandatory_features if feat in combined_data_for_mandatory.columns]
+
     if present_mandatory_features:
         st.dataframe(pd.DataFrame({"Mandatory Features": present_mandatory_features}), hide_index=True)
-        # Check if all defined mandatory features are present (from the backend's selection)
         if len(present_mandatory_features) == len(mandatory_features):
-             st.success("All mandatory attributes are available and selected by the model.")
+            st.success("All mandatory attributes are available and selected by the model.")
         else:
-             missing_mandatory = [feat for feat in mandatory_features if feat not in combined_data_for_mandatory.columns]
-             st.warning(f"Some mandatory features selected by the model are missing in the current dataset: {', '.join(missing_mandatory)}")
+            missing_mandatory = [feat for feat in mandatory_features if feat not in combined_data_for_mandatory.columns]
+            st.warning(f"Some mandatory features selected by the model are missing: {', '.join(missing_mandatory)}")
     else:
-        st.info("No mandatory features identified by the model in the current dataset.")
-
+        st.info("No mandatory features identified in the dataset.")
 
 st.markdown("---")
 
+
 # --- Good-to-Have Features Section ---
-# Get all available features from the dataset after target selection (excluding mandatory ones already displayed)
-all_features_after_mandatory = combined_data_for_mandatory.columns.tolist()
-available_optional_features = [feat for feat in all_features_after_mandatory if feat not in present_mandatory_features]
+st.subheader("🧠 Optional AI-Recommended Features")
 
+# Exclude mandatory features from optional list
+available_optional_features = [
+    feat for feat in combined_data_for_mandatory.columns
+    if feat not in present_mandatory_features
+]
 
-# Initialize feature checkboxes in session state for the active model if not exists
-if f"{active_model}_feature_checkboxes" not in st.session_state:
-    st.session_state[f"{active_model}_feature_checkboxes"] = {feat: False for feat in available_optional_features}
+checkbox_state_key = f"{active_model}_feature_checkboxes"
+select_all_state_key = f"{active_model}_select_all_clicked"
 
-if available_optional_features:
-    st.subheader("🧠 Optional AI-Recommended Features")
+# Initialize session state
+if checkbox_state_key not in st.session_state:
+    st.session_state[checkbox_state_key] = {}
 
-    # --- Search Box ---
-    search_query = st.text_input("🔍 Search Features (name or description)", value="", placeholder="e.g. age, purchase_count")
+if select_all_state_key not in st.session_state:
+    st.session_state[select_all_state_key] = False
 
-    # --- Select All Checkbox ---
-    select_all_key = f"{active_model}_select_all"
-    if select_all_key not in st.session_state:
-        st.session_state[select_all_key] = False
+# Search functionality
+search_query = st.text_input("🔍 Search Features (name or description)", value="", placeholder="e.g. age, purchase_count")
 
-    select_all = st.checkbox("Select All Features", value=st.session_state[select_all_key], key=select_all_key)
+features_df = pd.DataFrame({
+    "Feature": available_optional_features,
+    "Description": [feature_descriptions.get(feat, "No description available") for feat in available_optional_features]
+})
 
-    # --- Build base features DataFrame ---
-    all_features_df = pd.DataFrame({
-        "Feature": available_optional_features,
-        "Description": [feature_descriptions.get(feat, "No description available") for feat in available_optional_features],
-    })
-
-    # --- Filter features based on search query ---
-    if search_query:
-        filtered_features_df = all_features_df[
-            all_features_df["Feature"].str.contains(search_query, case=False, na=False) |
-            all_features_df["Description"].str.contains(search_query, case=False, na=False)
-        ]
-    else:
-        filtered_features_df = all_features_df.copy()
-
-    # --- Load previous selections ---
-    previous_selections = st.session_state.get(f"{active_model}_feature_checkboxes", {})
-
-    # --- Apply "Select All" or keep previous state ---
-    if select_all:
-        filtered_features_df["Select"] = True
-    else:
-        filtered_features_df["Select"] = [
-            previous_selections.get(feat, False) for feat in filtered_features_df["Feature"]
-        ]
-
-    # --- Editable Table ---
-    edited_df = st.data_editor(
-        filtered_features_df,
-        column_config={
-            "Feature": st.column_config.TextColumn("Feature 🔍", width="medium", disabled=True),
-            "Description": st.column_config.TextColumn("Description", width="large", disabled=True),
-            "Select": st.column_config.CheckboxColumn("Select", width="small", help="Select this feature"),
-        },
-        hide_index=True,
-        use_container_width=True,
-        key=f"{active_model}_feature_editor"
-    )
-
-    # --- Update session state with new selections ---
-    for feature, selected in zip(edited_df["Feature"], edited_df["Select"]):
-        st.session_state.setdefault(f"{active_model}_feature_checkboxes", {})[feature] = selected
-
-    # --- Extract selected features globally ---
-    selected_features = [
-        feature for feature, selected in st.session_state[f"{active_model}_feature_checkboxes"].items() if selected
+if search_query:
+    filtered_df = features_df[
+        features_df["Feature"].str.contains(search_query, case=False, na=False) |
+        features_df["Description"].str.contains(search_query, case=False, na=False)
     ]
-    st.session_state[f"{active_model}_selected_features"] = selected_features
+else:
+    filtered_df = features_df.copy()
 
-    st.markdown(f"✅ **{len(selected_features)} features selected**.")
+# Select all checkbox
+select_all_ui = st.checkbox("Select All Features", value=False, key="select_all_ui")
+
+# Apply select all / deselect all
+if select_all_ui and not st.session_state[select_all_state_key]:
+    for feat in filtered_df["Feature"]:
+        st.session_state[checkbox_state_key][feat] = True
+    st.session_state[select_all_state_key] = True
+    st.rerun()
+
+elif not select_all_ui and st.session_state[select_all_state_key]:
+    for feat in filtered_df["Feature"]:
+        st.session_state[checkbox_state_key][feat] = False
+    st.session_state[select_all_state_key] = False
+    st.rerun()
+
+# Reflect selection state
+filtered_df["Select"] = [
+    st.session_state[checkbox_state_key].get(feat, False) for feat in filtered_df["Feature"]
+]
+filtered_df["Select"] = filtered_df["Select"].astype(bool)  # <-- Ensure boolean type
+
+# Display table
+edited_df = st.data_editor(
+    filtered_df,
+    column_config={
+        "Feature": st.column_config.TextColumn("Feature 🔍", width="medium", disabled=True),
+        "Description": st.column_config.TextColumn("Description", width="large", disabled=True),
+        "Select": st.column_config.CheckboxColumn("Select", width="small", help="Select this feature"),
+    },
+    hide_index=True,
+    use_container_width=True,
+    key=f"{active_model}_feature_editor"
+)
+
+# Update selections
+for feature, selected in zip(edited_df["Feature"], edited_df["Select"]):
+    st.session_state[checkbox_state_key][feature] = selected
+
+# Save selected features globally
+selected_features = [
+    feat for feat, selected in st.session_state[checkbox_state_key].items()
+    if selected and feat not in present_mandatory_features
+]
+st.session_state[f"{active_model}_selected_features"] = selected_features
+
+st.markdown(f"✅ **{len(selected_features)} features selected.**")
 
 
 if st.button("📊 Show Selected Attributes"):
@@ -2418,8 +2416,6 @@ if st.button("📊 Show Selected Attributes"):
             st.warning("Final dataset is empty, cannot save Parquet file.")
 
         
-else:
-    st.info("Please select and show your features first to enable target variable selection.")
 
 # # Collapsible section to display the merged dataset
 # st.subheader("Merged dataset preview")
@@ -2499,14 +2495,3 @@ else:
 #             st.error(f"Error adding target variable: {str(e)}")
 # else:
 #     st.info("Please select and show your features first to enable target variable selection.")
-
-
-
-
-
-
-
-
-
-
-# ####################################################################################################
