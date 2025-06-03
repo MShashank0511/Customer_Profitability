@@ -1018,6 +1018,8 @@ def recommend_features(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     return recommended_features_info
 
+
+
 # Helper descriptions for existing features (can be expanded)
 feature_descriptions = {
     "OPB": "Outstanding Principal Balance of the customer's loan",
