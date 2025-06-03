@@ -41,6 +41,23 @@ if st.session_state.get("should_rerun", False):
     st.session_state["should_rerun"] = False  # Reset the flag
     st.rerun()
 
+def feature_metadata_df(metadata_file="loan_feature_metadata.csv"):
+    """Load feature metadata and return as a DataFrame."""
+    try:
+        metadata = pd.read_csv(metadata_file)
+        if {'feature_name', 'simple_name', 'description'}.issubset(metadata.columns):
+            return metadata
+        else:
+            st.error("The metadata file must contain 'feature_name', 'simple_name', and 'description' columns.")
+            return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Failed to load feature metadata: {e}")
+        return pd.DataFrame()
+
+# Load metadata once
+feature_metadata_df = feature_metadata_df("loan_feature_metadata.csv")
+feature_desc_map = dict(zip(feature_metadata_df['feature_name'], feature_metadata_df['description']))
+
 def make_json_serializable(obj):
     """Recursively convert pd.Timestamp, datetime, and date objects to ISO strings for JSON serialization."""
     if isinstance(obj, dict):
@@ -147,7 +164,7 @@ except Exception as e:
 #             return None
 
 # --- Model Definitions ---
-MODEL_NAMES = ["Forecast Model", "Charge-Off Model", "Prepayment Model", "Churn Model", "Extrapolation Model"]
+MODEL_NAMES = ["Forecast Model", "Charge-Off Model", "Prepayment Model"]
 
 def initialize_new_model_state(model_name):
     """Initialize a fresh state for a new model."""
@@ -642,8 +659,41 @@ selected_model = st.sidebar.selectbox(
     on_change=on_model_select_callback,
 )
 
+# Display Feature Engineering Title
+st.markdown(F"# FEATURE ENGINEERING")
+
+# Display the steps to follow on this page
+st.markdown("""
+<div style="border: 2px solid #4CAF50; padding: 15px; border-radius: 10px; background-color: #f9f9f9; color: black;">
+    <h3 style="color: #4CAF50;">🔍 Steps to Follow on This Page</h3>
+    <ol>
+        <li><b>Preview Data</b><br>
+            Begin by reviewing the data selected in the previous page (Data Exploration).</li>
+        <li><b>Select Input Data</b><br>
+            Apply desired filters to prepare the input data for each model based on your requirements.</li>
+        <li><b>Integrate Datasets</b><br>
+            Use the Data Integration section to combine the filtered datasets into a unified dataset.</li>
+        <li><b>AI-Powered Feature Recommendation</b><br>
+            Leverage AI to generate new features from the existing ones. Review and add these features as recommended in the AI-Powered Feature Recommendation section.</li>
+        <li><b>Feature Transformation</b><br>
+            Perform feature transformation (individually or in combination) using the available transformation sub-sections.</li>
+        <li><b>Preview Output Variable</b><br>
+            Preview the column that represents the output variable for the selected model.</li>
+        <li><b>Verify Mandatory Features</b><br>
+            The system will display mandatory features for the selected model. If any are missing, revisit feature selection to ensure all required features are included.</li>
+        <li><b>Select Additional Features</b><br>
+            Optionally, choose additional features that may help improve the model’s predictive performance in the Good to have Features section.</li>
+    </ol>
+    <p style="color: red; font-weight: bold;">Note: Complete the same steps for the remaining two models to prepare their input data and features.</p>        
+</div>
+""", unsafe_allow_html=True)
+
+
+
+
+
 # Display the current active model at the top of the main content area
-st.markdown(f"### Current Model: {st.session_state.active_model}")
+st.markdown(f"## {st.session_state.active_model}")
 
 # --- Initial/First-Load Setup for the Active Model ---
 # This block ensures that the state for the currently active model is loaded or initialized
@@ -826,7 +876,8 @@ def filter_data_section():
     # --- Define available operations ---
     OPERATIONS = feat_engg_backend.get_filter_operations() # Get operations from backend
 
-
+    # Display Filter section description
+    st.markdown(f"##### Filter any of the datasets based on any selected feature to tailor the input data for model.")
 
     # Use a container for the filter controls
     filter_container = st.container()
@@ -848,6 +899,8 @@ def filter_data_section():
                         available_datasets[prev_output_name] = model_state["intermediate_filtered_datasets"][prev_output_name]
 
             all_available_datasets = list(available_datasets.keys())
+
+            
 
             st.subheader(f"Filter {i + 1}")
 
@@ -1209,7 +1262,7 @@ if "show_filter_data" not in st.session_state:
 # Filter Data Button
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    st.button("🔄 Filter Data", key="show_filter_data_button", on_click=show_filter_data_callback, use_container_width=True)
+    st.button("🔄 Input Data Selection for Model", key="show_filter_data_button", on_click=show_filter_data_callback, use_container_width=True)
 
 
 # Display the filter section only if the button has been clicked
@@ -1287,7 +1340,7 @@ with col2:
 
     # Use the updated width for the button column if you changed it previously
     # col1, col2, col3 = st.columns([1, 5, 1]) # Example if you want a wider button container
-    st.button("🔄 Merge Datasets", key="merge_btn", on_click=show_merge_callback, use_container_width=True)
+    st.button("🔄 Data Integration", key="merge_btn", on_click=show_merge_callback, use_container_width=True)
 
 
 # Display the merge section if show_merge is True for the active model
@@ -1295,8 +1348,6 @@ active_model = st.session_state.active_model
 model_state = st.session_state.get(f"{active_model}_state", {}) # Get model state
 
 if model_state.get("show_merge", False): # Check the show_merge state within the model state
-
-    st.header("Merge Datasets")
 
     # Prepare available tables for merging
     # Get raw, filtered, and previously merged tables from model state
@@ -1378,8 +1429,15 @@ if model_state.get("show_merge", False): # Check the show_merge state within the
     # This dict will be updated as we go through each merge block
     intermediate_merged_tables = merged_tables.copy()
 
+    # Display merge section description
+    st.markdown(f"##### Combine all the tables into a unified dataset for streamlined analysis and modeling.")
+    st.markdown(
+    '<span style="color: red; font-weight: bold;">Note: Avoid selecting similar datasets (e.g., the original dataset and its filtered version) together, as this may lead to duplication or inconsistent merging.</span>',
+    unsafe_allow_html=True
+)
+
+
     for i, block in enumerate(merge_blocks):
-        st.markdown(f"---")  # Separator for clarity between merge blocks
         if i > 0:
             for prev_block in merge_blocks[:i]:
                 prev_output_name = prev_block.get("merged_name")
@@ -1745,7 +1803,7 @@ if f"{active_model}_accept_ai_success" not in st.session_state:
     st.session_state[f"{active_model}_accept_ai_success"] = False
 ##############################################################################  
 # --- Recommend Features Button ---
-st.markdown("## AI-Powered Feature Recommendation")
+st.markdown("## AI Generated Features that are recommended to be used in the model.")
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     if st.button("✨ Recommend Features (AI)", key="recommend_features_ai", use_container_width=True):
@@ -1920,11 +1978,13 @@ if isinstance(updated_dataset, pd.DataFrame) and not updated_dataset.empty:
 st.markdown("---")
 
 ############# --- Data Transformation Buttons ---###############
-st.subheader("Data Actions")
+st.markdown("## 🔧 Feature Transformation")
+st.markdown("##### Customize the features based on the business requirements.")
+
 # Create a centered container for the buttons
 col1, col2, col3 = st.columns([1, 2, 1])  # Unequal columns to center the buttons
 with col2:  # Middle column
-    if st.button("🔧 Single Feature Transformation", key="transform_btn", use_container_width=True):
+    if st.button(" Single Feature Transformation", key="transform_btn", use_container_width=True):
         model_state["show_popup1"] = True
         st.rerun()
 
@@ -2149,7 +2209,7 @@ if model_state.get("show_popup1", False):
 ##########################################################################################################################################################
 
 # --- Multi-Feature Transformation Section ---
-st.markdown("### 🔧 Multiple Features Transformation")
+st.markdown("###  Multiple Features Transformation")
 
 # IMPORTANT: Ensure active_model and model_state are defined here or globally
 if "active_model" not in st.session_state:
@@ -2284,51 +2344,40 @@ if model_state.get("multi_transform_success"): # Use .get() for safety
 
 
 
+st.markdown("---")
 
 
 ###################################################################################################################################################
 
 # --- Data Selection Section (Start of the requested section) ---
-st.markdown("### 🔎 Feature Selection")
 
 # --- Target Variable Selection ---
-st.subheader("🎯 Target Variable Selection")
+st.markdown("## 🎯 Target Variable Selection")
+st.markdown("#### Preview the Feature that will store the value of output for selected model.")
 
-# Get the dataset after multi-feature transformation
+# Hardcoded mapping for each model
+MODEL_TARGET_MAP = {
+    "Forecast Model": "Profitability_GBP",
+    "Charge-Off Model": "COF_EVENT_LABEL",
+    "Prepayment Model": "PREPAYMENT_EVENT_LABEL"
+}
+
 input_df_for_target = model_state.get("final_transformed_features", pd.DataFrame())
+target_variable = MODEL_TARGET_MAP.get(active_model, "")
 
-if not input_df_for_target.empty:
-    # Get all column names from the transformed dataset
-    available_target_columns = input_df_for_target.columns.tolist()
-
-    # Allow the user to select a target variable
-    target_column_selected = st.selectbox(
-        "Select Target Variable",
-        available_target_columns,
-        # Set default value to the previously selected target_column if it exists and is in available columns
-        index=available_target_columns.index(model_state.get("target_column")) if model_state.get("target_column") in available_target_columns else 0,
-        key=f"target_column_select_{active_model}"
-    )
-
-    if st.button("Select Target Variable", key=f"add_target_btn_{active_model}"):
-        try:
-            target_feature_name = target_column_selected
-            model_state[f"target_column"] = target_column_selected
-            model_state[f"target_feature"] = target_feature_name
-
-            # Create a new DataFrame with all features EXCEPT the target column
-            # This will be the input for mandatory and good-to-have features
-            features_for_mandatory_df = input_df_for_target.drop(columns=[target_feature_name], errors='ignore').copy()
-            model_state["features_for_mandatory"] = features_for_mandatory_df
-
-            # The final_dataset will be constructed later after good-to-have features
-            # For now, it holds the full dataset from which features are being selected
-            model_state["final_dataset"] = input_df_for_target.copy()
-
-            
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error selecting target variable: {str(e)}")
+if not input_df_for_target.empty and target_variable:
+    st.text_input(
+    "Target Variable (auto-selected for this model)",
+    value=target_variable,
+    disabled=True,
+    key=f"target_variable_placeholder_{active_model}"
+)
+    # Remove the target variable from the features for mandatory/good-to-have
+    features_for_mandatory_df = input_df_for_target.drop(columns=[target_variable], errors='ignore').copy()
+    model_state["features_for_mandatory"] = features_for_mandatory_df
+    model_state["final_dataset"] = input_df_for_target.copy()
+    model_state["target_column"] = target_variable
+    model_state["target_feature"] = target_variable
 else:
     st.info("Please complete multi-feature transformations first to select a target variable.")
 
@@ -2339,6 +2388,16 @@ st.markdown("---") # Separator after target selection
 st.subheader("📌 Mandatory Features")
 
 combined_data_for_mandatory = model_state.get("features_for_mandatory", pd.DataFrame())
+
+# Build a combined feature description map (metadata + AI)
+combined_feature_desc_map = feature_desc_map.copy()
+ai_feature_info_df = st.session_state.get('feature_info', pd.DataFrame())
+if not ai_feature_info_df.empty and "Feature" in ai_feature_info_df.columns and "Description" in ai_feature_info_df.columns:
+    for _, row in ai_feature_info_df.iterrows():
+        feat = row["Feature"]
+        desc = row["Description"]
+        if pd.notna(feat) and pd.notna(desc):
+            combined_feature_desc_map[feat] = desc
 
 if combined_data_for_mandatory.empty:
     st.warning("No features available after target variable selection. Please ensure a target variable is selected.")
@@ -2371,7 +2430,12 @@ else:
     present_mandatory_features = [feat for feat in mandatory_features if feat in combined_data_for_mandatory.columns]
 
     if present_mandatory_features:
-        st.dataframe(pd.DataFrame({"Mandatory Features": present_mandatory_features}), hide_index=True)
+        mandatory_features_df = pd.DataFrame({
+            "Mandatory Feature": present_mandatory_features,
+            "Description": [combined_feature_desc_map.get(f, "No description available") for f in present_mandatory_features]
+        })
+        st.dataframe(mandatory_features_df, hide_index=True)
+        # Check if all defined mandatory features are present (from the backend's selection)
         if len(present_mandatory_features) == len(mandatory_features):
             st.success("All mandatory attributes are available and selected by the model.")
         else:
@@ -2381,6 +2445,7 @@ else:
         st.info("No mandatory features identified in the dataset.")
 
 st.markdown("---")
+
 
 
 # --- Good-to-Have Features Section ---
@@ -2403,20 +2468,40 @@ if select_all_state_key not in st.session_state:
     st.session_state[select_all_state_key] = False
 
 # Search functionality
-search_query = st.text_input("🔍 Search Features (name or description)", value="", placeholder="e.g. age, purchase_count")
+    search_query = st.text_input("🔍 Search Features (name or description)", value="", placeholder="e.g. age, purchase_count")
 
-features_df = pd.DataFrame({
+    # --- Select All Checkbox ---
+    select_all_key = f"{active_model}_select_all"
+    if select_all_key not in st.session_state:
+        st.session_state[select_all_key] = False
+
+    select_all = st.checkbox("Select All Features", value=st.session_state[select_all_key], key=select_all_key)
+
+    # --- Build a combined feature description map ---
+    combined_feature_desc_map = feature_desc_map.copy()
+
+
+    # Add/override with AI-recommended feature descriptions if available
+    ai_feature_info_df = st.session_state.get('feature_info', pd.DataFrame())
+    if not ai_feature_info_df.empty and "Feature" in ai_feature_info_df.columns and "Description" in ai_feature_info_df.columns:
+        for _, row in ai_feature_info_df.iterrows():
+            feat = row["Feature"]
+            desc = row["Description"]
+            if pd.notna(feat) and pd.notna(desc):
+                combined_feature_desc_map[feat] = desc
+
+    all_features_df = pd.DataFrame({
     "Feature": available_optional_features,
-    "Description": [feature_descriptions.get(feat, "No description available") for feat in available_optional_features]
+    "Description": [combined_feature_desc_map.get(feat, "No description available") for feat in available_optional_features],
 })
 
 if search_query:
-    filtered_df = features_df[
-        features_df["Feature"].str.contains(search_query, case=False, na=False) |
-        features_df["Description"].str.contains(search_query, case=False, na=False)
+    filtered_df = all_features_df[
+        all_features_df["Feature"].str.contains(search_query, case=False, na=False) |
+        all_features_df["Description"].str.contains(search_query, case=False, na=False)
     ]
 else:
-    filtered_df = features_df.copy()
+    filtered_df = all_features_df.copy()
 
 # Select all checkbox
 select_all_ui = st.checkbox("Select All Features", value=False, key="select_all_ui")
@@ -2519,7 +2604,7 @@ if st.button("📊 Show Selected Attributes"):
                 os.makedirs(data_registry_subfolder, exist_ok=True)
 
                 # Save the final dataset as a Parquet file
-                final_dataset_path = os.path.join(data_registry_subfolder, f"{model_state[f"target_feature"]}_final_dataset.parquet")
+                final_dataset_path = os.path.join(data_registry_subfolder, f"{model_state[f'target_feature']}_final_dataset.parquet")
                 final_dataset_with_target.to_parquet(final_dataset_path, index=False)
 
                 # Save the file path in session state for use in the next page
@@ -2530,86 +2615,6 @@ if st.button("📊 Show Selected Attributes"):
             st.warning("Final dataset is empty, cannot save Parquet file.")
 
         
-
-# # Collapsible section to display the merged dataset
-# st.subheader("Merged dataset preview")
-# # Collapsible section to display the merged dataset
-
-
-# # Retrieve the merged dataset from model_state
-# merged_dataset = model_state.get("merged dataset", pd.DataFrame())
-
-# if merged_dataset is not None and not merged_dataset.empty:
-#     with st.expander("📂 View Merged Dataset", expanded=False):
-#         st.markdown("### Merged Dataset")
-#         st.write(f"Shape: {merged_dataset.shape}")
-#         st.dataframe(merged_dataset)
-# else:
-#     st.warning("Merged dataset is empty or not available. Please complete the merge operations first.")
-# #Target Variable Selection
-# st.subheader("🎯 Target Variable Selection")
-
-# # Define the target variable options and their corresponding feature names
-# target_variable_mapping = {
-#     "Profitability": "Profitability_GBP",
-#     "Charge-Off": "COF_EVENT_LABEL",
-#     "Prepayment": "PREPAYMENT_EVENT_LABEL"
-# }
-
-# # Get the final dataset from session state for the active model
-# # Retrieve the merged dataset from model_state
-# # Retrieve the merged dataset from model_state
-# final_dataset = model_state.get("merged dataset", pd.DataFrame())
-# final_dataset = final_dataset.dropna()
-# if not final_dataset.empty:
-#     # Allow the user to select a target variable
-#     target_column = st.selectbox("Select Target Variable", list(target_variable_mapping.keys()), key=f"target_column_select_{active_model}")
-
-#     if st.button("Add Target Variable to Dataset", key=f"add_target_btn_{active_model}"):
-#         try:
-#             # Get the target feature name from the mapping
-#             target_feature = target_variable_mapping[target_column]
-
-#             # Ensure the target column exists in the merged dataset
-#             if target_feature not in final_dataset.columns:
-#                 st.error(f"Target variable '{target_feature}' is not present in the merged dataset. Please ensure it is included in the data.")
-#                 st.stop()
-
-#             # Add the target column to the dataset if not already present
-#             if target_feature not in final_dataset.columns:
-#                 st.error(f"Target variable '{target_feature}' is missing from the dataset.")
-#                 st.stop()
-
-#             # Update the final dataset in session state to include the entire dataset along with the target column
-#             st.session_state[f"{active_model}_final_dataset"] = final_dataset.copy()
-
-#             # Store target variable in model-specific session state
-#             st.session_state[f"{active_model}_target_column"] = target_column
-#             st.session_state[f"{active_model}_target_feature"] = target_feature
-
-#             # Save the final dataset (with target) as a Parquet file in a subfolder within `data_registry`
-#             final_dataset_with_target = st.session_state.get(f"{active_model}_final_dataset", pd.DataFrame())
-#             if not final_dataset_with_target.empty:
-#                 # Create a subfolder in `data_registry` for the active model
-#                 data_registry_subfolder = os.path.join("data_registry", active_model)
-#                 os.makedirs(data_registry_subfolder, exist_ok=True)
-
-#                 # Save the final dataset as a Parquet file
-#                 final_dataset_path = os.path.join(data_registry_subfolder, f"{target_column}_final_dataset.parquet")
-#                 final_dataset_with_target.to_parquet(final_dataset_path, index=False)
-
-#                 # Save the file path in session state for use in the next page
-#                 st.session_state[f"{active_model}_final_dataset_path"] = final_dataset_path
-
-#                 st.success(f"Target variable '{target_column}' added to the final dataset successfully! Dataset saved as '{final_dataset_path}'.")
-#             else:
-#                 st.warning("Final dataset is empty, cannot save Parquet file.")
-
-#         except Exception as e:
-#             st.error(f"Error adding target variable: {str(e)}")
-# else:
-#     st.info("Please select and show your features first to enable target variable selection.")
-
 
 
 
