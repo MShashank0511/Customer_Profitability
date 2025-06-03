@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 import shutil
 import sys
 import os
+import datetime
 
 
 try:
@@ -40,6 +41,18 @@ if st.session_state.get("should_rerun", False):
     st.session_state["should_rerun"] = False  # Reset the flag
     st.rerun()
 
+def make_json_serializable(obj):
+    """Recursively convert pd.Timestamp, datetime, and date objects to ISO strings for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: make_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_serializable(v) for v in obj]
+    elif isinstance(obj, tuple):
+        return tuple(make_json_serializable(v) for v in obj)
+    elif isinstance(obj, (pd.Timestamp, datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    else:
+        return obj
 
 def clear_model_states_folder():
     model_states_dir = "model_states"
@@ -284,9 +297,18 @@ def save_model_state(model_name):
         else:
             state_to_save[session_key] = value
 
+    # try:
+    #     with open(file_path, "w") as f:
+    #         json.dump(state_to_save, f, indent=4)
+    #     print(f"State for model '{model_name}' saved to {file_path}")
+    # except Exception as e:
+    #     st.error(f"Error saving state for model '{model_name}': {e}")
+
     try:
+        # Convert all non-serializable objects before saving
+        serializable_state = make_json_serializable(state_to_save)
         with open(file_path, "w") as f:
-            json.dump(state_to_save, f, indent=4)
+            json.dump(serializable_state, f, indent=4)
         print(f"State for model '{model_name}' saved to {file_path}")
     except Exception as e:
         st.error(f"Error saving state for model '{model_name}': {e}")
@@ -406,7 +428,7 @@ def add_new_model():
         # Save the new model's initial state
         save_model_state(new_model_name)
 
-        st.rerun()
+        st.session_state["should_rerun"] = True
     except Exception as e:
         st.error(f"Error creating new model: {str(e)}")
 
@@ -428,7 +450,7 @@ def switch_model(model_name):
             initialize_new_model_state(model_name)
             save_model_state(model_name)
 
-        st.rerun()
+        st.session_state["should_rerun"] = True
     except Exception as e:
         st.error(f"Error switching models: {str(e)}")
 # Add caching decorators for expensive operations
@@ -546,7 +568,7 @@ def recommend_features_callback():
                 key="recommended_features_editor"
             )
             st.success("Features have been recommended!")
-            st.rerun()
+            st.session_state["should_rerun"] = True
         else:
             st.warning("Please complete the merge operations first to get recommended features.")
     except Exception as e:
@@ -596,7 +618,7 @@ def on_model_select_callback():
     load_model_state(st.session_state.active_model)
 
     # 4. Rerun the Streamlit app to reflect the loaded/initialized state
-    st.rerun()
+    st.session_state["should_rerun"] = True
 
 # Streamlit Selectbox for model selection
 selected_model = st.sidebar.selectbox(
@@ -861,6 +883,19 @@ def filter_data_section():
             # Using adjusted ratios for column widths
             row2_cols = st.columns([3, 3, 3])
 
+
+            # # Check if the selected feature is a datetime column
+            # is_datetime = False
+            # if selected_feature and not df_for_features.empty:
+            #     try:
+            #         is_datetime = pd.api.types.is_datetime64_any_dtype(df_for_features[selected_feature])
+            #     except Exception:
+            #         is_datetime = False
+
+            # if is_datetime and filter_blocks[i].get("operation") != "Between":
+            #     filter_blocks[i]["operation"] = "Between"
+
+
             with row2_cols[0]:
                 # Select Filter Type
                 # Use feat_engg_backend to get available operations
@@ -876,60 +911,114 @@ def filter_data_section():
                 current_value = filter_block.get("value")
                 operation = filter_blocks[i]["operation"] # Get the updated operation
 
-                # Determine the default value based on the operation and current_value type
-                default_value = None # Initialize default_value
+                # Detect if the selected feature is a datetime column
+                is_datetime = False
+                if selected_feature and not df_for_features.empty:
+                    try:
+                        is_datetime = pd.api.types.is_datetime64_any_dtype(df_for_features[selected_feature])
+                    except Exception:
+                        is_datetime = False
 
-                if operation in ["Greater Than", "Less Than", "Equal To", "Not Equal To", "Greater Than or Equal To", "Less Than or Equal To"]:
-                    # Expected: single number
-                    default_value = current_value if isinstance(current_value, (int, float)) else 0.0
-                    value = st.number_input("Enter Value to Filter By", value=default_value, key=f"value_{i}")
+                # --- Datetime filtering ---
+                if is_datetime:
+                    # Default to min/max of the column if available
+                    col_min = df_for_features[selected_feature].min()
+                    col_max = df_for_features[selected_feature].max()
+                    
+                    # Operations that require a single date
+                    single_date_ops = [
+                        "Greater Than", "Less Than", "Equal To", "Not Equal To",
+                        "Greater Than or Equal To", "Less Than or Equal To"
+                    ]
+                    # Operations that should freeze the value input for datetime
+                    freeze_ops = ["Is In List", "Is Null", "Is Not Null", "Contains String"]
 
-                elif operation == "Is In List":
-                    # Expected: string (comma-separated) or list
-                    if isinstance(current_value, str):
-                        default_value = current_value
-                    elif isinstance(current_value, list):
-                         default_value = ','.join(map(str, current_value))
+                    if operation == "Between":
+                        # Use two separate date pickers for start and end
+                        default_start = current_value[0] if isinstance(current_value, (list, tuple)) and len(current_value) == 2 else col_min
+                        default_end = current_value[1] if isinstance(current_value, (list, tuple)) and len(current_value) == 2 else col_max
+
+                        col_start, col_end = st.columns(2)
+                        with col_start:
+                            start_date = st.date_input(
+                                "Start Date",
+                                value=default_start,
+                                min_value=col_min,
+                                max_value=col_max,
+                                key=f"start_date_{i}"
+                            )
+                        with col_end:
+                            end_date = st.date_input(
+                                "End Date",
+                                value=default_end,
+                                min_value=col_min,
+                                max_value=col_max,
+                                key=f"end_date_{i}"
+                            )
+
+                        # Ensure start_date <= end_date
+                        if pd.to_datetime(start_date) > pd.to_datetime(end_date):
+                            st.warning("Start date is after end date. Please select a valid range.")
+                        value = (pd.to_datetime(start_date), pd.to_datetime(end_date))
+                        filter_blocks[i]["value"] = value
+
+                    elif operation in single_date_ops:
+                        default_date = current_value if isinstance(current_value, (pd.Timestamp, datetime.date, datetime.datetime)) else col_min
+                        selected_date = st.date_input(
+                            "Select Date",
+                            value=default_date,
+                            min_value=col_min,
+                            max_value=col_max,
+                            key=f"single_date_{i}"
+                        )
+                        value = pd.to_datetime(selected_date)
+                        filter_blocks[i]["value"] = value
+
+                    elif operation in freeze_ops:
+                        st.text_input("Value", value="N/A", key=f"value_{i}", disabled=True)
+                        filter_blocks[i]["value"] = None
+
                     else:
-                        default_value = '' # Default for text input
-
-                    value = st.text_input("Enter values (comma-separated)", value=default_value, key=f"value_{i}")
-                    # Store as string for now, parse when applying filters
-                    # Parsing will happen in the "Apply All Filters" button logic
-
-                elif operation == "Between":
-                    # Expected: tuple or list of two numbers
-                    default_value1 = 0.0
-                    default_value2 = 0.0
-                    if isinstance(current_value, (tuple, list)) and len(current_value) == 2:
-                        if isinstance(current_value[0], (int, float)):
-                            default_value1 = current_value[0]
-                        if isinstance(current_value[1], (int, float)):
-                            default_value2 = current_value[1]
-
-                    col_val1, col_val2 = st.columns(2) # Nested columns for the two values in "Between"
-                    with col_val1:
-                        value1 = st.number_input("Start Value", value=default_value1, key=f"value_{i}_start")
-                    with col_val2:
-                        value2 = st.number_input("End Value", value=default_value2, key=f"value_{i}_end")
-                    value = (value1, value2) # Store as a tuple
-
-                elif operation in ["Is Null", "Is Not Null"]:
-                    # No value needed
-                    st.text_input("Value", value="N/A", key=f"value_{i}", disabled=True)
-                    value = None # Store value as None
-
-                elif operation == "Contains String":
-                    default_value = current_value if isinstance(current_value, str) else ''
-                    value = st.text_input("Enter substring", value=default_value, key=f"value_{i}")
-
+                        st.warning("Selected operation is not supported for datetime columns.")
+                        filter_blocks[i]["value"] = None
                 else:
-                    # Default input for any other operation (fallback)
-                    default_value = str(current_value) if current_value is not None else ''
-                    value = st.text_input("Select Value", value=default_value, key=f"value_{i}")
+                    # ...existing logic for other types...
+                    if operation in ["Greater Than", "Less Than", "Equal To", "Not Equal To", "Greater Than or Equal To", "Less Than or Equal To"]:
+                        default_value = current_value if isinstance(current_value, (int, float)) else 0.0
+                        value = st.number_input("Enter Value to Filter By", value=default_value, key=f"value_{i}")
+                    elif operation == "Is In List":
+                        if isinstance(current_value, str):
+                            default_value = current_value
+                        elif isinstance(current_value, list):
+                            default_value = ','.join(map(str, current_value))
+                        else:
+                            default_value = ''
+                        value = st.text_input("Enter values (comma-separated)", value=default_value, key=f"value_{i}")
+                    elif operation == "Between":
+                        default_value1 = 0.0
+                        default_value2 = 0.0
+                        if isinstance(current_value, (tuple, list)) and len(current_value) == 2:
+                            if isinstance(current_value[0], (int, float)):
+                                default_value1 = current_value[0]
+                            if isinstance(current_value[1], (int, float)):
+                                default_value2 = current_value[1]
+                        col_val1, col_val2 = st.columns(2)
+                        with col_val1:
+                            value1 = st.number_input("Start Value", value=default_value1, key=f"value_{i}_start")
+                        with col_val2:
+                            value2 = st.number_input("End Value", value=default_value2, key=f"value_{i}_end")
+                        value = (value1, value2)
+                    elif operation in ["Is Null", "Is Not Null"]:
+                        st.text_input("Value", value="N/A", key=f"value_{i}", disabled=True)
+                        value = None
+                    elif operation == "Contains String":
+                        default_value = current_value if isinstance(current_value, str) else ''
+                        value = st.text_input("Enter substring", value=default_value, key=f"value_{i}")
+                    else:
+                        default_value = str(current_value) if current_value is not None else ''
+                        value = st.text_input("Select Value", value=default_value, key=f"value_{i}")
 
-                # Update the filter block's value immediately
-                filter_blocks[i]["value"] = value
+                    filter_blocks[i]["value"] = value
 
             with row2_cols[2]:
                 # Output Table Name
@@ -1070,7 +1159,19 @@ def filter_data_section():
                     else:
                         st.session_state[f"{active_model}_current_filtered_dataset"] = combined_dataset.copy() # Fallback
 
-                    st.success("✅ All filters processed successfully!")
+                    st.success("✅ All filters processed successfully!")    
+
+                    # Preview the last filtered dataset if available
+                    if model_state["intermediate_filtered_datasets"]:
+                        last_filtered_table_name = list(model_state["intermediate_filtered_datasets"].keys())[-1]
+                        last_filtered_df = model_state["intermediate_filtered_datasets"][last_filtered_table_name]
+                        if isinstance(last_filtered_df, pd.DataFrame) and not last_filtered_df.empty:
+                            with st.expander(f"📂 Preview of Filtered Table: {last_filtered_table_name}", expanded=False):
+                                st.markdown(f"#### Preview of Filtered Table: {last_filtered_table_name}")
+                                st.write(f"Shape: {last_filtered_df.shape}")
+                                st.dataframe(last_filtered_df, use_container_width=True)
+                    else:
+                        st.info("The last filtered dataset is empty. Please check your filter configuration.")
 
                 except Exception as e:
                     st.error(f"Error applying filters: {str(e)}")
@@ -2495,3 +2596,14 @@ if st.button("📊 Show Selected Attributes"):
 #             st.error(f"Error adding target variable: {str(e)}")
 # else:
 #     st.info("Please select and show your features first to enable target variable selection.")
+
+
+
+
+
+
+
+
+
+
+# ####################################################################################################
