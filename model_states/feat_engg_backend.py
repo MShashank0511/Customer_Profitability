@@ -3,6 +3,7 @@ import numpy as np
 from typing import List, Dict, Any, Optional , Tuple # Importing List, Dict, Any, Optional, Tuple for type hints
 import streamlit as st # Streamlit might be needed for st.warning/error in backend functions
 import random # Required for random.sample in select_mandatory_features
+import datetime # Added import for datetime module
 from gen_ai_multi import gen_ai_agent
 
 
@@ -96,7 +97,43 @@ def _get_filter_mask(df: pd.DataFrame, filter_block: Dict[str, Any]) -> pd.Serie
 
     # Handle different operations
     try: # Wrap operation logic in a try block to catch type/value errors more specifically
-        if operation == "Greater Than":
+        # --- DATETIME OPERATIONS ---
+        if pd.api.types.is_datetime64_any_dtype(col_dtype):
+            # Convert value to pd.Timestamp if not None
+            if value is not None:
+                if operation == "Between":
+                    if not (isinstance(value, (tuple, list)) and len(value) == 2):
+                        raise TypeError(f"Value for 'Between' on datetime feature '{feature_name}' must be a tuple/list of two values.")
+                    val1 = pd.to_datetime(value[0])
+                    val2 = pd.to_datetime(value[1])
+                    val1, val2 = sorted([val1, val2])
+                    # If both are date (not datetime), make val2 the end of the day
+                    if isinstance(val2, (pd.Timestamp, datetime.datetime)) and val2.time() == datetime.time(0, 0):
+                        val2 = val2 + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+                    val1, val2 = sorted([val1, val2])
+                    mask = col.between(val1, val2, inclusive='both')
+                elif operation == "Greater Than":
+                    mask = col > pd.to_datetime(value)
+                elif operation == "Less Than":
+                    mask = col < pd.to_datetime(value)
+                elif operation == "Equal To":
+                    mask = col == pd.to_datetime(value)
+                elif operation == "Not Equal To":
+                    mask = col != pd.to_datetime(value)
+                elif operation == "Greater Than or Equal To":
+                    mask = col >= pd.to_datetime(value)
+                elif operation == "Less Than or Equal To":
+                    mask = col <= pd.to_datetime(value)
+                elif operation in ["Is Null"]:
+                    mask = col.isnull()
+                elif operation in ["Is Not Null"]:
+                    mask = col.notnull()
+                else:
+                    raise ValueError(f"Unsupported filter operation '{operation}' for datetime feature '{feature_name}'.")
+            else:
+                # If value is None, return all False (no rows match)
+                mask = pd.Series([False] * len(df), index=df.index)
+        elif operation == "Greater Than":
             if not pd.api.types.is_numeric_dtype(col_dtype):
                 raise TypeError(f"Feature '{feature_name}' is not numeric for 'Greater Than' operation.")
             if not isinstance(value, (int, float)):
@@ -148,13 +185,23 @@ def _get_filter_mask(df: pd.DataFrame, filter_block: Dict[str, Any]) -> pd.Serie
                   raise TypeError(f"Invalid value list for 'Is In List' on '{feature_name}'.")
              mask = col.isin(value_list)
         elif operation == "Between":
-             if not pd.api.types.is_numeric_dtype(col_dtype):
-                 raise TypeError(f"Feature '{feature_name}' is not numeric for 'Between' operation.")
-             if not isinstance(value, (tuple, list)) or len(value) != 2 or not all(isinstance(v, (int, float)) for v in value):
-                  raise TypeError(f"Value for 'Between' on '{feature_name}' must be a tuple or list of two numeric values.")
-             # Ensure value[0] is less than or equal to value[1] for expected behavior
-             val1, val2 = sorted(value)
-             mask = col.between(val1, val2, inclusive='both') # inclusive='both' is default but good to be explicit
+            # Support both numeric and datetime columns
+            if pd.api.types.is_numeric_dtype(col_dtype):
+                if not isinstance(value, (tuple, list)) or len(value) != 2 or not all(isinstance(v, (int, float)) for v in value):
+                    raise TypeError(f"Value for 'Between' on '{feature_name}' must be a tuple or list of two numeric values.")
+                val1, val2 = sorted(value)
+                mask = col.between(val1, val2, inclusive='both')
+            elif pd.api.types.is_datetime64_any_dtype(col_dtype):
+                # Accept values as datetime, string, or date
+                if not isinstance(value, (tuple, list)) or len(value) != 2:
+                    raise TypeError(f"Value for 'Between' on datetime feature '{feature_name}' must be a tuple or list of two values.")
+                # Convert to pd.Timestamp if needed
+                val1 = pd.to_datetime(value[0])
+                val2 = pd.to_datetime(value[1])
+                val1, val2 = sorted([val1, val2])
+                mask = col.between(val1, val2, inclusive='both')
+            else:
+                raise TypeError(f"Feature '{feature_name}' is not numeric or datetime for 'Between' operation.")
         elif operation == "Is Null":
              mask = col.isnull()
         elif operation == "Is Not Null":
