@@ -67,7 +67,7 @@ def clear_model_states_folder():
 # Call the function to clear the folder
 clear_model_states_folder()
 
-on_us_data_path = st.session_state.get("on_us_data_path")
+loan_level_data_path = st.session_state.get("loan_level_data_path")
  
 bureau_data_path = st.session_state.get("bureau_data_path")
 
@@ -75,7 +75,7 @@ installments_data_path = st.session_state.get("installments_data_path")
 
 print("ENTERED FEATURE ENGINEERING PAGE")
 
-print(on_us_data_path,bureau_data_path,installments_data_path)
+print(loan_level_data_path,bureau_data_path,installments_data_path)
 print(f"Attempting to load Bureau Data from: {bureau_data_path}")
 try:
     bureau_df = pd.read_parquet(bureau_data_path)
@@ -83,12 +83,12 @@ try:
 except Exception as e:
     print(f"Error loading Bureau Data from '{bureau_data_path}': {e}")
 
-print(f"Attempting to load On-Us Data from: {on_us_data_path}")
+print(f"Attempting to load Loan-Level Data from: {loan_level_data_path}")
 try:
-    on_us_df = pd.read_parquet(on_us_data_path)
-    print(f"Successfully loaded On-Us Data. Shape: {on_us_df.shape}")
+    loan_level_df = pd.read_parquet(loan_level_data_path)
+    print(f"Successfully loaded Loan-Level Data. Shape: {loan_level_df.shape}")
 except Exception as e:
-    print(f"Error loading On-Us Data from '{on_us_data_path}': {e}")
+    print(f"Error loading Loan-Level Data from '{loan_level_data_path}': {e}")
 
 print(f"Attempting to load Installments Data from: {installments_data_path}")
 try:
@@ -106,7 +106,7 @@ except Exception as e:
 #     Returns:
 #         pd.DataFrame: The loaded DataFrame, or None if an error occurs.
 #     """
-#     data_path = st.session_state.get("on_us_data_path")  # Access from session_state
+#     data_path = st.session_state.get("loan_level_data_path")  # Access from session_state
 
 #     if data_path and os.path.exists(data_path):
 #         print(st.session_state)
@@ -138,7 +138,7 @@ MODEL_NAMES = ["Forecast Model", "Charge-Off Model", "Prepayment Model", "Churn 
 
 def initialize_new_model_state(model_name):
     """Initialize a fresh state for a new model."""
-    # Ensure bureau_df, on_us_df, and installments_df are defined or passed.
+    # Ensure bureau_df, loan_level_df, and installments_df are defined or passed.
     # For demonstration, let's assume they are globally available or passed as arguments.
     # In a real Streamlit app, these would typically come from user uploads or a data loading utility.
     try:
@@ -147,13 +147,13 @@ def initialize_new_model_state(model_name):
         # If not, provide empty dataframes to avoid errors.
         initial_loan_data = pd.read_csv("loan_data.csv") 
         initial_bureau_data = bureau_df.copy()
-        initial_on_us_data = on_us_df.copy()
+        initial_loan_level_data = loan_level_df.copy()
         initial_installments_data = installments_df.copy()
     except AttributeError:
         # Handle cases where session_state might not have these attributes yet
         initial_loan_data = pd.DataFrame()
         initial_bureau_data = pd.DataFrame()
-        initial_on_us_data = pd.DataFrame()
+        initial_loan_level_data = pd.DataFrame()
         initial_installments_data = pd.DataFrame()
 
 
@@ -161,8 +161,8 @@ def initialize_new_model_state(model_name):
     raw_datasets = {
         "Loan Data": initial_loan_data.copy(),
         "Bureau Data": initial_bureau_data.copy(),
-        "On-Us Data": initial_on_us_data.copy(),
-        "Applications Data": initial_installments_data.copy(),
+        "Loan-Level Data": initial_loan_level_data.copy(),
+        "Payment Data": initial_installments_data.copy(),
     }
     filtered_datasets = {}
 
@@ -172,8 +172,8 @@ def initialize_new_model_state(model_name):
         "filtered_datasets": filtered_datasets,
         "loan_data": raw_datasets["Loan Data"], # Point to the raw_datasets version
         "bureau_data": raw_datasets["Bureau Data"], # Point to the raw_datasets version
-        "onus_data": raw_datasets["On-Us Data"], # Point to the raw_datasets version
-        "installments_data": raw_datasets["Applications Data"], # Point to the raw_datasets version
+        "loan_level_data": raw_datasets["Loan-Level Data"], # Point to the raw_datasets version
+        "installments_data": raw_datasets["Payment Data"], # Point to the raw_datasets version
         "show_popup1": False,
         "transform_blocks": [],
         "multi_transform_blocks": [],
@@ -187,7 +187,7 @@ def initialize_new_model_state(model_name):
         "filter_text": "",
         "merge_blocks": [{
             "left_table": "Bureau Data",
-            "right_table": "On-Us Data",
+            "right_table": "Loan-Level Data",
             "how": "inner",
             "on": [],
             "left_on": [],
@@ -307,7 +307,7 @@ def load_model_state(model_name):
     current_raw_datasets = {
         "Loan Data": st.session_state.get("uploaded_loan_data", pd.DataFrame()),
         "Bureau Data": st.session_state.get("uploaded_bureau_data", pd.DataFrame()),
-        "On-Us Data": st.session_state.get("uploaded_on_us_data", pd.DataFrame()),
+        "Loan-Level Data": st.session_state.get("uploaded_loan_level_data", pd.DataFrame()),
         "Installments Data": st.session_state.get("uploaded_installments_data", pd.DataFrame()),
     }
 
@@ -330,8 +330,8 @@ def load_model_state(model_name):
                             deserialized_main_state[sub_key] = current_raw_datasets
                         elif isinstance(sub_value, str) and (
                             "df" in sub_key.lower() or "dataset" in sub_key.lower() or
-                            sub_key in ["loan_data", "bureau_data", "onus_data", "installments_data",
-                                        "filtered_data_loan", "filtered_data_bureau", "filtered_data_onus",
+                            sub_key in ["loan_data", "bureau_data", "loan_level_data", "installments_data",
+                                        "filtered_data_loan", "filtered_data_bureau", "filtered_data_loan_level",
                                         "filtered_data_installments", "merged_dataframe", "selected_features_df",
                                         "final_transformed_features", "recommended_features", "final_dataset",
                                         "transformation_output_df"]
@@ -359,7 +359,7 @@ def load_model_state(model_name):
                     if "raw_datasets" in st.session_state[session_key]:
                         st.session_state[session_key]["loan_data"] = st.session_state[session_key]["raw_datasets"].get("Loan Data", pd.DataFrame())
                         st.session_state[session_key]["bureau_data"] = st.session_state[session_key]["raw_datasets"].get("Bureau Data", pd.DataFrame())
-                        st.session_state[session_key]["onus_data"] = st.session_state[session_key]["raw_datasets"].get("On-Us Data", pd.DataFrame())
+                        st.session_state[session_key]["loan_level_data"] = st.session_state[session_key]["raw_datasets"].get("Loan-Level Data", pd.DataFrame())
                         st.session_state[session_key]["installments_data"] = st.session_state[session_key]["raw_datasets"].get("Installments Data", pd.DataFrame())
 
                 elif isinstance(value, str) and (
@@ -662,21 +662,21 @@ col1, col2, col3 = st.columns(3)
 
 # Ensure the datasets are stored in session state
 bureau_name = "Bureau Data"
-onus_name = "On-Us Data"
-installments_name = "Applications Data"
+loan_level_name = "Loan-Level Data"
+installments_name = "Payment Data"
 
 # Store the names and dataframes in a dictionary for easy access
 dataset_mapping = {
     bureau_name: model_state["bureau_data"],
-    onus_name: model_state["onus_data"],
+    loan_level_name: model_state["loan_level_data"],
     installments_name: model_state["installments_data"],
 }
 
 # Initialize visibility state for each dataset
 if "show_bureau_data" not in st.session_state:
     st.session_state.show_bureau_data = False
-if "show_onus_data" not in st.session_state:
-    st.session_state.show_onus_data = False
+if "show_loan_level_data" not in st.session_state:
+    st.session_state.show_loan_level_data = False
 if "show_installments_data" not in st.session_state:
     st.session_state.show_installments_data = False
 
@@ -686,8 +686,8 @@ with col1:
         st.session_state.show_bureau_data = not st.session_state.show_bureau_data
 
 with col2:
-    if st.button(onus_name, key="onus_data_button"):
-        st.session_state.show_onus_data = not st.session_state.show_onus_data
+    if st.button(loan_level_name, key="loan_level_data_button"):
+        st.session_state.show_loan_level_data = not st.session_state.show_loan_level_data
 
 with col3:
     if st.button(installments_name, key="installments_data_button"):
@@ -702,13 +702,13 @@ if st.session_state.show_bureau_data:
     else:
         st.warning(f"{bureau_name} is empty or not loaded.")
 
-if st.session_state.show_onus_data:
-    st.subheader(f"{onus_name} Preview")
-    onus_data = dataset_mapping[onus_name]
-    if onus_data is not None and not onus_data.empty:
-        st.dataframe(onus_data.head(), use_container_width=True)
+if st.session_state.show_loan_level_data:
+    st.subheader(f"{loan_level_name} Preview")
+    loan_level_data = dataset_mapping[loan_level_name]
+    if loan_level_data is not None and not loan_level_data.empty:
+        st.dataframe(loan_level_data.head(), use_container_width=True)
     else:
-        st.warning(f"{onus_name} is empty or not loaded.")
+        st.warning(f"{loan_level_name} is empty or not loaded.")
 
 if st.session_state.show_installments_data:
     st.subheader(f"{installments_name} Preview")
@@ -721,7 +721,7 @@ if st.session_state.show_installments_data:
 # Store the names and dataframes in a dictionary for easy access
 dataset_mapping = {
     bureau_name: model_state["bureau_data"],
-    onus_name: model_state["onus_data"],
+    loan_level_name: model_state["loan_level_data"],
     installments_name: model_state["installments_data"],
 }
 
@@ -739,9 +739,9 @@ st.markdown("---")
 def filter_data_section():
     """
     Displays the UI and handles the logic for filtering data. This function assumes
-    that the dataframes and session state variables like 'bureau_data', 'onus_data',
+    that the dataframes and session state variables like 'bureau_data', 'loan_level_data',
     'installments_data' and 'filter_blocks' are already initialized. It also assumes
-    the dataset names are stored as: bureau_name, onus_name, installments_name.
+    the dataset names are stored as: bureau_name, loan_level_name, installments_name.
     Restructured to arrange inputs in two rows per filter block.
     """
     active_model = st.session_state.active_model
@@ -1115,7 +1115,7 @@ if f"{active_model}_merge_blocks" not in st.session_state:
     # Initialize with one default merge block
     st.session_state[f"{active_model}_merge_blocks"] = [{
         "left_table": "Bureau Data (Filtered)", # Default to the filtered data
-        "right_table": "On-Us Data (Filtered)", # Default to the filtered data
+        "right_table": "Loan-Level Data (Filtered)", # Default to the filtered data
         "how": "inner",
         "on": [],
         "left_on": [],
@@ -1143,7 +1143,7 @@ if f"{active_model}_merge_blocks" not in st.session_state:
     # Initialize with one default merge block
     st.session_state[f"{active_model}_merge_blocks"] = [{
         "left_table": "Bureau Data (Filtered)", # Default to the filtered data
-        "right_table": "On-Us Data (Filtered)", # Default to the filtered data
+        "right_table": "Loan-Level Data (Filtered)", # Default to the filtered data
         "how": "inner",
         "on": [],
         "left_on": [],
@@ -1674,44 +1674,47 @@ with col2:
             except Exception as e:
                 st.error(f"Error during AI feature recommendation process: {str(e)}")
 
-# Display recommended features if they exist
+# Display recommended features if available
 if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
    hasattr(st.session_state, 'feature_info') and \
    isinstance(st.session_state.feature_info, pd.DataFrame) and \
    not st.session_state.feature_info.empty:
 
-    st.markdown("### AI Recommended Engineered Features")
+    with st.expander("💡 AI Recommended Engineered Features", expanded=False):
 
-    display_df = st.session_state.feature_info.copy()
-    expected_cols_display = ["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type", "Derivation", "Justification"]
-    for col in expected_cols_display:
-        if col not in display_df.columns:
-            display_df[col] = "N/A"
+        display_df = st.session_state.feature_info.copy()
+        expected_cols_display = ["Feature", "Description", "Primary Event Impact", "Data Type", "Derivation", "Justification"]
+        for col in expected_cols_display:
+            if col not in display_df.columns:
+                display_df[col] = "N/A"
 
-    column_config = {
-        "Feature": st.column_config.TextColumn("Feature 💡", width="medium", disabled=True, help=display_df["Feature"].to_list()),
-        "Description": st.column_config.TextColumn("Full Description 📝", width="large", disabled=True, help=display_df["Description"].to_list()),
-        "Primary Event Impact": st.column_config.TextColumn("Primary Impact 🎯", width="medium", disabled=True, help=display_df["Primary Event Impact"].to_list()),
-       
-        "Min": st.column_config.TextColumn("Min", width="small", disabled=True),
-        "Max": st.column_config.TextColumn("Max", width="small", disabled=True),
-        "Mean": st.column_config.TextColumn("Mean", width="small", disabled=True),
-        "Data Type": st.column_config.TextColumn("Data Type", width="small", disabled=True),
-    }
+        column_config = {
+            "Feature": st.column_config.TextColumn("Feature 💡", width="medium", disabled=True),
+            "Description": st.column_config.TextColumn("Full Description 📝", width="large", disabled=True),
+            "Primary Event Impact": st.column_config.TextColumn("Primary Impact 🎯", width="medium", disabled=True),
+            "Data Type": st.column_config.TextColumn("Data Type", width="small", disabled=True),
+        }
 
-    st.data_editor(
-        display_df[["Feature", "Description", "Primary Event Impact", "Min", "Max", "Mean", "Data Type"]],
-        column_config=column_config,
-        hide_index=True,
-        use_container_width=True,
-        key="recommended_features_ai_editor"
-    )
+        st.data_editor(
+            display_df[["Feature", "Description", "Primary Event Impact", "Data Type"]],
+            column_config=column_config,
+            hide_index=True,
+            use_container_width=True,
+            key="recommended_features_ai_editor"
+        )
 
-    with st.expander("See Full Derivations and Justifications"):
-        st.dataframe(display_df[["Feature", "Derivation", "Justification", "Primary Event Impact"]], use_container_width=True)
-
+        st.markdown("---")
+        st.markdown("#### 🧪 Full Derivations and Justifications")
+        st.dataframe(
+            display_df[["Feature", "Derivation", "Justification"]],
+            use_container_width=True
+        )
+# "Min": st.column_config.TextColumn("Min", width="small", disabled=True),
+# "Max": st.column_config.TextColumn("Max", width="small", disabled=True),
+# "Mean": st.column_config.TextColumn("Mean", width="small", disabled=True),
 # Apply recommended features to dataset if not already accepted
-# Apply recommended features to dataset if not already accepted
+
+
 if st.session_state.get(f"{active_model}_operations_complete", {}).get("recommend", False) and \
    hasattr(st.session_state, 'recommended_features') and \
    isinstance(st.session_state.recommended_features, pd.DataFrame) and \

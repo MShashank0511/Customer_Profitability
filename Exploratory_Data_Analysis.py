@@ -478,7 +478,7 @@ def display_historical_insights(data, dataset_name, feature_mapping):
 
         chart_type = st.selectbox(
             f"Choose Feature Type",
-            ["Categorical", "Continuous"],
+            [ "Continuous","Categorical"],
             key=chart_type_widget_key
         )
 
@@ -591,44 +591,73 @@ feature_mapping = load_feature_metadata()
 st.sidebar.header("Upload Files")
 
 # Use unique keys for each file uploader
-on_us_file = st.sidebar.file_uploader("Upload On-Us File", type=["csv", "xlsx"], key="on_us_uploader_unique")
-bureau_file = st.sidebar.file_uploader("Upload Bureau File", type=["csv", "xlsx"], key="bureau_uploader_unique")
-installments_file = st.sidebar.file_uploader("Upload Applications Data File", type=["csv", "xlsx"], key="installments_uploader_unique")
+# --- Centered and Bold Labels ---
+# On-Us File
+st.sidebar.markdown(
+    """
+    <div style='text-align: center; font-weight: bold; margin-bottom: -10px;'>
+        Upload <span style='color: #1E90FF;'>Loan-Level-Data</span> File
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+on_us_file = st.sidebar.file_uploader("", type=["csv", "xlsx"], key="on_us_uploader_unique")
+
+st.sidebar.markdown(
+    """
+    <div style='text-align: center; font-weight: bold; margin-bottom: -10px;'>
+        Upload <span style='color: #1E90FF;'>Bureau</span> File
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+bureau_file = st.sidebar.file_uploader("", type=["csv", "xlsx"], key="bureau_uploader_unique")
+
+st.sidebar.markdown(
+    """
+    <div style='text-align: center; font-weight: bold; margin-bottom: -10px;'>
+        Upload <span style='color: #1E90FF;'>Payment-Data</span> File
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+installments_file = st.sidebar.file_uploader("", type=["csv", "xlsx"], key="installments_uploader_unique")
+
 
 if on_us_file is not None:
-    on_us_data = load_data(on_us_file, feature_mapping)
-    if on_us_data is not None:
-        if 'Timestamp' in on_us_data.columns and not on_us_data['Timestamp'].isnull().all():
-            display_insights(on_us_data, "On-Us", feature_mapping)
+    loan_level_data = load_data(on_us_file, feature_mapping)
+    if loan_level_data is not None:
+        if 'Timestamp' in loan_level_data.columns and not loan_level_data['Timestamp'].isnull().all():
+            display_insights(loan_level_data, "Loan-Level", feature_mapping)
             save_dir = DATA_REGISTRY_DIR
-            data_path = os.path.join(save_dir, "on_us_data.parquet")
+            data_path = os.path.join(save_dir, "loan_level_data.parquet")
             try:
-                on_us_data.to_parquet(data_path, index=False)
-                st.session_state["on_us_data"] = on_us_data  # Persist data in session state
-                st.session_state["on_us_data_path"] = data_path
+                loan_level_data.to_parquet(data_path, index=False)
+                st.session_state["loan_level_data"] = loan_level_data  # Persist data in session state
+                st.session_state["loan_level_data_path"] = data_path
             except Exception as e:
-                st.error(f"Failed to save On-Us data as parquet: {e}")
+                st.error(f"Failed to save Loan-Level-Data data as parquet: {e}")
         else:
-            st.error("On-Us data loaded but 'Timestamp' column is missing, invalid, or empty. Cannot proceed with insights.")
-elif "on_us_data" in st.session_state:
+            st.error("Loan-Level-Data data loaded but 'Timestamp' column is missing, invalid, or empty. Cannot proceed with insights.")
+elif "loan_level_data" in st.session_state:
     # Load persisted data from session state
-    on_us_data = st.session_state["on_us_data"]
-    display_insights(on_us_data, "On-Us", feature_mapping)
+    loan_level_data = st.session_state["loan_level_data"]
+    display_insights(loan_level_data, "Loan-Level", feature_mapping)
 
 # else :
 #     # Load On-Us_data.csv by default
-#     on_us_data = pd.read_csv(os.path.join(DEFAULT_DATA_DIR, "on_us_data.csv"))
-#     default_file_path = os.path.join(DEFAULT_DATA_DIR, "on_us_data.csv")
+#     loan_level_data = pd.read_csv(os.path.join(DEFAULT_DATA_DIR, "loan_level_data.csv"))
+#     default_file_path = os.path.join(DEFAULT_DATA_DIR, "loan_level_data.csv")
 #     if os.path.exists(default_file_path):
 #         st.info(f"Loading default On-Us data from '{default_file_path}'")
-#         on_us_data = load_data(on_us_data, feature_mapping)
-#         if on_us_data is not None:
-#             if 'Timestamp' in on_us_data.columns and not on_us_data['Timestamp'].isnull().all():
-#                 display_insights(on_us_data, "On-Us (Default)", feature_mapping)
+#         loan_level_data = load_data(loan_level_data, feature_mapping)
+#         if loan_level_data is not None:
+#             if 'Timestamp' in loan_level_data.columns and not loan_level_data['Timestamp'].isnull().all():
+#                 display_insights(loan_level_data, "On-Us (Default)", feature_mapping)
 #                 save_dir = DATA_REGISTRY_DIR
-#                 data_path = os.path.join(save_dir, "on_us_data.parquet")
+#                 data_path = os.path.join(save_dir, "loan_level_data.parquet")
 #                 try:
-#                     on_us_data.to_parquet(data_path, index=False)
+#                     loan_level_data.to_parquet(data_path, index=False)
 #                     st.session_state["on_us_data_path"] = data_path
 #                 except Exception as e:
 #                     st.error(f"Failed to save On-Us data as parquet: {e}")
@@ -683,7 +712,7 @@ if installments_file is not None:
     installments_data = load_data(installments_file, feature_mapping)
     if installments_data is not None:
         if 'Timestamp' in installments_data.columns and not installments_data['Timestamp'].isnull().all():
-            display_insights(installments_data, "Applications Data", feature_mapping)
+            display_insights(installments_data, "Payment", feature_mapping)
             save_dir = DATA_REGISTRY_DIR
             data_path = os.path.join(save_dir, "installments_data.parquet")
             try:
@@ -697,8 +726,8 @@ if installments_file is not None:
 elif "installments_data" in st.session_state:
     # Load persisted data from session state
     installments_data = st.session_state["installments_data"]
-    display_insights(installments_data, "Applications Data", feature_mapping)
-    
+    display_insights(installments_data, "Payment", feature_mapping)
+  
 # else:
 #     # Load Applications_data.csv by default
 #     installments_data = pd.read_csv(os.path.join(DEFAULT_DATA_DIR, "Applications_data.csv"))

@@ -70,7 +70,28 @@ def load_default_data():
     # if any_default_loaded:
     #     st.info("One or more default datasets were loaded into session state.")
 
+def preprocess_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Preprocesses the dataset to handle inf and extreme values for XGBoost.
+    Args:
+        df (pd.DataFrame): The input dataset.
+    Returns:
+        pd.DataFrame: The preprocessed dataset.
+    """
+    # Replace inf values with NaN
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
 
+    # Fill NaN values with a default value (e.g., 0 or the column mean)
+    for col in df.columns:
+        if df[col].dtype in [np.float64, np.float32, np.int64, np.int32]:
+            df[col].fillna(df[col].mean(), inplace=True)  # Replace NaN with column mean
+        else:
+            df[col].fillna("Unknown", inplace=True)  # Replace NaN for categorical columns
+
+    # Clip extreme values to a reasonable range
+    df = df.clip(lower=-1e9, upper=1e9)
+
+    return df
 # --- Page Title ---
 st.title("🔧 Model Development")
 
@@ -327,6 +348,7 @@ with st.expander("📂 View All Features and Their Data Types", expanded=False):
     })
     st.dataframe(features_df, use_container_width=True)
 
+df_full[feature_columns] = preprocess_dataset(df_full[feature_columns])  # Preprocess the dataset to handle inf and extreme values
 # Define X and y for model training
 X = df_full[feature_columns]  # Include only selected features
 y = df_full[target_column]

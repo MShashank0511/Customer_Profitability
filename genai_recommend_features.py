@@ -101,12 +101,22 @@ def get_recommended_features_gemini(dataset_description: str):
         "- Description: [Brief description of the feature]\n"
         "- List of Raw Features Used: [List of raw features used to create this engineered feature]\n"
         "- Derivation: [Explanation of how to compute the feature]\n"
-        "- Code Snippet: [Python code snippet to compute the feature], give only the pandas operation code without defining extra functions ,my pandas df is df - just 1 line per feature put code inside [[[code]]] ,everything except code to be removed (justification,primary impact, etc..)\n"
+        "- Code Snippet: [Generate only the pandas code to compute each engineered feature using the DataFrame `df`\n"
+
+        "Each feature must be a single-line expression in the following format:\n"
+        "(df['FEATURE_NAME'] = ...)\n"
+
+        "Do not define any functions. Do not explain or describe the features. Only return the code for each feature.\n"
+
+        "Wrap each code snippet in triple square brackets like this:\n"
+        "[[[(df['FEATURE_NAME'] = ... )]]]\n"
+
+        "Exclude all other fields such as derivation, justification, impact, or description.\n"
         "- Justification: [Why this feature is valuable]\n"
         "- Primary Event Impact: [Charge-Off / Prepayment / Both]\n\n"
         "Begin the list directly. Do not include any preamble before the first feature. Ensure each feature block is separated by a double newline if providing multiple features."
     )
-
+        
     for model_name, config in GEMINI_MODELS.items():
         genai_model = genai.GenerativeModel(config['model'])
         retries = 0
@@ -338,6 +348,9 @@ def apply_recommended_features(current_dataset: pd.DataFrame, recommended_featur
             # try:
             # Prepare execution context with a copy of the current dataset, numpy and pandas
             execution_context = {'df': updated_dataset.copy(), 'np': np, 'pd': pd}
+
+            if '=' not in str(sanitized_code):
+                sanitized_code = f"df['{feature_name}'] = " + str(sanitized_code)
 
             # Execute the sanitized code snippet
             exec(str(sanitized_code), {}, execution_context)
