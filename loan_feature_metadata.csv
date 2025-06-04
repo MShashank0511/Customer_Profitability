@@ -39,3 +39,6 @@ Origination_Year,Loan Origination Year,Year in which the loan was originated.
 COF_EVENT_LABEL,Charge Off Event,Indicates whether a loan has been charged off meaning the lender has written it off.
 PREPAYMENT_EVENT_LABEL,Prepayment Event,Flags if a borrower paid off the loan before the scheduled end date.
 Loan_Status,Loan Approval,Final decision or state of the loan.
+Loan_Status,Loan Outcome,Final decision or state of the loan.
+Profitability_GBP,Profitability,Profit or loss from the loan.
+Application_ID,Application ID,Unique identifier for the loan application.
