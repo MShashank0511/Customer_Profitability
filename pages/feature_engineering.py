@@ -2415,7 +2415,7 @@ if is_mvp:
         "PREPAYMENT_EVENT_LABEL",
         "Loan_Status",
         "Profitability_GBP",
-        "Timestamp"
+        "Timestamp_x"
         # Add more as needed
     ]
     merged = st.session_state.get("mvp_merged_dataset", pd.DataFrame())
@@ -2604,12 +2604,51 @@ else:
 
 if st.button("📊 Show Selected Attributes"):
     if is_mvp:
+        MVP_MANDATORY_FEATURES = [
+            "TERM_OF_LOAN",
+            "DEROG_TRDLN_TOTAL",
+            "INQUIRY_CNT_TOTAL",
+            "CREDIT_SCORE_AVG_CALC",
+            "CASH_DOWN_CONTRACT",
+            "CREDIT_CARD_CREDIT_LIMIT_TOTAL",
+            "BANK_CARD_CREDIT_LIMIT_TOTAL",
+            "CREDIT_CARD_CUR_BAL_OPEN_TOTAL",
+            "INSTALLMENT_CUR_BAL_TOTAL",
+            "PAYMENT_AMOUNT",
+            "AUTO_PTI_TOTAL",
+            "OPB",
+            "INQUIRY_RECENT_CNT_TOTAL",
+            "DEROG_CUR_BAL_TOTAL",
+            "DEROG_MO_PMT_TOTAL",
+            "PAYMENT_MADE_CNT_TOTAL",
+            "DELINQ_CNT_30_DAY_TOTAL",
+            "COF_EVENT_LABEL",
+            "PREPAYMENT_EVENT_LABEL",
+            "Loan_Status",
+            "Profitability_GBP",
+            "Timestamp_x"
+        ]
+
+
         merged = st.session_state.get("mvp_merged_dataset", pd.DataFrame())
         if not merged.empty:
-            st.subheader("Dataset (MVP Mode)")
-            st.dataframe(merged, use_container_width=True)
-            # Assign merged to final_dataset for consistent parquet logic
-            model_state["final_dataset"] = merged.copy()
+            # Only show mandatory features
+            present_mandatory_features = [f for f in MVP_MANDATORY_FEATURES if f in merged.columns]
+            filtered_merged = merged[present_mandatory_features].copy()
+            st.subheader("Mandatory Features Dataset (MVP Mode)")
+            st.dataframe(filtered_merged, use_container_width=True)
+            # Assign filtered_merged to final_dataset for consistent parquet logic
+            model_state["final_dataset"] = filtered_merged.copy()
+
+            # --- PARQUET FILE SAVING LOGIC FOR MVP ---
+            data_registry_subfolder = os.path.join("data_registry", active_model)
+            os.makedirs(data_registry_subfolder, exist_ok=True)
+            # Use a default target for MVP if not set
+            target_feature = model_state.get("target_feature") or "target"
+            final_dataset_path = os.path.join(data_registry_subfolder, f"{target_feature}_final_dataset.parquet")
+            merged.to_parquet(final_dataset_path, index=False)
+            st.session_state[f"{active_model}_final_dataset_path"] = final_dataset_path
+            st.success(f"Feature selection for '{active_model}' completed successfully!")
         else:
             st.warning("No merged dataset available.")
     else:
@@ -2673,7 +2712,6 @@ if st.button("📊 Show Selected Attributes"):
                 st.success(f"Feature selection for '{active_model}' completed successfully!")
             else:
                 st.warning("Final dataset is empty, cannot save Parquet file.")
-
         
 
 

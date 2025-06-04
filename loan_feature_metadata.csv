@@ -42,3 +42,5 @@ Loan_Status,Loan Approval,Final decision or state of the loan.
 Loan_Status,Loan Outcome,Final decision or state of the loan.
 Profitability_GBP,Profitability,Profit or loss from the loan.
 Application_ID,Application ID,Unique identifier for the loan application.
+Timestamp,Timestamp,Date and time when the record was created or last updated.
+Timestamp_x,Timestamp,Date and time when the record was created or last updated.
