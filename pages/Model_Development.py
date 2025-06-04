@@ -19,29 +19,31 @@ from sklearn.metrics import (
 from sklearn.preprocessing import LabelEncoder
 import shap
 import joblib
+app_version = st.session_state.get("app_version", "Customized")
+is_mvp = app_version == "MVP"
+
 
 # --- Constants and Configuration ---
 DEFAULT_DATA_DIR = "default_data"
 DATA_REGISTRY_BASE_DIR = "data_registry"
 
 MODEL_INPUT_SOURCES = {
-    "Forecast Model Data (for Profitability)": {
-        "session_state_key_suffix": "Forecast_Model",
-        "target_column_primary": "Profitability_GBP",
-        "data_registry_subfolder_actual": "Forecast Model"
-    },
-    "Charge-Off Model Data (for COF)": {
+    "Charge-Off Model (for COF)": {
         "session_state_key_suffix": "Charge-Off Model",
         "target_column_primary": "COF_EVENT_LABEL",
         "data_registry_subfolder_actual": "Charge-Off_Model"
     },
-    "Prepayment Model Data (for Prepayment)": {
+    "Prepayment Model (for Prepayment)": {
         "session_state_key_suffix": "Prepayment Model",
         "target_column_primary": "PREPAYMENT_EVENT_LABEL",
         "data_registry_subfolder_actual": "Prepayment_Model"
+    },
+    "Forecast Model (for Profitability)": {
+        "session_state_key_suffix": "Forecast_Model",
+        "target_column_primary": "Profitability_GBP",
+        "data_registry_subfolder_actual": "Forecast Model"
     }
 }
-
 def load_default_data():
     default_files = {
         "COF_EVENT_LABEL": os.path.join(DEFAULT_DATA_DIR, "default_COF_EVENT_LABEL_test_data.parquet"),
@@ -75,8 +77,6 @@ st.markdown("""
 <div style="border: 2px solid #4CAF50; padding: 15px; border-radius: 10px; background-color: #f9f9f9; color: black;">
     <h3 style="color: #4CAF50;">📊 Steps to Follow on This Page</h3>
     <ol>
-        <li><b>Preview the Data</b><br>
-            Begin by reviewing the dataset associated with the model you are currently working on.</li>
         <li><b>Select Model Type</b><br>
             Choose the appropriate model type for your selected dataset.</li>
         <li><b>Set Train-Test Split</b><br>
@@ -85,7 +85,7 @@ st.markdown("""
             Identify the best hyperparameters for your model based on the desired evaluation metric. From the suggested options, select the one that best fits your needs.</li>
         <li><b>Repeat for All Models</b><br>
             Once you've completed these steps for one model, repeat the same process for the remaining models.</li>
-        <li><b>Proceed to Results Page</b><br>
+        <li><b>Proceed to Performance Monitoring Page</b><br>
             After configuring all three models, continue to the next page to move forward with the project workflow.</li>
     </ol>
     
@@ -117,7 +117,7 @@ for model_index, model_name in enumerate(modeling_tasks):
     data_registry_subfolder = model_config["data_registry_subfolder_actual"]
 
     st.markdown("---")
-    st.subheader(f"📊 Working on: {model_name}")
+    st.subheader(f"📊 Building {model_name}")
 
     # --- Data Loading Logic ---
     df_full = None
@@ -173,9 +173,9 @@ for model_index, model_name in enumerate(modeling_tasks):
     st.write(f"DataFrame shape: {df_full.shape}")
     if st.checkbox(f"Show overview of the loaded dataset? ({model_name})", key=f"show_df_full_head_model_dev_{model_index}"):
         st.dataframe(df_full.head())
-
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
     # --- Model Selection (Moved here, after Data Overview, before Sub-sampling) ---
-    st.subheader(f"📚 Select Model Type for : {model_name}")
+    st.subheader(f"📚 Step 1 : Select AI Model Type for : {model_name}")
     
     # Infer target type
     if df_full[target_column].nunique() < 10 and df_full[target_column].dtype in ['int64', 'float64', 'object', 'category', 'bool']:
@@ -236,63 +236,63 @@ for model_index, model_name in enumerate(modeling_tasks):
     )
     model_config["selected_model"] = selected_model
     model_class = models[selected_model]
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
+    # --- Sub-sampling (Collapsible Section) ---
+    with st.expander("🔍 Sub-sampling (optional)", expanded=False):
+        sample_frac = st.slider(
+            "Select sub-sample fraction for the current task", 0.01, 1.0,
+            value=1.0, key=f"sample_frac_{active_model_suffix_for_path}"
+        )
+        if sample_frac < 1.0:
+            df_full = df_full.sample(frac=sample_frac, random_state=42).reset_index(drop=True)
+            st.info(f"Using a {sample_frac:.2f} fraction of the data ({len(df_full)} rows) for '{model_name}'.")
 
-    # --- Sub-sampling ---
-    st.subheader("🔍 Sub-sampling")
-    sample_frac = st.slider(
-        "Select sub-sample fraction for the current task", 0.01, 1.0,
-        value=1.0, key=f"sample_frac_{active_model_suffix_for_path}"
-    )
-    if sample_frac < 1.0:
-        df_full = df_full.sample(frac=sample_frac, random_state=42).reset_index(drop=True)
-        st.info(f"Using a {sample_frac:.2f} fraction of the data ({len(df_full)} rows) for '{model_name}'.")
-
-    # --- Target Variable Analysis ---
-    st.subheader(f"🎯 Target Variable Analysis for: {target_column}")
-    if target_type == "Regression":
-        fig, ax = plt.subplots(figsize=(8, 4))
-        sns.histplot(df_full[target_column].dropna(), kde=True, ax=ax, color="blue")
-        ax.set_title(f"Distribution of {target_column}")
-        ax.set_xlabel(target_column)
-        st.pyplot(fig)
-        plt.close(fig)
-    else:
-        try:
-            unique_targets_after_encoding = df_full[target_column].unique()
-            if len(unique_targets_after_encoding) == 2:
-                positive_class_label = 1
-                if positive_class_label in df_full[target_column].value_counts(normalize=True):
-                    event_rate_value = df_full[target_column].value_counts(normalize=True).get(positive_class_label, 0) * 100
-                    st.metric(
-                        label="Event Rate (%)",
-                        value=f"{event_rate_value:.2f}%",
-                        help=f"Percentage of positive events (class {positive_class_label}) in the target variable '{target_column}'."
-                    )
+    # --- Target Variable Analysis (Collapsible Section) ---
+    with st.expander(f"🎯 Target Variable Analysis for: {target_column}", expanded=False):
+        if target_type == "Regression":
+            fig, ax = plt.subplots(figsize=(8, 4))
+            sns.histplot(df_full[target_column].dropna(), kde=True, ax=ax, color="blue")
+            ax.set_title(f"Distribution of {target_column}")
+            ax.set_xlabel(target_column)
+            st.pyplot(fig)
+            plt.close(fig)
+        else:
+            try:
+                unique_targets_after_encoding = df_full[target_column].unique()
+                if len(unique_targets_after_encoding) == 2:
+                    positive_class_label = 1
+                    if positive_class_label in df_full[target_column].value_counts(normalize=True):
+                        event_rate_value = df_full[target_column].value_counts(normalize=True).get(positive_class_label, 0) * 100
+                        st.metric(
+                            label="Event Rate (%)",
+                            value=f"{event_rate_value:.2f}%",
+                            help=f"Percentage of positive events (class {positive_class_label}) in the target variable '{target_column}'."
+                        )
+                    else:
+                        st.warning(f"Positive class label '{positive_class_label}' not found for event rate calculation in '{target_column}'.")
                 else:
-                    st.warning(f"Positive class label '{positive_class_label}' not found for event rate calculation in '{target_column}'.")
-            else:
-                st.info(f"Target '{target_column}' has {len(unique_targets_after_encoding)} unique encoded values. Displaying frequency.")
+                    st.info(f"Target '{target_column}' has {len(unique_targets_after_encoding)} unique encoded values. Displaying frequency.")
 
-            frequency_df = df_full[target_column].value_counts().reset_index()
-            frequency_df.columns = [target_column, "count"]
-            if not pd.api.types.is_numeric_dtype(frequency_df[target_column]):
-                frequency_df[target_column] = frequency_df[target_column].astype(str)
-            fig = px.bar(
-                frequency_df,
-                x=target_column,
-                y="count",
-                text="count",
-                labels={target_column: str(target_column), "count": "Frequency"},
-                title=f"Frequency of Encoded {target_column}"
-            )
-            fig.update_traces(textposition="inside")
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception as e:
-            st.error(f"Error displaying target distribution for {target_column}: {e}")
-            st.exception(e)
-
+                frequency_df = df_full[target_column].value_counts().reset_index()
+                frequency_df.columns = [target_column, "count"]
+                if not pd.api.types.is_numeric_dtype(frequency_df[target_column]):
+                    frequency_df[target_column] = frequency_df[target_column].astype(str)
+                fig = px.bar(
+                    frequency_df,
+                    x=target_column,
+                    y="count",
+                    text="count",
+                    labels={target_column: str(target_column), "count": "Frequency"},
+                    title=f"Frequency of Encoded {target_column}"
+                )
+                fig.update_traces(textposition="inside")
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error displaying target distribution for {target_column}: {e}")
+                st.exception(e)
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
     # --- Feature Selection & Train/Test Split ---
-    st.subheader("📊 Select Features & Split Data")
+    st.subheader("📊 Step 2 :View Features & Split Data")
     timestamp_cols = ["Timestamp_x", "Timestamp_y", "TERM_OF_LOAN_y","Timestamp","Application_ID_x", "Application_ID_y", "Application_ID"]
     excluded_cols_from_features = target_variables_list + timestamp_cols
     selectable_features = [col for col in df_full.columns if col not in excluded_cols_from_features and col != target_column and col != "Application_ID"]
@@ -341,59 +341,31 @@ for model_index, model_name in enumerate(modeling_tasks):
         X, y, original_indices, test_size=test_size, random_state=42, stratify=stratify_y)
 
     st.info(f"Train set size: {len(X_train)} rows | Test set size: {len(X_test)} rows for '{model_name}'.")
-    st.write("Reached model selection step.")
-
+    
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
     # --- Hyperparameter Iterations & Model Training ---
-    st.subheader("🏆 Hyperparameter Iterations & Model Training")
-    param_dist = {
-        "Logistic Regression": {"C": [0.001, 0.01, 0.1, 1.0, 10.0, 100.0], "solver": ["liblinear", "lbfgs"], "max_iter": [100, 200, 300]},
-        "LGBM Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, -1], "learning_rate": [0.01, 0.05, 0.1]},
-        "Random Forest Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, 10, None]},
-        "XGBoost Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.05, 0.1], 'use_label_encoder': [False], 'eval_metric': ['logloss', 'auc']},
-        "Linear Regression": {"fit_intercept": [True, False]},
-    }
-    default_n_iterations = model_config.get("n_iterations", 5 if target_type == "Classification" else 1)
+    st.subheader("🏆 Step 3 :Hyperparameter Iterations")
+
     task_key = f"{model_name.replace(' ', '_')}_task"
-    n_iterations_to_run = st.number_input("Number of hyperparameter iterations to try", min_value=1, max_value=50, value=default_n_iterations, key=f"n_iter_{task_key}")
-    model_config["n_iterations"] = n_iterations_to_run
-    try:
-        total_combinations = 1
-        for p_values in param_dist[selected_model].values():
-            total_combinations *= len(p_values)
-        actual_n_iter = min(n_iterations_to_run, total_combinations)
-        if actual_n_iter < n_iterations_to_run:
-            st.info(f"Reducing iterations to {actual_n_iter} as it's the maximum number of unique parameter combinations for {selected_model}.")
-        sampled_params = list(ParameterSampler(param_dist[selected_model], n_iter=actual_n_iter, random_state=42))
-    except ValueError as e:
-        st.error(f"Error sampling parameters: {e}. Check parameter distribution. Using default parameters.")
-        sampled_params = [{}]
+    selected_model_task_name = model_name  # <-- Define this before use
 
-    if target_type == "Classification":
-        metric_options = ["ROC-AUC", "F1 Score", "Accuracy", "Precision", "Recall"]
-    else:
-        metric_options = ["Root Mean Squared Error (RMSE)", "Mean Squared Error (MSE)", "Mean Absolute Percentage Error (MAPE)"]
+    if is_mvp:
+        st.info("This section is disabled in MVP mode. Only one run will be performed for the selected model with default hyperparameters.")
+        # Prepare default parameters for the selected model
+        param_dist = {
+            "Logistic Regression": {"C": [1.0], "solver": ["lbfgs"], "max_iter": [100]},
+            "LGBM Classifier": {"n_estimators": [100], "max_depth": [-1], "learning_rate": [0.1]},
+            "Random Forest Classifier": {"n_estimators": [100], "max_depth": [None]},
+            "XGBoost Classifier": {"n_estimators": [100], "max_depth": [3], "learning_rate": [0.1], 'use_label_encoder': [False], 'eval_metric': ['logloss']},
+            "Linear Regression": {"fit_intercept": [True]},
+        }
+        sampled_params = [ {k: v[0] for k, v in param_dist[selected_model].items()} ]
 
-    default_metric_eval = metric_options[0]
-    if "selected_metric" in model_config and model_config["selected_metric"] in metric_options:
-        default_metric_eval = model_config["selected_metric"]
-
-    selected_metric_eval = st.selectbox(
-        "Select Primary Metric to Evaluate Iterations By",
-        metric_options,
-        index=metric_options.index(default_metric_eval),
-        key=f"metric_eval_{task_key}"
-    )
-    model_config["selected_metric"] = selected_metric_eval
-
-    selected_model_task_name = model_name
-    if st.button(f"Run Model Iterations for {selected_model_task_name}", key=f"run_{task_key}"):
-        iteration_results_list = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        for i, params_iter in enumerate(sampled_params):
-            status_text.text(f"Running iteration {i+1}/{len(sampled_params)} for {selected_model}...")
-            progress_bar.progress((i + 1) / len(sampled_params))
+        # No metric selection in MVP mode, just run and show results
+        if st.button(f"Run Model for {selected_model_task_name}", key=f"run_{task_key}_mvp"):
+            iteration_results_list = []
             try:
+                params_iter = sampled_params[0]
                 if selected_model == "XGBoost Classifier" and 'use_label_encoder' in params_iter:
                     params_iter_copy = params_iter.copy()
                     params_iter_copy['use_label_encoder'] = False
@@ -419,116 +391,274 @@ for model_index, model_name in enumerate(modeling_tasks):
                     metrics_dict["Root Mean Squared Error (RMSE)"] = np.sqrt(metrics_dict["Mean Squared Error (MSE)"])
                     metrics_dict["Mean Absolute Percentage Error (MAPE)"] = np.mean(np.abs((y_test - y_pred_test) / (y_test + 1e-9))) * 100 if len(y_test) > 0 else 0
                 iteration_results_list.append({
-                    "iteration_num": i + 1,
+                    "iteration_num": 1,
                     "params": params_iter,
                     "metrics": metrics_dict,
                     "model_object": model_instance,
                     "test_indices": test_indices.tolist()
                 })
             except Exception as e_iter:
-                st.warning(f"⚠️ Skipping iteration {i+1} for {selected_model} due to error: {e_iter}")
+                st.warning(f"⚠️ Model run failed: {e_iter}")
                 iteration_results_list.append({
-                    "iteration_num": i + 1,
-                    "params": params_iter,
+                    "iteration_num": 1,
+                    "params": sampled_params[0],
                     "metrics": {"Error": str(e_iter)},
                     "model_object": None,
                     "test_indices": None
                 })
-        st.session_state[f"iteration_results_{task_key}"] = iteration_results_list
-        status_text.text("Model iterations complete.")
-        progress_bar.empty()
+            st.session_state[f"iteration_results_{task_key}"] = iteration_results_list
 
-    # --- Display Iteration Results ---
-    iteration_results_for_task_display = st.session_state.get(f"iteration_results_{task_key}", [])
-    if iteration_results_for_task_display:
-        st.subheader(f"📊 Iteration Results (Model: {selected_model})")
-        is_higher_better_metric = not any(m_eval in selected_metric_eval for m_eval in ["MSE", "RMSE", "MAPE"])
-        valid_iterations_for_sorting = [
-            res for res in iteration_results_for_task_display
-            if "Error" not in res["metrics"] and isinstance(res["metrics"].get(selected_metric_eval), (int, float))
-        ]
-        sorted_valid_iterations = sorted(
-            valid_iterations_for_sorting,
-            key=lambda x: x["metrics"][selected_metric_eval],
-            reverse=is_higher_better_metric
-        )
-        other_iterations = [
-            res for res in iteration_results_for_task_display
-            if res not in valid_iterations_for_sorting
-        ]
-        final_sorted_iterations_to_display = sorted_valid_iterations + other_iterations
-        for iter_data in final_sorted_iterations_to_display:
-            iter_num_display = iter_data['iteration_num']
-            expander_title_str = f"Iteration {iter_num_display}"
-            if "Error" in iter_data["metrics"]:
-                expander_title_str += " (Failed)"
-            elif selected_metric_eval in iter_data["metrics"] and isinstance(iter_data["metrics"][selected_metric_eval], (int,float)):
-                metric_val_display = iter_data['metrics'][selected_metric_eval]
-                expander_title_str += f" - {selected_metric_eval}: {metric_val_display:.2f}"
-            else:
-                expander_title_str += f" - {selected_metric_eval}: N/A"
-            with st.expander(expander_title_str):
+        # --- Display Single Result as "Results for Selected Model" ---
+        iteration_results_for_task_display = st.session_state.get(f"iteration_results_{task_key}", [])
+        if iteration_results_for_task_display:
+            st.subheader(f"📊 Results for Selected Model ({selected_model})")
+            iter_data = iteration_results_for_task_display[0]
+            with st.expander("Show Results", expanded=True):
                 st.markdown("##### 🔧 Hyperparameters")
                 st.json(iter_data["params"])
                 st.markdown("##### 📊 Metrics")
                 if "Error" in iter_data["metrics"]:
-                    st.error(f"This iteration failed: {iter_data['metrics']['Error']}")
-                    continue
-                display_metrics_data = {k: v for k, v in iter_data["metrics"].items() if k not in ["Confusion Matrix", "Parameters"]}
-                num_metrics_cols_disp = min(len(display_metrics_data), 3)
-                if num_metrics_cols_disp > 0:
-                    metric_cols_disp = st.columns(num_metrics_cols_disp)
-                    col_idx_disp = 0
-                    for metric_name_disp, value_disp in display_metrics_data.items():
-                        current_col_disp = metric_cols_disp[col_idx_disp % num_metrics_cols_disp]
-                        if isinstance(value_disp, (int, float, np.float_)):
-                            current_col_disp.metric(metric_name_disp, f"{value_disp:.4f}")
+                    st.error(f"This run failed: {iter_data['metrics']['Error']}")
+                else:
+                    display_metrics_data = {k: v for k, v in iter_data["metrics"].items() if k not in ["Confusion Matrix", "Parameters"]}
+                    num_metrics_cols_disp = min(len(display_metrics_data), 3)
+                    if num_metrics_cols_disp > 0:
+                        metric_cols_disp = st.columns(num_metrics_cols_disp)
+                        col_idx_disp = 0
+                        for metric_name_disp, value_disp in display_metrics_data.items():
+                            current_col_disp = metric_cols_disp[col_idx_disp % num_metrics_cols_disp]
+                            if isinstance(value_disp, (int, float, np.float_)):
+                                current_col_disp.metric(metric_name_disp, f"{value_disp:.4f}")
+                            else:
+                                current_col_disp.metric(metric_name_disp, str(value_disp))
+                            col_idx_disp += 1
+                    if "Confusion Matrix" in iter_data["metrics"] and target_type == "Classification":
+                        st.markdown("###### Confusion Matrix")
+                        cm_data_plot = np.array(iter_data["metrics"]["Confusion Matrix"])
+                        fig_cm_plot, ax_cm_plot = plt.subplots(figsize=(4,3))
+                        sns.heatmap(cm_data_plot, annot=True, fmt="d", cmap="Blues", ax=ax_cm_plot, cbar=False)
+                        ax_cm_plot.set_xlabel("Predicted")
+                        ax_cm_plot.set_ylabel("Actual")
+                        st.pyplot(fig_cm_plot)
+                        plt.close(fig_cm_plot)
+                    if iter_data["model_object"] and X_test.shape[0] > 0 and X_train.shape[0] > 0:
+                        st.markdown("###### SHAP Summary Plot (on Test Set)")
+                        try:
+                            model_to_explain_shap = iter_data["model_object"]
+                            if isinstance(model_to_explain_shap, (RandomForestClassifier, XGBClassifier, LGBMClassifier)) or \
+                               (hasattr(model_to_explain_shap, '_estimator_type') and model_to_explain_shap._estimator_type == "regressor" and not isinstance(model_to_explain_shap, LinearRegression)):
+                                explainer_shap = shap.Explainer(model_to_explain_shap, X_train)
+                            else:
+                                masker_shap = shap.maskers.Independent(X_train, max_samples=100)
+                                explainer_shap = shap.Explainer(model_to_explain_shap, masker_shap)
+                            shap_values_plot = explainer_shap(X_test)
+                            fig_shap_plot, ax_shap_plot = plt.subplots()
+                            if isinstance(shap_values_plot, list) and len(shap_values_plot) == 2:
+                                shap.summary_plot(shap_values_plot[1], X_test, plot_type="dot", show=False, plot_size=None)
+                            elif hasattr(shap_values_plot, "values"):
+                                shap.summary_plot(shap_values_plot, X_test, plot_type="dot", show=False, plot_size=None)
+                            else:
+                                shap.summary_plot(shap_values_plot, X_test, plot_type="dot", show=False, plot_size=None)
+                            st.pyplot(fig_shap_plot)
+                            plt.close(fig_shap_plot)
+                        except Exception as e_shap:
+                            st.warning(f"⚠️ Could not generate SHAP summary plot: {e_shap}")
+
+    else:
+        # --- (copy your original multi-iteration code here) ---
+        # --- Hyperparameter Iterations & Model Training ---
+        
+        param_dist = {
+            "Logistic Regression": {"C": [0.001, 0.01, 0.1, 1.0, 10.0, 100.0], "solver": ["liblinear", "lbfgs"], "max_iter": [100, 200, 300]},
+            "LGBM Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, -1], "learning_rate": [0.01, 0.05, 0.1]},
+            "Random Forest Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, 10, None]},
+            "XGBoost Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.05, 0.1], 'use_label_encoder': [False], 'eval_metric': ['logloss', 'auc']},
+            "Linear Regression": {"fit_intercept": [True, False]},
+        }
+        default_n_iterations = model_config.get("n_iterations", 5 if target_type == "Classification" else 1)
+        task_key = f"{model_name.replace(' ', '_')}_task"
+        n_iterations_to_run = st.number_input("Number of hyperparameter iterations to try", min_value=1, max_value=50, value=default_n_iterations, key=f"n_iter_{task_key}")
+        model_config["n_iterations"] = n_iterations_to_run
+        try:
+            total_combinations = 1
+            for p_values in param_dist[selected_model].values():
+                total_combinations *= len(p_values)
+            actual_n_iter = min(n_iterations_to_run, total_combinations)
+            if actual_n_iter < n_iterations_to_run:
+                st.info(f"Reducing iterations to {actual_n_iter} as it's the maximum number of unique parameter combinations for {selected_model}.")
+            sampled_params = list(ParameterSampler(param_dist[selected_model], n_iter=actual_n_iter, random_state=42))
+        except ValueError as e:
+            st.error(f"Error sampling parameters: {e}. Check parameter distribution. Using default parameters.")
+            sampled_params = [{}]
+
+        if target_type == "Classification":
+            metric_options = ["ROC-AUC", "F1 Score", "Accuracy", "Precision", "Recall"]
+        else:
+            metric_options = ["Root Mean Squared Error (RMSE)", "Mean Squared Error (MSE)", "Mean Absolute Percentage Error (MAPE)"]
+
+        default_metric_eval = metric_options[0]
+        if "selected_metric" in model_config and model_config["selected_metric"] in metric_options:
+            default_metric_eval = model_config["selected_metric"]
+
+        selected_metric_eval = st.selectbox(
+            "Select Primary Metric to Evaluate Iterations By",
+            metric_options,
+            index=metric_options.index(default_metric_eval),
+            key=f"metric_eval_{task_key}"
+        )
+        model_config["selected_metric"] = selected_metric_eval
+
+        selected_model_task_name = model_name
+        if st.button(f"Run Model Iterations for {selected_model_task_name}", key=f"run_{task_key}"):
+            iteration_results_list = []
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            for i, params_iter in enumerate(sampled_params):
+                status_text.text(f"Running iteration {i+1}/{len(sampled_params)} for {selected_model}...")
+                progress_bar.progress((i + 1) / len(sampled_params))
+                try:
+                    if selected_model == "XGBoost Classifier" and 'use_label_encoder' in params_iter:
+                        params_iter_copy = params_iter.copy()
+                        params_iter_copy['use_label_encoder'] = False
+                        model_instance = model_class(**params_iter_copy)
+                    else:
+                        model_instance = model_class(**params_iter)
+                    model_instance.fit(X_train, y_train)
+                    y_pred_test = model_instance.predict(X_test)
+                    metrics_dict = {"Parameters": params_iter}
+                    if target_type == "Classification":
+                        metrics_dict["Accuracy"] = accuracy_score(y_test, y_pred_test)
+                        metrics_dict["Precision"] = precision_score(y_test, y_pred_test, zero_division=0, pos_label=1)
+                        metrics_dict["Recall"] = recall_score(y_test, y_pred_test, zero_division=0, pos_label=1)
+                        metrics_dict["F1 Score"] = f1_score(y_test, y_pred_test, zero_division=0, pos_label=1)
+                        if hasattr(model_instance, "predict_proba"):
+                            y_proba_test = model_instance.predict_proba(X_test)[:, 1]
+                            metrics_dict["ROC-AUC"] = roc_auc_score(y_test, y_proba_test)
                         else:
-                            current_col_disp.metric(metric_name_disp, str(value_disp))
-                        col_idx_disp += 1
-                if "Confusion Matrix" in iter_data["metrics"] and target_type == "Classification":
-                    st.markdown("###### Confusion Matrix")
-                    cm_data_plot = np.array(iter_data["metrics"]["Confusion Matrix"])
-                    fig_cm_plot, ax_cm_plot = plt.subplots(figsize=(4,3))
-                    sns.heatmap(cm_data_plot, annot=True, fmt="d", cmap="Blues", ax=ax_cm_plot, cbar=False)
-                    ax_cm_plot.set_xlabel("Predicted")
-                    ax_cm_plot.set_ylabel("Actual")
-                    st.pyplot(fig_cm_plot)
-                    plt.close(fig_cm_plot)
-                if iter_data["model_object"] and X_test.shape[0] > 0 and X_train.shape[0] > 0:
-                    st.markdown("###### SHAP Summary Plot (on Test Set)")
-                    try:
-                        model_to_explain_shap = iter_data["model_object"]
-                        if isinstance(model_to_explain_shap, (RandomForestClassifier, XGBClassifier, LGBMClassifier)) or \
-                           (hasattr(model_to_explain_shap, '_estimator_type') and model_to_explain_shap._estimator_type == "regressor" and not isinstance(model_to_explain_shap, LinearRegression)):
-                            explainer_shap = shap.Explainer(model_to_explain_shap, X_train)
-                        else:
-                            masker_shap = shap.maskers.Independent(X_train, max_samples=100)
-                            explainer_shap = shap.Explainer(model_to_explain_shap, masker_shap)
-                        shap_values_plot = explainer_shap(X_test)
-                        fig_shap_plot, ax_shap_plot = plt.subplots()
-                        if isinstance(shap_values_plot, list) and len(shap_values_plot) == 2:
-                            shap.summary_plot(shap_values_plot[1], X_test, plot_type="dot", show=False, plot_size=None)
-                        elif hasattr(shap_values_plot, "values"):
-                            shap.summary_plot(shap_values_plot, X_test, plot_type="dot", show=False, plot_size=None)
-                        else:
-                            shap.summary_plot(shap_values_plot, X_test, plot_type="dot", show=False, plot_size=None)
-                        st.pyplot(fig_shap_plot)
-                        plt.close(fig_shap_plot)
-                    except Exception as e_shap:
-                        st.warning(f"⚠️ Could not generate SHAP summary plot: {e_shap}")
+                            metrics_dict["ROC-AUC"] = "N/A"
+                        metrics_dict["Confusion Matrix"] = confusion_matrix(y_test, y_pred_test).tolist()
+                    else:
+                        metrics_dict["Mean Squared Error (MSE)"] = mean_squared_error(y_test, y_pred_test)
+                        metrics_dict["Root Mean Squared Error (RMSE)"] = np.sqrt(metrics_dict["Mean Squared Error (MSE)"])
+                        metrics_dict["Mean Absolute Percentage Error (MAPE)"] = np.mean(np.abs((y_test - y_pred_test) / (y_test + 1e-9))) * 100 if len(y_test) > 0 else 0
+                    iteration_results_list.append({
+                        "iteration_num": i + 1,
+                        "params": params_iter,
+                        "metrics": metrics_dict,
+                        "model_object": model_instance,
+                        "test_indices": test_indices.tolist()
+                    })
+                except Exception as e_iter:
+                    st.warning(f"⚠️ Skipping iteration {i+1} for {selected_model} due to error: {e_iter}")
+                    iteration_results_list.append({
+                        "iteration_num": i + 1,
+                        "params": params_iter,
+                        "metrics": {"Error": str(e_iter)},
+                        "model_object": None,
+                        "test_indices": None
+                    })
+            st.session_state[f"iteration_results_{task_key}"] = iteration_results_list
+            status_text.text("Model iterations complete.")
+            progress_bar.empty()
+
+        # --- Display Iteration Results ---
+        iteration_results_for_task_display = st.session_state.get(f"iteration_results_{task_key}", [])
+        if iteration_results_for_task_display:
+            st.subheader(f"📊 Iteration Results (Model: {selected_model})")
+            is_higher_better_metric = not any(m_eval in selected_metric_eval for m_eval in ["MSE", "RMSE", "MAPE"])
+            valid_iterations_for_sorting = [
+                res for res in iteration_results_for_task_display
+                if "Error" not in res["metrics"] and isinstance(res["metrics"].get(selected_metric_eval), (int, float))
+            ]
+            sorted_valid_iterations = sorted(
+                valid_iterations_for_sorting,
+                key=lambda x: x["metrics"][selected_metric_eval],
+                reverse=is_higher_better_metric
+            )
+            other_iterations = [
+                res for res in iteration_results_for_task_display
+                if res not in valid_iterations_for_sorting
+            ]
+            final_sorted_iterations_to_display = sorted_valid_iterations + other_iterations
+            for iter_data in final_sorted_iterations_to_display:
+                iter_num_display = iter_data['iteration_num']
+                expander_title_str = f"Iteration {iter_num_display}"
+                if "Error" in iter_data["metrics"]:
+                    expander_title_str += " (Failed)"
+                elif selected_metric_eval in iter_data["metrics"] and isinstance(iter_data["metrics"][selected_metric_eval], (int,float)):
+                    metric_val_display = iter_data['metrics'][selected_metric_eval]
+                    expander_title_str += f" - {selected_metric_eval}: {metric_val_display:.2f}"
+                else:
+                    expander_title_str += f" - {selected_metric_eval}: N/A"
+                with st.expander(expander_title_str):
+                    st.markdown("##### 🔧 Hyperparameters")
+                    st.json(iter_data["params"])
+                    st.markdown("##### 📊 Metrics")
+                    if "Error" in iter_data["metrics"]:
+                        st.error(f"This iteration failed: {iter_data['metrics']['Error']}")
+                        continue
+                    display_metrics_data = {k: v for k, v in iter_data["metrics"].items() if k not in ["Confusion Matrix", "Parameters"]}
+                    num_metrics_cols_disp = min(len(display_metrics_data), 3)
+                    if num_metrics_cols_disp > 0:
+                        metric_cols_disp = st.columns(num_metrics_cols_disp)
+                        col_idx_disp = 0
+                        for metric_name_disp, value_disp in display_metrics_data.items():
+                            current_col_disp = metric_cols_disp[col_idx_disp % num_metrics_cols_disp]
+                            if isinstance(value_disp, (int, float, np.float_)):
+                                current_col_disp.metric(metric_name_disp, f"{value_disp:.4f}")
+                            else:
+                                current_col_disp.metric(metric_name_disp, str(value_disp))
+                            col_idx_disp += 1
+                    if "Confusion Matrix" in iter_data["metrics"] and target_type == "Classification":
+                        st.markdown("###### Confusion Matrix")
+                        cm_data_plot = np.array(iter_data["metrics"]["Confusion Matrix"])
+                        fig_cm_plot, ax_cm_plot = plt.subplots(figsize=(4,3))
+                        sns.heatmap(cm_data_plot, annot=True, fmt="d", cmap="Blues", ax=ax_cm_plot, cbar=False)
+                        ax_cm_plot.set_xlabel("Predicted")
+                        ax_cm_plot.set_ylabel("Actual")
+                        st.pyplot(fig_cm_plot)
+                        plt.close(fig_cm_plot)
+                    if iter_data["model_object"] and X_test.shape[0] > 0 and X_train.shape[0] > 0:
+                        st.markdown("###### SHAP Summary Plot (on Test Set)")
+                        try:
+                            model_to_explain_shap = iter_data["model_object"]
+                            if isinstance(model_to_explain_shap, (RandomForestClassifier, XGBClassifier, LGBMClassifier)) or \
+                               (hasattr(model_to_explain_shap, '_estimator_type') and model_to_explain_shap._estimator_type == "regressor" and not isinstance(model_to_explain_shap, LinearRegression)):
+                                explainer_shap = shap.Explainer(model_to_explain_shap, X_train)
+                            else:
+                                masker_shap = shap.maskers.Independent(X_train, max_samples=100)
+                                explainer_shap = shap.Explainer(model_to_explain_shap, masker_shap)
+                            shap_values_plot = explainer_shap(X_test)
+                            fig_shap_plot, ax_shap_plot = plt.subplots()
+                            if isinstance(shap_values_plot, list) and len(shap_values_plot) == 2:
+                                shap.summary_plot(shap_values_plot[1], X_test, plot_type="dot", show=False, plot_size=None)
+                            elif hasattr(shap_values_plot, "values"):
+                                shap.summary_plot(shap_values_plot, X_test, plot_type="dot", show=False, plot_size=None)
+                            else:
+                                shap.summary_plot(shap_values_plot, X_test, plot_type="dot", show=False, plot_size=None)
+                            st.pyplot(fig_shap_plot)
+                            plt.close(fig_shap_plot)
+                        except Exception as e_shap:
+                            st.warning(f"⚠️ Could not generate SHAP summary plot: {e_shap}")
 
     # --- Select Iteration and Save Data/Metadata ---
     if feature_columns and iteration_results_for_task_display:
         st.subheader(f"💾 Select Best Iteration for {selected_model_task_name}")
         selectable_iterations_data = []
-        for idx_iter_loop, res_iter_loop in enumerate(iteration_results_for_task_display):
-            if "Error" not in res_iter_loop["metrics"] and res_iter_loop["model_object"] is not None:
-                metric_val_iter_loop = res_iter_loop['metrics'].get(selected_metric_eval, "N/A")
-                if isinstance(metric_val_iter_loop, (int, float)):
-                    metric_val_iter_loop = f"{metric_val_iter_loop:.2f}"
-                display_name_iter_loop = f"Iteration {res_iter_loop['iteration_num']} ({selected_metric_eval}: {metric_val_iter_loop})"
-                selectable_iterations_data.append((display_name_iter_loop, idx_iter_loop))
+        if is_mvp:
+            # In MVP, only one result, auto-select it
+            for idx_iter_loop, res_iter_loop in enumerate(iteration_results_for_task_display):
+                if "Error" not in res_iter_loop["metrics"] and res_iter_loop["model_object"] is not None:
+                    display_name_iter_loop = f"Iteration {res_iter_loop['iteration_num']}"
+                    selectable_iterations_data.append((display_name_iter_loop, idx_iter_loop))
+        else:
+            for idx_iter_loop, res_iter_loop in enumerate(iteration_results_for_task_display):
+                if "Error" not in res_iter_loop["metrics"] and res_iter_loop["model_object"] is not None:
+                    metric_val_iter_loop = res_iter_loop['metrics'].get(selected_metric_eval, "N/A")
+                    if isinstance(metric_val_iter_loop, (int, float)):
+                        metric_val_iter_loop = f"{metric_val_iter_loop:.2f}"
+                    display_name_iter_loop = f"Iteration {res_iter_loop['iteration_num']} ({selected_metric_eval}: {metric_val_iter_loop})"
+                    selectable_iterations_data.append((display_name_iter_loop, idx_iter_loop))
         if selectable_iterations_data:
             iteration_options_display_names = [item[0] for item in selectable_iterations_data]
             default_selection_display_idx = 0
@@ -538,44 +668,77 @@ for model_index, model_name in enumerate(modeling_tasks):
                     if original_idx_selectable == prev_selected_original_idx:
                         default_selection_display_idx = i_selectable
                         break
-            selected_iteration_display_name_confirm = st.selectbox(
-                f"Select Best Iteration for {selected_model_task_name}",
-                iteration_options_display_names,
-                index=default_selection_display_idx,
-                key=f"iteration_select_{task_key}"
-            )
-            selected_original_idx_confirm = next(orig_idx for name, orig_idx in selectable_iterations_data if name == selected_iteration_display_name_confirm)
-            selected_iteration_details_confirm = iteration_results_for_task_display[selected_original_idx_confirm]
-            if st.button(f"Confirm Selection for {selected_model_task_name} (Iteration {selected_iteration_details_confirm['iteration_num']})", key=f"confirm_{task_key}"):
-                test_indices_for_iteration_save = selected_iteration_details_confirm.get("test_indices")
-                if test_indices_for_iteration_save is None or not isinstance(test_indices_for_iteration_save, list) or len(test_indices_for_iteration_save) == 0:
-                    st.error("Could not retrieve valid test set indices for this iteration. Cannot save test data.")
-                else:
-                    try:
-                        columns_to_save_final = list(feature_columns) + [target_column] + timestamp_cols
-                        columns_to_save_final = [col for col in columns_to_save_final if col in df_full.columns]
-                        df_test_slice_save = df_full.loc[test_indices_for_iteration_save, columns_to_save_final].copy()
-                        output_file_name_save = f"{target_column}_test_data_task_{task_key.replace(' ', '_').replace('(', '').replace(')', '')}_iter_{selected_iteration_details_confirm['iteration_num']}.parquet"
-                        output_data_dir = os.path.join("data_registry", "selected_iterations")
-                        os.makedirs(output_data_dir, exist_ok=True)
-                        output_file_path_save = os.path.join(output_data_dir, output_file_name_save)
-                        df_test_slice_save.to_parquet(output_file_path_save, index=False)
-                        st.session_state.confirmed_model_outputs[task_key] = {
-                            "task_name": selected_model_task_name,
-                            "target_variable": target_column,
-                            "selected_features": feature_columns,
-                            "model_name": selected_model,
-                            "hyperparameters": selected_iteration_details_confirm["params"],
-                            "test_data_path": output_file_path_save,
-                            "key_metrics": {k: v for k, v in selected_iteration_details_confirm["metrics"].items() if not (isinstance(v, (np.ndarray, list)) or k == "Error" or k == "Parameters")},
-                            "iteration_number": selected_iteration_details_confirm['iteration_num'],
-                        }
-                        model_config["selected_iteration_global_index"] = selected_original_idx_confirm
-                        st.session_state.model_development_state[task_key] = model_config
-                        st.success(f"✅ Configuration for {selected_model_task_name} (Iteration {selected_iteration_details_confirm['iteration_num']}) confirmed and details saved!")
-                    except Exception as save_e_final:
-                        st.error(f"Error creating/saving test data or updating session state for {selected_model_task_name}: {save_e_final}")
-                        st.exception(save_e_final)
+            # In MVP, auto-select the only available result
+            if is_mvp:
+                selected_original_idx_confirm = selectable_iterations_data[0][1]
+                selected_iteration_details_confirm = iteration_results_for_task_display[selected_original_idx_confirm]
+                if st.button(f"Confirm Selection for {selected_model_task_name} (Iteration {selected_iteration_details_confirm['iteration_num']})", key=f"confirm_{task_key}"):
+                    test_indices_for_iteration_save = selected_iteration_details_confirm.get("test_indices")
+                    if test_indices_for_iteration_save is None or not isinstance(test_indices_for_iteration_save, list) or len(test_indices_for_iteration_save) == 0:
+                        st.error("Could not retrieve valid test set indices for this iteration. Cannot save test data.")
+                    else:
+                        try:
+                            columns_to_save_final = list(feature_columns) + [target_column] + timestamp_cols
+                            columns_to_save_final = [col for col in columns_to_save_final if col in df_full.columns]
+                            df_test_slice_save = df_full.loc[test_indices_for_iteration_save, columns_to_save_final].copy()
+                            output_file_name_save = f"{target_column}_test_data_task_{task_key.replace(' ', '_').replace('(', '').replace(')', '')}_iter_{selected_iteration_details_confirm['iteration_num']}.parquet"
+                            output_data_dir = os.path.join("data_registry", "selected_iterations")
+                            os.makedirs(output_data_dir, exist_ok=True)
+                            output_file_path_save = os.path.join(output_data_dir, output_file_name_save)
+                            df_test_slice_save.to_parquet(output_file_path_save, index=False)
+                            st.session_state.confirmed_model_outputs[task_key] = {
+                                "task_name": selected_model_task_name,
+                                "target_variable": target_column,
+                                "selected_features": feature_columns,
+                                "model_name": selected_model,
+                                "hyperparameters": selected_iteration_details_confirm["params"],
+                                "test_data_path": output_file_path_save,
+                                "key_metrics": {k: v for k, v in selected_iteration_details_confirm["metrics"].items() if not (isinstance(v, (np.ndarray, list)) or k == "Error" or k == "Parameters")},
+                                "iteration_number": selected_iteration_details_confirm['iteration_num'],
+                            }
+                            model_config["selected_iteration_global_index"] = selected_original_idx_confirm
+                            st.session_state.model_development_state[task_key] = model_config
+                        except Exception as save_e_final:
+                            st.error(f"Error creating/saving test data or updating session state for {selected_model_task_name}: {save_e_final}")
+                            st.exception(save_e_final)
+            else:
+                selected_iteration_display_name_confirm = st.selectbox(
+                    f"Select Best Iteration for {selected_model_task_name}",
+                    iteration_options_display_names,
+                    index=default_selection_display_idx,
+                    key=f"iteration_select_{task_key}"
+                )
+                selected_original_idx_confirm = next(orig_idx for name, orig_idx in selectable_iterations_data if name == selected_iteration_display_name_confirm)
+                selected_iteration_details_confirm = iteration_results_for_task_display[selected_original_idx_confirm]
+                if st.button(f"Confirm Selection for {selected_model_task_name} (Iteration {selected_iteration_details_confirm['iteration_num']})", key=f"confirm_{task_key}"):
+                    test_indices_for_iteration_save = selected_iteration_details_confirm.get("test_indices")
+                    if test_indices_for_iteration_save is None or not isinstance(test_indices_for_iteration_save, list) or len(test_indices_for_iteration_save) == 0:
+                        st.error("Could not retrieve valid test set indices for this iteration. Cannot save test data.")
+                    else:
+                        try:
+                            columns_to_save_final = list(feature_columns) + [target_column] + timestamp_cols
+                            columns_to_save_final = [col for col in columns_to_save_final if col in df_full.columns]
+                            df_test_slice_save = df_full.loc[test_indices_for_iteration_save, columns_to_save_final].copy()
+                            output_file_name_save = f"{target_column}_test_data_task_{task_key.replace(' ', '_').replace('(', '').replace(')', '')}_iter_{selected_iteration_details_confirm['iteration_num']}.parquet"
+                            output_data_dir = os.path.join("data_registry", "selected_iterations")
+                            os.makedirs(output_data_dir, exist_ok=True)
+                            output_file_path_save = os.path.join(output_data_dir, output_file_name_save)
+                            df_test_slice_save.to_parquet(output_file_path_save, index=False)
+                            st.session_state.confirmed_model_outputs[task_key] = {
+                                "task_name": selected_model_task_name,
+                                "target_variable": target_column,
+                                "selected_features": feature_columns,
+                                "model_name": selected_model,
+                                "hyperparameters": selected_iteration_details_confirm["params"],
+                                "test_data_path": output_file_path_save,
+                                "key_metrics": {k: v for k, v in selected_iteration_details_confirm["metrics"].items() if not (isinstance(v, (np.ndarray, list)) or k == "Error" or k == "Parameters")},
+                                "iteration_number": selected_iteration_details_confirm['iteration_num'],
+                            }
+                            model_config["selected_iteration_global_index"] = selected_original_idx_confirm
+                            st.session_state.model_development_state[task_key] = model_config
+                        except Exception as save_e_final:
+                            st.error(f"Error creating/saving test data or updating session state for {selected_model_task_name}: {save_e_final}")
+                            st.exception(save_e_final)
         else:
             st.info("No successful model iterations are available to select for confirmation for this task.")
 
@@ -583,26 +746,21 @@ for model_index, model_name in enumerate(modeling_tasks):
 
     # --- Proceed to Next Model Button (appears after confirmation) ---
     if task_key in st.session_state.get("confirmed_model_outputs", {}):
-        st.success(f"✅ Configuration for {model_name} has been confirmed. You can proceed to the next model.")
+        st.success(f"✅ Configuration for {model_name} has been confirmed.")
         if model_index < len(modeling_tasks) - 1:
             next_model_name = modeling_tasks[model_index + 1]
-            if st.button(f"Proceed to Next Model ({next_model_name})", key=f"proceed_{task_key}"):
+            if st.button(f"Proceed to {next_model_name}", key=f"proceed_{task_key}"):
                 # Show the next model section
                 st.session_state["model_dev_visible_sections"][next_model_name] = True
                 st.query_params["scroll_to"] = f"{next_model_name.replace(' ', '_')}"
                 st.info(f"Scroll down to configure: {next_model_name}")
-        else:
-            st.success("✅ All models have been completed! You can now proceed to the next page.")
-            if st.button("Mark Model Development as Complete & Proceed"):
-                st.session_state["model_development_complete"] = True
-                st.info("Model development step completed. You can now proceed to Performance Monitoring.")
-                st.switch_page("pages/Performance Monitoring.py")
+        
     else:
         st.warning(f"Please confirm the selection for {model_name} to proceed.")
 
 # --- Finalize and Overview ---
-st.markdown("---")
-st.subheader("Finalize and Proceed")
+st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
+st.subheader("Confirmed Model Selections")
 confirmed_count_final = len(st.session_state.get("confirmed_model_outputs", {}))
 all_tasks_count_final = len(modeling_tasks)
 if confirmed_count_final > 0:
@@ -613,11 +771,16 @@ if confirmed_count_final > 0:
         target_var_final = conf_output_final.get("target_variable", "N/A")
         test_data_path_final = conf_output_final.get("test_data_path", "N/A")
         st.markdown(f"- **{conf_output_final['task_name']}**: Iteration `{iter_num_final}` for target `{target_var_final}` (Model: `{model_name_final}`). ")
+
 unconfirmed_tasks = [
     task for task in modeling_tasks
     if f"{task.replace(' ', '_')}_task" not in st.session_state.get("confirmed_model_outputs", {})
 ]
-# if unconfirmed_tasks:
-#     st.info("Unconfirmed Tasks:")
-#     for task in unconfirmed_tasks:
-#         st.markdown(f"- **{task}**: Pending confirmation.")
+
+# Place the "Model Development Completed" button here, after the confirmed selections section
+if confirmed_count_final == all_tasks_count_final:
+    st.success("✅ You can now proceed to Performance Monitoring page.")
+    if st.button("Model Development Completed ! Proceed to Performance Monitoring", key="finalize_model_dev"):
+        st.session_state["model_development_complete"] = True
+        st.info("Model development step completed. You can now proceed to Performance Monitoring.")
+        st.switch_page("pages/Performance Monitoring.py")

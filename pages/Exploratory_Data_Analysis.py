@@ -316,7 +316,7 @@ def display_insights(data, dataset_name, feature_mapping):
         compare_data_start = None
         compare_data_end = today - timedelta(days=2)  # Common end for comparison periods
 
-        if comparison_period == 'Yesterday':  # Comparing yesterday with day before yesterday
+        if comparison_period == 'Yesterday':  
             compare_data_start = today - timedelta(days=2)
         elif comparison_period == 'Last Week':  # Last week, excluding yesterday
             compare_data_start = today - timedelta(days=8)
@@ -729,28 +729,18 @@ elif "installments_data" in st.session_state:
     # Load persisted data from session state
     installments_data = st.session_state["installments_data"]
     display_insights(installments_data, "Payment", feature_mapping)
-  
-# else:
-#     # Load Applications_data.csv by default
-#     installments_data = pd.read_csv(os.path.join(DEFAULT_DATA_DIR, "Applications_data.csv"))
-#     default_file_path = os.path.join(DEFAULT_DATA_DIR, "Applications_data.csv")
-#     if os.path.exists(default_file_path):
-#         st.info(f"Loading default Applications data from '{default_file_path}'")
-#         applications_data = load_data(installments_data, feature_mapping)
-#         if applications_data is not None:
-#             if 'Timestamp' in applications_data.columns and not applications_data['Timestamp'].isnull().all():
-#                 display_insights(applications_data, "Applications Data (Default)", feature_mapping)
-#                 save_dir = DATA_REGISTRY_DIR
-#                 data_path = os.path.join(save_dir, "applications_data.parquet")
-#                 try:
-#                     applications_data.to_parquet(data_path, index=False)
-#                     st.session_state["applications_data_path"] = data_path
-#                 except Exception as e:
-#                     st.error(f"Failed to save Applications data as parquet: {e}")
-#             else:
-#                 st.error("Applications data loaded but 'Timestamp' column is missing, invalid, or empty. Cannot proceed with insights.")
-#     else:
-#         st.error(f"Default Applications data file '{default_file_path}' not found. Please upload a file.")
+
+# Only show the "Proceed to Feature Engineering" button if all required data is uploaded
+required_data_uploaded = (
+    ("loan_level_data" in st.session_state) and
+    ("bureau_data" in st.session_state) and
+    ("installments_data" in st.session_state)
+)
+
+if required_data_uploaded:
+    if st.button("Proceed to Feature Engineering"):
+        st.switch_page("pages/Feature_Engineering.py")
+else:
+    st.info("Please upload all required data files (Loan-Level, Bureau, and Payment-Data) to proceed to Feature Engineering.")
 
 
-  

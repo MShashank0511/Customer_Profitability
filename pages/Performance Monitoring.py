@@ -231,23 +231,17 @@ def add_opb_column(df, loan_data_path='loan_data.csv'):
             if 'OPB' not in df.columns:
                 df = df.merge(loan_data[['Timestamp_x', 'OPB']], on='Timestamp_x', how='left')
                 st.write("Added OPB column to the DataFrame using loan_data.csv.")
-            else:
-                st.write("OPB column already exists in the DataFrame.")
-
+            
             # Map CREDIT_SCORE_AVG_CALC values if not present
             if 'CREDIT_SCORE_AVG_CALC' not in df.columns:
                 df = df.merge(loan_data[['Timestamp_x', 'CREDIT_SCORE_AVG_CALC']], on='Timestamp_x', how='left')
                 st.write("Added CREDIT_SCORE_AVG_CALC column to the DataFrame using loan_data.csv.")
-            else:
-                st.write("CREDIT_SCORE_AVG_CALC column already exists in the DataFrame.")
-
+            
             # Map DELINQ_CNT_30_DAY_TOTAL values if not present
             if 'DELINQ_CNT_30_DAY_TOTAL' not in df.columns:
                 df = df.merge(loan_data[['Timestamp_x', 'DELINQ_CNT_30_DAY_TOTAL']], on='Timestamp_x', how='left')
                 st.write("Added DELINQ_CNT_30_DAY_TOTAL column to the DataFrame using loan_data.csv.")
-            else:
-                st.write("DELINQ_CNT_30_DAY_TOTAL column already exists in the DataFrame.")
-        
+            
     except FileNotFoundError:
         st.error(f"Error: The file '{loan_data_path}' was not found. Please ensure it exists.")
     except Exception as e:
@@ -638,7 +632,7 @@ def main():
                 try:
                     with open("combined_df.pkl", "rb") as f:
                         st.session_state.cof_combined_df = pickle.load(f)
-                        st.success("Loaded the combined DataFrame from the pickle file.")
+                        
                 except FileNotFoundError:
                     st.error("The combined DataFrame for the COF model is not available. Please ensure the COF model is selected and processed.")
                     return

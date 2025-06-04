@@ -64,11 +64,11 @@ with col2:
             text-align: center;
             margin-left: auto;
             margin-right: auto;
-            font-size: 28px; /* Reduced font size */
+            font-size: 32px; /* Reduced font size */
             font-weight: bold;
         }
         </style>
-        <h1 class="dynamic-title">🏦 Sigmoid Profitability Analytics Tool</h1>
+        <h1 class="dynamic-title"> Sigmoid Profitability Analytics Tool</h1>
         """,
         unsafe_allow_html=True,
     )
@@ -144,9 +144,9 @@ st.markdown(
 st.markdown("""
     <style>
     .intro-text {
-        font-size: 23px;
+        font-size: 21px;
         font-weight: 600;
-        color: #1e88e5;
+        color: #000000;
         line-height: 1.7;
         background-color: #f5f7fa;
         border-radius: 16px;
@@ -163,12 +163,61 @@ st.markdown("""
 # <!-- with left: -->
 st.markdown("""
     <div class="intro-text">
-        Welcome to the Mortgage Analytics Tool – Your intelligent assistant for loan profitability monitoring and performance optimization.
+        Welcome to the Profitability Analytics Tool – Your intelligent assistant for loan profitability monitoring and performance optimization.
 This platform leverages data science to compare predicted and actual outcomes, identify model drift, and fine-tune decisions in real time.
 Visualize profitability, charge-off, and prepayment trends with ease—filtered by any feature combination.
 Upload your data, ask questions, and get instant clarity through conversational intelligence.
     </div>
 """, unsafe_allow_html=True)
 
-# <!-- with right:
-#     st.image("image.jpg", caption="Mortgage Analytics Tool")  # Make sure image path is correct -->
+# Add buttons for MVP and Customized Version
+  # Add a horizontal line for separation
+
+# Use columns for button layout and apply custom CSS for button style
+button_css = """
+<style>
+.stButton > button {
+    font-size: 35px;
+    font-weight: bold;
+    color: #000000;
+    background-color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 15px 30px;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.3s ease, color 0.3s ease;
+    margin: 0 10px;
+}
+.stButton > button:hover {
+    background-color: #000000;
+    color: white;
+}
+</style>
+"""
+st.markdown(button_css, unsafe_allow_html=True)
+
+
+st.markdown("---")
+
+# MVP Version description and button
+st.markdown("""
+#### Ready to Use Model
+Provides a streamlined workflow that focuses on core functionalities, allowing users to quickly calculate profitability using the available input data with minimal processing.
+""")
+st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+if st.button("Ready to Use Model", key="mvp_version_btn", use_container_width=True):
+    st.session_state["app_version"] = "MVP"
+    st.switch_page("pages/Exploratory_Data_Analysis.py")  # Adjust path if needed
+
+st.markdown("---")
+
+# Customized Version description and button
+st.markdown("""
+#### Customized Version
+Offers the complete set of functionalities across all pages, including transformations, AI recommendations, detailed analysis, and advanced profitability simulation.
+""")
+st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+if st.button("Customized Version", key="custom_version_btn", use_container_width=True):
+    st.session_state["app_version"] = "Customized"
+    st.switch_page("pages/Exploratory_Data_Analysis.py")  # Adjust path if needed

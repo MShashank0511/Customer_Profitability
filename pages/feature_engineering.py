@@ -2468,31 +2468,31 @@ if select_all_state_key not in st.session_state:
     st.session_state[select_all_state_key] = False
 
 # Search functionality
-    search_query = st.text_input("🔍 Search Features (name or description)", value="", placeholder="e.g. age, purchase_count")
+search_query = st.text_input("🔍 Search Features (name or description)", value="", placeholder="e.g. age, purchase_count")
 
     # --- Select All Checkbox ---
-    select_all_key = f"{active_model}_select_all"
-    if select_all_key not in st.session_state:
-        st.session_state[select_all_key] = False
-
-    select_all = st.checkbox("Select All Features", value=st.session_state[select_all_key], key=select_all_key)
-
-    # --- Build a combined feature description map ---
-    combined_feature_desc_map = feature_desc_map.copy()
+select_all_key = f"{active_model}_select_all"
+if select_all_key not in st.session_state:
+    st.session_state[select_all_key] = False
 
 
-    # Add/override with AI-recommended feature descriptions if available
-    ai_feature_info_df = st.session_state.get('feature_info', pd.DataFrame())
-    if not ai_feature_info_df.empty and "Feature" in ai_feature_info_df.columns and "Description" in ai_feature_info_df.columns:
-        for _, row in ai_feature_info_df.iterrows():
-            feat = row["Feature"]
-            desc = row["Description"]
-            if pd.notna(feat) and pd.notna(desc):
-                combined_feature_desc_map[feat] = desc
 
-    all_features_df = pd.DataFrame({
-    "Feature": available_optional_features,
-    "Description": [combined_feature_desc_map.get(feat, "No description available") for feat in available_optional_features],
+# --- Build a combined feature description map ---
+combined_feature_desc_map = feature_desc_map.copy()
+
+
+# Add/override with AI-recommended feature descriptions if available
+ai_feature_info_df = st.session_state.get('feature_info', pd.DataFrame())
+if not ai_feature_info_df.empty and "Feature" in ai_feature_info_df.columns and "Description" in ai_feature_info_df.columns:
+    for _, row in ai_feature_info_df.iterrows():
+        feat = row["Feature"]
+        desc = row["Description"]
+        if pd.notna(feat) and pd.notna(desc):
+            combined_feature_desc_map[feat] = desc
+
+all_features_df = pd.DataFrame({
+"Feature": available_optional_features,
+"Description": [combined_feature_desc_map.get(feat, "No description available") for feat in available_optional_features],
 })
 
 if search_query:
