@@ -13,6 +13,111 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+col1, col2, col3 = st.columns([1, 20, 5])
+
+with col1:
+    st.image("cropped-Sigmoid_logo_3x.png", width=100)
+
+with col2:
+    st.markdown(
+        """
+        <style>
+        .dynamic-title {
+            text-align: center;
+            margin-left: auto;
+            margin-right: auto;
+            font-size: 32px; /* Reduced font size */
+            font-weight: bold;
+        }
+        </style>
+        <h1 class="dynamic-title"> Loan Profitability AI engine</h1>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col3:
+    # Dropdown-style contact bubble
+    st.markdown("""
+    <style>
+    .dropdown {
+        position: relative;
+        display: inline-block;
+        margin-top: 10px;
+        float: right;
+    }
+
+    .dropdown-button {
+        background-color: #E9F5FE;
+        color: #0A2540;
+        padding: 10px 16px;
+        font-size: 14px;
+        border: none;
+        cursor: pointer;
+        border-radius: 18px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .dropdown-content {
+        display: none;
+        position: absolute;
+        right: 0;
+        background-color: #F9FAFB;
+        min-width: 180px;
+        padding: 10px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        z-index: 1;
+    }
+
+    .dropdown:hover .dropdown-content {
+        display: block;
+    }
+
+    .dropdown-content a {
+        color: #0A2540;
+        text-decoration: none;
+        display: block;
+        font-size: 14px;
+        margin-top: 5px;
+    }
+    </style>
+
+    <div class="dropdown">
+      <button class="dropdown-button">📞 Contact Us</button>
+      <div class="dropdown-content">
+        <b>Ravi Bajagur</b><br>
+        <a href="tel:8959896843">8959896843</a>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Adjust spacing dynamically based on sidebar visibility
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] + div {
+        margin-left: 150px; /* Adjust this value to control spacing */
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown("""
+    <style>
+    .intro-text {
+        font-size: 21px;
+        font-weight: 600;
+        color: #000000;
+        line-height: 1.7;
+        background-color: #f5f7fa;
+        border-radius: 16px;
+        padding: 30px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        margin-top: 20px;
+    }
+    </style>
+""", unsafe_allow_html=True)
 # Path to the default data directory
 DEFAULT_DATA_DIR = "default_data" # Not actively used in this script, but defined
 DATA_REGISTRY_DIR = "data_registry"

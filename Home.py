@@ -68,7 +68,7 @@ with col2:
             font-weight: bold;
         }
         </style>
-        <h1 class="dynamic-title"> Sigmoid Profitability Analytics Tool</h1>
+        <h1 class="dynamic-title"> Loan Profitability AI engine</h1>
         """,
         unsafe_allow_html=True,
     )

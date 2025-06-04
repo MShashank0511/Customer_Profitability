@@ -19,6 +19,112 @@ from sklearn.metrics import (
 from sklearn.preprocessing import LabelEncoder
 import shap
 import joblib
+col1, col2, col3 = st.columns([1, 20, 5])
+
+with col1:
+    st.image("cropped-Sigmoid_logo_3x.png", width=100)
+
+with col2:
+    st.markdown(
+        """
+        <style>
+        .dynamic-title {
+            text-align: center;
+            margin-left: auto;
+            margin-right: auto;
+            font-size: 32px; /* Reduced font size */
+            font-weight: bold;
+        }
+        </style>
+        <h1 class="dynamic-title"> Loan Profitability AI engine</h1>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col3:
+    # Dropdown-style contact bubble
+    st.markdown("""
+    <style>
+    .dropdown {
+        position: relative;
+        display: inline-block;
+        margin-top: 10px;
+        float: right;
+    }
+
+    .dropdown-button {
+        background-color: #E9F5FE;
+        color: #0A2540;
+        padding: 10px 16px;
+        font-size: 14px;
+        border: none;
+        cursor: pointer;
+        border-radius: 18px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .dropdown-content {
+        display: none;
+        position: absolute;
+        right: 0;
+        background-color: #F9FAFB;
+        min-width: 180px;
+        padding: 10px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        z-index: 1;
+    }
+
+    .dropdown:hover .dropdown-content {
+        display: block;
+    }
+
+    .dropdown-content a {
+        color: #0A2540;
+        text-decoration: none;
+        display: block;
+        font-size: 14px;
+        margin-top: 5px;
+    }
+    </style>
+
+    <div class="dropdown">
+      <button class="dropdown-button">📞 Contact Us</button>
+      <div class="dropdown-content">
+        <b>Ravi Bajagur</b><br>
+        <a href="tel:8959896843">8959896843</a>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Adjust spacing dynamically based on sidebar visibility
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] + div {
+        margin-left: 150px; /* Adjust this value to control spacing */
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown("""
+    <style>
+    .intro-text {
+        font-size: 21px;
+        font-weight: 600;
+        color: #000000;
+        line-height: 1.7;
+        background-color: #f5f7fa;
+        border-radius: 16px;
+        padding: 30px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        margin-top: 20px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 app_version = st.session_state.get("app_version", "Customized")
 is_mvp = app_version == "MVP"
 
@@ -31,12 +137,12 @@ MODEL_INPUT_SOURCES = {
     "Charge-Off Model (for COF)": {
         "session_state_key_suffix": "Charge-Off Model",
         "target_column_primary": "COF_EVENT_LABEL",
-        "data_registry_subfolder_actual": "Charge-Off_Model"
+        "data_registry_subfolder_actual": "Charge-Off Model"
     },
     "Prepayment Model (for Prepayment)": {
         "session_state_key_suffix": "Prepayment Model",
         "target_column_primary": "PREPAYMENT_EVENT_LABEL",
-        "data_registry_subfolder_actual": "Prepayment_Model"
+        "data_registry_subfolder_actual": "Prepayment Model"
     },
     "Forecast Model (for Profitability)": {
         "session_state_key_suffix": "Forecast_Model",
@@ -121,22 +227,12 @@ for model_index, model_name in enumerate(modeling_tasks):
 
     # --- Data Loading Logic ---
     df_full = None
-    data_source_message = ""
-    data_path_key_from_prev_page = f"{active_model_suffix_for_path}_final_dataset_path"
-    data_path_from_session = st.session_state.get(data_path_key_from_prev_page)
-
-    if data_path_from_session and os.path.exists(data_path_from_session):
-        try:
-            df_full = pd.read_parquet(data_path_from_session)
-        except Exception as e:
-            st.error(f"Error loading data from session state path '{data_path_from_session}': {e}. Attempting fallbacks.")
-            df_full = None
-
+    
     if df_full is None:
         constructed_path = os.path.join(
             DATA_REGISTRY_BASE_DIR,
             data_registry_subfolder,
-            f"{target_column}_final_dataset.parquet"
+            "target_final_dataset.parquet"
         )
         if os.path.exists(constructed_path):
             try:
@@ -350,7 +446,7 @@ for model_index, model_name in enumerate(modeling_tasks):
     selected_model_task_name = model_name  # <-- Define this before use
 
     if is_mvp:
-        st.info("This section is disabled in MVP mode. Only one run will be performed for the selected model with default hyperparameters.")
+        st.info("This section is not available in Ready to Use Model")
         # Prepare default parameters for the selected model
         param_dist = {
             "Logistic Regression": {"C": [1.0], "solver": ["lbfgs"], "max_iter": [100]},

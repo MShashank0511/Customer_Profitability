@@ -8,7 +8,113 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from backend import process_models_from_session  # <-- Use this function
+from backend import process_models_from_session 
+col1, col2, col3 = st.columns([1, 20, 5])
+
+with col1:
+    st.image("cropped-Sigmoid_logo_3x.png", width=100)
+
+with col2:
+    st.markdown(
+        """
+        <style>
+        .dynamic-title {
+            text-align: center;
+            margin-left: auto;
+            margin-right: auto;
+            font-size: 32px; /* Reduced font size */
+            font-weight: bold;
+        }
+        </style>
+        <h1 class="dynamic-title"> Loan Profitability AI engine</h1>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col3:
+    # Dropdown-style contact bubble
+    st.markdown("""
+    <style>
+    .dropdown {
+        position: relative;
+        display: inline-block;
+        margin-top: 10px;
+        float: right;
+    }
+
+    .dropdown-button {
+        background-color: #E9F5FE;
+        color: #0A2540;
+        padding: 10px 16px;
+        font-size: 14px;
+        border: none;
+        cursor: pointer;
+        border-radius: 18px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .dropdown-content {
+        display: none;
+        position: absolute;
+        right: 0;
+        background-color: #F9FAFB;
+        min-width: 180px;
+        padding: 10px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        z-index: 1;
+    }
+
+    .dropdown:hover .dropdown-content {
+        display: block;
+    }
+
+    .dropdown-content a {
+        color: #0A2540;
+        text-decoration: none;
+        display: block;
+        font-size: 14px;
+        margin-top: 5px;
+    }
+    </style>
+
+    <div class="dropdown">
+      <button class="dropdown-button">📞 Contact Us</button>
+      <div class="dropdown-content">
+        <b>Ravi Bajagur</b><br>
+        <a href="tel:8959896843">8959896843</a>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Adjust spacing dynamically based on sidebar visibility
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] + div {
+        margin-left: 150px; /* Adjust this value to control spacing */
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown("""
+    <style>
+    .intro-text {
+        font-size: 21px;
+        font-weight: 600;
+        color: #000000;
+        line-height: 1.7;
+        background-color: #f5f7fa;
+        border-radius: 16px;
+        padding: 30px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        margin-top: 20px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+ # <-- Use this function
 def generate_chargeoff_trend(term, skew_start=0.2, skew_middle=0.5, skew_end=0.8, weights=(1.0, 1.0, 1.0)):
     """
     Generates a custom skewed Gaussian trend across loan term.
@@ -109,7 +215,7 @@ def split_and_distribute_with_credit_risk(df, prob_col='Predicted_Probability', 
 
     return pd.DataFrame(expanded_rows)
 
-st.set_page_config(layout="wide")
+# st.set_page_config(layout="wide")
 st.title("Comprehensive Model Monitoring: Profitability, Charge-Off, Prepayment")
 
 # --- Backend Function (Now within this file) ---
@@ -343,7 +449,7 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     # --- 1. Model Selection ---
-    st.header("1. Model Selection")
+    st.header("Step 1 : Model Selection")
 
     # Attempt to retrieve processed dataframes
     try:
@@ -408,7 +514,7 @@ def main():
     if missing_columns:
         st.warning(f"Warning: The selected model does not contain the required columns: {missing_columns}. Please select all three models in the Data Source section to avoid errors.")
         return
-
+    
     # --- 2. Data Preprocessing ---
     df_edited = selected_df.copy()
     df_edited = add_opb_column(df_edited)
@@ -428,9 +534,9 @@ def main():
     st.subheader("Transformed Data")
     st.write("Preview of the transformed data:")
     st.dataframe(df_edited.head())
-
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
     # --- 3. Explore Model Evaluation for Selected Segments ---
-    st.header("2. Explore Model Evaluation for Selected Segments")
+    st.header("Step 2 : Explore Model Evaluation for Selected Segments")
 
     # Extract unique values from the preprocessed data
     origination_years = sorted(df_edited['Origination_Year'].dropna().unique())
@@ -487,7 +593,8 @@ def main():
         target_variable_present = 'PREPAYMENT_EVENT_LABEL'
 
     # --- 4. Model Evaluation ---
-    st.header("3. Performance metrics and evaluation graphs based on selected filters.")
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
+    st.header("Step 3 : Performance metrics and evaluation graphs based on selected filters.")
 
     if target_variable_present == 'Profitability_GBP':
         # Calculate evaluation metrics
@@ -615,7 +722,8 @@ def main():
             store_processed_data(combined_df, "Combined_COFPREPAYMENT")
 
     # --- 5. Button to Show Results ---
-    st.header("4. Results")
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
+    st.header("Step 4 : Results")
 
     # Debugging: Check if cof_event_df and prepayment_event_df are present
     if 'cof_event_df' not in st.session_state:

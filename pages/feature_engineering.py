@@ -17,7 +17,111 @@ import sys
 import os
 import datetime
 
+col1, col2, col3 = st.columns([1, 20, 5])
 
+with col1:
+    st.image("cropped-Sigmoid_logo_3x.png", width=100)
+
+with col2:
+    st.markdown(
+        """
+        <style>
+        .dynamic-title {
+            text-align: center;
+            margin-left: auto;
+            margin-right: auto;
+            font-size: 32px; /* Reduced font size */
+            font-weight: bold;
+        }
+        </style>
+        <h1 class="dynamic-title"> Loan Profitability AI engine</h1>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col3:
+    # Dropdown-style contact bubble
+    st.markdown("""
+    <style>
+    .dropdown {
+        position: relative;
+        display: inline-block;
+        margin-top: 10px;
+        float: right;
+    }
+
+    .dropdown-button {
+        background-color: #E9F5FE;
+        color: #0A2540;
+        padding: 10px 16px;
+        font-size: 14px;
+        border: none;
+        cursor: pointer;
+        border-radius: 18px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .dropdown-content {
+        display: none;
+        position: absolute;
+        right: 0;
+        background-color: #F9FAFB;
+        min-width: 180px;
+        padding: 10px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        z-index: 1;
+    }
+
+    .dropdown:hover .dropdown-content {
+        display: block;
+    }
+
+    .dropdown-content a {
+        color: #0A2540;
+        text-decoration: none;
+        display: block;
+        font-size: 14px;
+        margin-top: 5px;
+    }
+    </style>
+
+    <div class="dropdown">
+      <button class="dropdown-button">📞 Contact Us</button>
+      <div class="dropdown-content">
+        <b>Ravi Bajagur</b><br>
+        <a href="tel:8959896843">8959896843</a>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Adjust spacing dynamically based on sidebar visibility
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] + div {
+        margin-left: 150px; /* Adjust this value to control spacing */
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown("""
+    <style>
+    .intro-text {
+        font-size: 21px;
+        font-weight: 600;
+        color: #000000;
+        line-height: 1.7;
+        background-color: #f5f7fa;
+        border-radius: 16px;
+        padding: 30px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        margin-top: 20px;
+    }
+    </style>
+""", unsafe_allow_html=True)
 app_version = st.session_state.get("app_version", "Customized")
 is_mvp = app_version == "MVP"
 
@@ -167,7 +271,7 @@ def initialize_new_model_state(model_name):
         # These dataframes should be available in the Streamlit session state
         # if they have been loaded previously by the user.
         # If not, provide empty dataframes to avoid errors.
-        initial_loan_data = pd.read_csv("loan_data.csv") 
+        
         try:
             initial_bureau_data = bureau_df.copy()
         except NameError:
@@ -186,7 +290,7 @@ def initialize_new_model_state(model_name):
             initial_installments_data = pd.DataFrame()
     except AttributeError:
         # Handle cases where session_state might not have these attributes yet
-        initial_loan_data = pd.DataFrame()
+        
         initial_bureau_data = pd.DataFrame()
         initial_loan_level_data = pd.DataFrame()
         initial_installments_data = pd.DataFrame()
@@ -194,7 +298,7 @@ def initialize_new_model_state(model_name):
 
     # Initialize raw_datasets and filtered_datasets dictionaries
     raw_datasets = {
-        "Loan Data": initial_loan_data.copy(),
+        
         "Bureau Data": initial_bureau_data.copy(),
         "Loan-Level Data": initial_loan_level_data.copy(),
         "Payment Data": initial_installments_data.copy(),
@@ -205,7 +309,7 @@ def initialize_new_model_state(model_name):
     st.session_state[f"{model_name}_state"] = {
         "raw_datasets": raw_datasets,
         "filtered_datasets": filtered_datasets,
-        "loan_data": raw_datasets["Loan Data"], # Point to the raw_datasets version
+         # Point to the raw_datasets version
         "bureau_data": raw_datasets["Bureau Data"], # Point to the raw_datasets version
         "loan_level_data": raw_datasets["Loan-Level Data"], # Point to the raw_datasets version
         "installments_data": raw_datasets["Payment Data"], # Point to the raw_datasets version
@@ -349,7 +453,7 @@ def load_model_state(model_name):
     # Store the currently uploaded raw datasets before clearing session state
     # These are assumed to be present in st.session_state from initial user uploads
     current_raw_datasets = {
-        "Loan Data": st.session_state.get("uploaded_loan_data", pd.DataFrame()),
+        
         "Bureau Data": st.session_state.get("uploaded_bureau_data", pd.DataFrame()),
         "Loan-Level Data": st.session_state.get("uploaded_loan_level_data", pd.DataFrame()),
         "Installments Data": st.session_state.get("uploaded_installments_data", pd.DataFrame()),
@@ -401,7 +505,7 @@ def load_model_state(model_name):
                     # After loading, ensure individual DataFrame pointers refer to the raw_datasets
                     # This is crucial for consistency
                     if "raw_datasets" in st.session_state[session_key]:
-                        st.session_state[session_key]["loan_data"] = st.session_state[session_key]["raw_datasets"].get("Loan Data", pd.DataFrame())
+                       
                         st.session_state[session_key]["bureau_data"] = st.session_state[session_key]["raw_datasets"].get("Bureau Data", pd.DataFrame())
                         st.session_state[session_key]["loan_level_data"] = st.session_state[session_key]["raw_datasets"].get("Loan-Level Data", pd.DataFrame())
                         st.session_state[session_key]["installments_data"] = st.session_state[session_key]["raw_datasets"].get("Installments Data", pd.DataFrame())
@@ -731,6 +835,7 @@ target_feature = st.session_state.get(f"{active_model}_target_feature", None)
 final_dataset_json = st.session_state.get(f"{active_model}_final_dataset_json", None)
 
 # --- Dataset Selection Section ---
+st.subheader("Step 1 : Preview Data")
 col1, col2, col3 = st.columns(3)
 
 # Ensure the datasets are stored in session state
@@ -806,7 +911,7 @@ dataset_mapping = {
 
 # The rest of your feature engineering code can then use the data from the session state,
 # ensuring it's using the updated datasets.
-st.markdown("---")
+st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
 
 # --- Filter Data Section ---
 def filter_data_section():
@@ -1246,7 +1351,7 @@ def show_filter_data_callback():
 # Add the button with a callback
 if "show_filter_data" not in st.session_state:
     st.session_state["show_filter_data"] = False
-
+st.subheader("Step 2 : Select and Filter Input Data ")
 # Filter Data Button
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
@@ -1256,11 +1361,11 @@ with col2:
 # Display the filter section only if the button has been clicked
 if st.session_state.show_filter_data:
     if is_mvp:
-        st.info("🔒 Filtering is not available in MVP mode.")
+        st.info("🔒 Filtering is not available in Ready to Use Model .")
     else:
         filter_data_section()
 
-st.markdown("---")
+st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
 # Debugging breakpoint to inspect session state and variables
 # --- Initialize Session State ---
 # Initialize session state variables if they don't exist
@@ -1320,6 +1425,7 @@ if f"{active_model}_combined_dataset" not in st.session_state:
 
 # --- Merge Datasets Section ---
 # Merge Datasets Button
+st.subheader("Step 3 : Integrate Datasets ")
 col1, col2, col3 = st.columns([1, 2, 1]) # You might want to adjust these ratios for better button centering if needed
 with col2:
     # Ensure the show_merge state is initialized for the active model
@@ -1331,6 +1437,7 @@ with col2:
 
     # Use the updated width for the button column if you changed it previously
     # col1, col2, col3 = st.columns([1, 5, 1]) # Example if you want a wider button container
+    
     st.button("🔄 Data Integration", key="merge_btn", on_click=show_merge_callback, use_container_width=True)
 
 
@@ -1340,7 +1447,7 @@ model_state = st.session_state.get(f"{active_model}_state", {}) # Get model stat
 
 if model_state.get("show_merge", False): # Check the show_merge state within the model state
     if is_mvp:
-        st.info("🔒 Data integration is not available in MVP mode.")
+        st.info("🔒 Data integration is not available in Ready to Use Model .")
     else:
         
         # Prepare available tables for merging
@@ -1775,7 +1882,7 @@ if model_state.get("show_merge", False): # Check the show_merge state within the
             model_state["merge_status_type"] = None
             st.session_state[f"{active_model}_state"] = model_state # Update session state after clearing
 
-st.markdown("---")  # Separator for clarity after merge section
+st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True) # Separator for clarity after merge section
 
 ############################################################################################################################################3
 
@@ -1797,9 +1904,10 @@ if f"{active_model}_accept_ai_success" not in st.session_state:
     st.session_state[f"{active_model}_accept_ai_success"] = False
 ##############################################################################  
 # --- Recommend Features Button ---
-st.markdown("## AI Generated Features that are recommended to be used in the model.")
+st.subheader("Step 4 : AI-Powered Feature Engineering")
+st.subheader("AI Generated Features that are recommended to be used in the model.")
 if is_mvp:
-    st.info("🔒 AI-Powered feature recommendation is not available in MVP mode.")
+    st.info("🔒 AI-Powered feature recommendation is not available in Ready to Use Model.")
 else:
 
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -1873,7 +1981,7 @@ else:
                 key="recommended_features_ai_editor"
             )
 
-            st.markdown("---")
+            st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
             st.markdown("#### 🧪 Full Derivations and Justifications")
             st.dataframe(
                 display_df[["Feature", "Derivation", "Justification"]],
@@ -1973,13 +2081,14 @@ else:
             st.write(f"Shape: {updated_dataset.shape}")
             st.dataframe(updated_dataset.head(), use_container_width=True)
 
-st.markdown("---")
+st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
 
 ############# --- Data Transformation Buttons ---###############
-st.markdown("## 🔧 Feature Transformation")
+
+st.subheader("Step 5 : Feature Transformation")
 st.markdown("##### Customize the features based on the business requirements.")
 if is_mvp:
-    st.info("🔒 Single feature transformation is not available in MVP mode.")
+    st.info("🔒 Single feature transformation is not available in Ready to Use Model.")
 else:
     # Create a centered container for the buttons
     col1, col2, col3 = st.columns([1, 2, 1])  # Unequal columns to center the buttons
@@ -2211,7 +2320,7 @@ else:
 # --- Multi-Feature Transformation Section ---
 st.markdown("###  Multiple Features Transformation")
 if is_mvp:
-    st.info("🔒 Multi-feature transformation is not available in MVP mode.")
+    st.info("🔒 Multi-feature transformation is not available in Ready to Use Model.")
 else:
     # IMPORTANT: Ensure active_model and model_state are defined here or globally
     if "active_model" not in st.session_state:
@@ -2346,7 +2455,7 @@ else:
 
 
 
-st.markdown("---")
+st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
 
 
 ###################################################################################################################################################
@@ -2354,10 +2463,10 @@ st.markdown("---")
 # --- Data Selection Section (Start of the requested section) ---
 
 # --- Target Variable Selection ---
-st.markdown("## 🎯 Target Variable Preview")
+st.subheader("Step 6 : Target Variable Preview")
 st.markdown("#### Preview the Feature that will store the value of output for selected model.")
 if is_mvp:
-    st.info("🔒 Multi-feature transformation is not available in MVP mode.")
+    st.info("🔒 Multi-feature transformation is not available in Ready to Use Model.")
 else:
     # Hardcoded mapping for each model
     MODEL_TARGET_MAP = {
@@ -2385,11 +2494,11 @@ else:
     else:
         st.info("Please complete multi-feature transformations first to select a target variable.")
 
-    st.markdown("---") # Separator after target selection
+    st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)# Separator after target selection
 
 
 # --- Mandatory Features Section ---
-st.subheader("📌 Mandatory Features")
+st.subheader("Step 7 : Mandatory Features")
 
 if is_mvp:
     # Define the features you want to show in MVP mode
@@ -2427,9 +2536,9 @@ if is_mvp:
                 "Description": [feature_desc_map.get(f, "No description available") for f in present_mandatory_features]
             })
             st.dataframe(mandatory_features_df, hide_index=True)
-            st.success("Mandatory attributes for MVP are displayed from the merged dataset.")
+            st.success("Mandatory attributes for Ready to Use Model are displayed from the merged dataset.")
         else:
-            st.warning("None of the MVP mandatory features are present in the merged dataset.")
+            st.warning("None of the Ready to Use Model mandatory features are present in the merged dataset.")
     else:
         st.warning("Merged dataset is empty. Cannot display mandatory features.")
 else:
@@ -2492,16 +2601,21 @@ else:
         else:
             st.info("No mandatory features identified in the dataset.")
 
-st.markdown("---")
+st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
 
 
 
 # --- Good-to-Have Features Section ---
-st.subheader("🧠 Optional AI-Recommended Features")
+st.subheader("Step 8 : Optional AI-Recommended Features")
+
 if is_mvp:
     st.info("🔒 Multi-feature transformation is not available in MVP mode.")
 else:
-    # Exclude mandatory features from optional list
+    # Ensure necessary variables exist
+    combined_data_for_mandatory = model_state.get("features_for_mandatory", pd.DataFrame())
+    present_mandatory_features = model_state.get("selected_mandatory_features", [])
+
+    # --- Exclude mandatory features ---
     available_optional_features = [
         feat for feat in combined_data_for_mandatory.columns
         if feat not in present_mandatory_features
@@ -2510,41 +2624,36 @@ else:
     checkbox_state_key = f"{active_model}_feature_checkboxes"
     select_all_state_key = f"{active_model}_select_all_clicked"
 
-    # Initialize session state
+    # --- Initialize session state ---
     if checkbox_state_key not in st.session_state:
         st.session_state[checkbox_state_key] = {}
-
     if select_all_state_key not in st.session_state:
         st.session_state[select_all_state_key] = False
 
-    # Search functionality
-        search_query = st.text_input("🔍 Search Features (name or description)", value="", placeholder="e.g. age, purchase_count")
+    # --- Search Box ---
+    search_query = st.text_input("🔍 Search Features (name or description)", value="", placeholder="e.g. age, purchase_count")
 
-        # --- Select All Checkbox ---
-        select_all_key = f"{active_model}_select_all"
-        if select_all_key not in st.session_state:
-            st.session_state[select_all_key] = False
+    # --- Feature Descriptions Map ---
+    combined_feature_desc_map = feature_desc_map.copy() if 'feature_desc_map' in locals() else {}
 
-        select_all = st.checkbox("Select All Features", value=st.session_state[select_all_key], key=select_all_key)
+    ai_feature_info_df = st.session_state.get('feature_info', pd.DataFrame())
+    if not ai_feature_info_df.empty and "Feature" in ai_feature_info_df.columns and "Description" in ai_feature_info_df.columns:
+        for _, row in ai_feature_info_df.iterrows():
+            feat = row["Feature"]
+            desc = row["Description"]
+            if pd.notna(feat) and pd.notna(desc):
+                combined_feature_desc_map[feat] = desc
 
-        # --- Build a combined feature description map ---
-        combined_feature_desc_map = feature_desc_map.copy()
-
-
-        # Add/override with AI-recommended feature descriptions if available
-        ai_feature_info_df = st.session_state.get('feature_info', pd.DataFrame())
-        if not ai_feature_info_df.empty and "Feature" in ai_feature_info_df.columns and "Description" in ai_feature_info_df.columns:
-            for _, row in ai_feature_info_df.iterrows():
-                feat = row["Feature"]
-                desc = row["Description"]
-                if pd.notna(feat) and pd.notna(desc):
-                    combined_feature_desc_map[feat] = desc
-
-        all_features_df = pd.DataFrame({
+    # --- DataFrame with All Optional Features ---
+    all_features_df = pd.DataFrame({
         "Feature": available_optional_features,
-        "Description": [combined_feature_desc_map.get(feat, "No description available") for feat in available_optional_features],
+        "Description": [
+            combined_feature_desc_map.get(feat, "No description available")
+            for feat in available_optional_features
+        ]
     })
 
+    # --- Filtered View Based on Search ---
     if search_query:
         filtered_df = all_features_df[
             all_features_df["Feature"].str.contains(search_query, case=False, na=False) |
@@ -2553,10 +2662,9 @@ else:
     else:
         filtered_df = all_features_df.copy()
 
-    # Select all checkbox
-    select_all_ui = st.checkbox("Select All Features", value=False, key="select_all_ui")
+    # --- Select All Checkbox ---
+    select_all_ui = st.checkbox("Select All Features", value=st.session_state[select_all_state_key], key="select_all_ui")
 
-    # Apply select all / deselect all
     if select_all_ui and not st.session_state[select_all_state_key]:
         for feat in filtered_df["Feature"]:
             st.session_state[checkbox_state_key][feat] = True
@@ -2569,13 +2677,14 @@ else:
         st.session_state[select_all_state_key] = False
         st.rerun()
 
-    # Reflect selection state
+    # --- Reflect Current Selections ---
     filtered_df["Select"] = [
-        st.session_state[checkbox_state_key].get(feat, False) for feat in filtered_df["Feature"]
+        st.session_state[checkbox_state_key].get(feat, False)
+        for feat in filtered_df["Feature"]
     ]
-    filtered_df["Select"] = filtered_df["Select"].astype(bool)  # <-- Ensure boolean type
+    filtered_df["Select"] = filtered_df["Select"].astype(bool)
 
-    # Display table
+    # --- Display Editor ---
     edited_df = st.data_editor(
         filtered_df,
         column_config={
@@ -2588,11 +2697,11 @@ else:
         key=f"{active_model}_feature_editor"
     )
 
-    # Update selections
+    # --- Update Selections in Session State ---
     for feature, selected in zip(edited_df["Feature"], edited_df["Select"]):
         st.session_state[checkbox_state_key][feature] = selected
 
-    # Save selected features globally
+    # --- Final Selected Features (excluding mandatory) ---
     selected_features = [
         feat for feat, selected in st.session_state[checkbox_state_key].items()
         if selected and feat not in present_mandatory_features
@@ -2600,6 +2709,7 @@ else:
     st.session_state[f"{active_model}_selected_features"] = selected_features
 
     st.markdown(f"✅ **{len(selected_features)} features selected.**")
+
 
 
 if st.button("📊 Show Selected Attributes"):
@@ -2635,7 +2745,7 @@ if st.button("📊 Show Selected Attributes"):
             # Only show mandatory features
             present_mandatory_features = [f for f in MVP_MANDATORY_FEATURES if f in merged.columns]
             filtered_merged = merged[present_mandatory_features].copy()
-            st.subheader("Mandatory Features Dataset (MVP Mode)")
+            st.subheader("Mandatory Features Dataset (Ready to Use Model)")
             st.dataframe(filtered_merged, use_container_width=True)
             # Assign filtered_merged to final_dataset for consistent parquet logic
             model_state["final_dataset"] = filtered_merged.copy()
