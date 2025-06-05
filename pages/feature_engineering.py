@@ -2439,8 +2439,8 @@ if not is_mvp:
                     # st.info(f"Transformed features saved to: {combined_dataset_file}")
 
                     # Clear the transform blocks after successful application
-                    model_state["multi_transform_blocks"] = []
-                    st.rerun() # Rerun to clear blocks and update UI (this will also trigger the success message display)
+                model_state["multi_transform_blocks"] = []
+                st.rerun() # Rerun to clear blocks and update UI (this will also trigger the success message display)
 
             except Exception as e:
                 st.error(f"An unexpected error occurred during multi-feature transformations: {str(e)}")
