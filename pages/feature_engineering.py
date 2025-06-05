@@ -260,7 +260,7 @@ if is_mvp:
 
 
 # --- Model Definitions ---
-MODEL_NAMES = ["Forecast Model", "Charge-Off Model", "Prepayment Model"]
+MODEL_NAMES = ["Charge-Off Model", "Prepayment Model","Forecast Model"]
 
 def initialize_new_model_state(model_name):
     """Initialize a fresh state for a new model."""
@@ -2419,7 +2419,10 @@ else:
 
                 # Store the result in model_state["final_transformed_features"]
                 model_state["final_transformed_features"] = final_transformed_df
-
+                # with st.expander("📂 View Updated Dataset with Transformed Features", expanded=False):
+                #     st.markdown("### Updated Dataset")
+                #     st.write(f"Shape: {final_transformed_df.shape}")
+                #     st.dataframe(final_transformed_df.head(), use_container_width=True)
                 # Update success message for the model state (handled by the display block below)
                 model_state["multi_transform_success"] = "✅ Multi-feature transformations applied successfully!"
 
@@ -2739,7 +2742,6 @@ if st.button("📊 Show Selected Attributes"):
             "Timestamp_x"
         ]
 
-
         merged = st.session_state.get("mvp_merged_dataset", pd.DataFrame())
         if not merged.empty:
             # Only show mandatory features
@@ -2755,7 +2757,7 @@ if st.button("📊 Show Selected Attributes"):
             os.makedirs(data_registry_subfolder, exist_ok=True)
             # Use a default target for MVP if not set
             target_feature = model_state.get("target_feature") or "target"
-            final_dataset_path = os.path.join(data_registry_subfolder, f"{target_feature}_final_dataset.parquet")
+            final_dataset_path = os.path.join(data_registry_subfolder, "target_final_dataset.parquet")
             merged.to_parquet(final_dataset_path, index=False)
             st.session_state[f"{active_model}_final_dataset_path"] = final_dataset_path
             st.success(f"Feature selection for '{active_model}' completed successfully!")
@@ -2813,7 +2815,7 @@ if st.button("📊 Show Selected Attributes"):
                 os.makedirs(data_registry_subfolder, exist_ok=True)
 
                 # Save the final dataset as a Parquet file
-                final_dataset_path = os.path.join(data_registry_subfolder, f"{model_state[f'target_feature']}_final_dataset.parquet")
+                final_dataset_path = os.path.join(data_registry_subfolder, "target_final_dataset.parquet")
                 final_dataset_with_target.to_parquet(final_dataset_path, index=False)
 
                 # Save the file path in session state for use in the next page
@@ -2822,6 +2824,23 @@ if st.button("📊 Show Selected Attributes"):
                 st.success(f"Feature selection for '{active_model}' completed successfully!")
             else:
                 st.warning("Final dataset is empty, cannot save Parquet file.")
+
+    # --- Check if all 3 models have completed feature selection ---
+    
+
+    
+required_model_folders = ["Charge-Off Model", "Prepayment Model", "Forecast Model"]
+data_registry_base = "data_registry"
+
+    # Check if parquet files exist for all models on disk
+all_files_exist = all(
+    os.path.exists(os.path.join(data_registry_base, model_folder, "target_final_dataset.parquet"))
+    for model_folder in required_model_folders
+)
+if all_files_exist:
+        if st.button("Proceed to Model Development"):
+            st.switch_page("pages/Model_Development.py")
+    
         
 
 

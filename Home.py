@@ -1,12 +1,39 @@
 import streamlit as st
 from PIL import Image
-
+import os
+import html
 st.set_page_config(
-    page_title="Mortage Analytics Tool",
+    page_title="Loan Profitability AI Engine",
     page_icon="🏦",
     layout="wide",
 )
-import html
+
+DATA_REGISTRY_DIR = "data_registry"
+def clear_data_registry():
+    if os.path.exists(DATA_REGISTRY_DIR):
+        for root, dirs, files in os.walk(DATA_REGISTRY_DIR, topdown=False):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                try:
+                    os.unlink(file_path)
+                except Exception as e:
+                    st.error(f"Failed to delete file {file_path}: {e}")
+            for dir_name in dirs:
+                dir_path = os.path.join(root, dir_name)
+                try:
+                    os.rmdir(dir_path)
+                except Exception as e:
+                    st.error(f"Failed to delete directory {dir_path}: {e}")
+        try:
+            os.rmdir(DATA_REGISTRY_DIR)
+        except Exception as e:
+            st.error(f"Failed to delete directory {DATA_REGISTRY_DIR}: {e}")
+    
+    # Ensure the directory exists after attempting to clear it
+    os.makedirs(DATA_REGISTRY_DIR, exist_ok=True)
+
+
+# Clear the `data_registry` directory only once per session
 
 def data_loaded_file_uploader(show: bool = True):
     if show:
@@ -206,18 +233,27 @@ st.markdown("""
 Provides a streamlined workflow that focuses on core functionalities, allowing users to quickly calculate profitability using the available input data with minimal processing.
 """)
 st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+# Ready to Use Model
 if st.button("Ready to Use Model", key="mvp_version_btn", use_container_width=True):
+    # Clear registry if switching from a different version
+    if st.session_state.get("app_version") != "MVP":
+        clear_data_registry()
+    
     st.session_state["app_version"] = "MVP"
-    st.switch_page("pages/Exploratory_Data_Analysis.py")  # Adjust path if needed
+    st.switch_page("pages/Exploratory_Data_Analysis.py")
 
 st.markdown("---")
 
-# Customized Version description and button
+# Customized Version
 st.markdown("""
 #### Customized Version
 Offers the complete set of functionalities across all pages, including transformations, AI recommendations, detailed analysis, and advanced profitability simulation.
 """)
 st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
 if st.button("Customized Version", key="custom_version_btn", use_container_width=True):
+    if st.session_state.get("app_version") != "Customized":
+        clear_data_registry()
+    
     st.session_state["app_version"] = "Customized"
-    st.switch_page("pages/Exploratory_Data_Analysis.py")  # Adjust path if needed
+    st.switch_page("pages/Exploratory_Data_Analysis.py")

@@ -484,16 +484,31 @@ def main():
             st.stop()
 
     # Create a dictionary of available data sources
-    available_data_sources = {df.attrs.get('name', f'Unnamed DataFrame {i}'): df for i, df in enumerate(processed_dataframes)}
+    # Build the mapping of available data sources
+    available_data_sources = {
+        df.attrs.get('name', f'Unnamed DataFrame {i}'): df 
+        for i, df in enumerate(processed_dataframes)
+    }
 
     if not available_data_sources:
         st.warning("No data available. Please ensure data has been processed.")
         st.stop()
 
-    # Allow the user to select a data source
+    # Desired default option
+    default_option = "Linear Regression (Profitability_GBP)"
+    options = list(available_data_sources.keys())
+
+    # Determine the index of the default option if it exists
+    default_index = options.index(default_option) if default_option in options else 0
+
+    # Show selectbox with default selection
     data_source_name = st.selectbox(
-        "Selected Model (Target_Variable)", options=list(available_data_sources.keys())
+        "Selected Model (Target_Variable)",
+        options=options,
+        index=default_index
     )
+
+    # Set the selected DataFrame
     selected_df = available_data_sources[data_source_name]
     st.session_state.data_source = data_source_name
 
@@ -532,8 +547,9 @@ def main():
 
     # Display the preprocessed data
     st.subheader("Transformed Data")
-    st.write("Preview of the transformed data:")
-    st.dataframe(df_edited.head())
+    with st.expander("Click to view the preprocessed data", expanded=False):
+        st.write("Preview of the transformed data:")
+        st.dataframe(df_edited.head())
     st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
     # --- 3. Explore Model Evaluation for Selected Segments ---
     st.header("Step 2 : Explore Model Evaluation for Selected Segments")
@@ -579,9 +595,7 @@ def main():
             filtered_df = filtered_df[np.logical_or.reduce(credit_score_conditions)]
 
     # Display the filtered data
-    st.subheader("Filtered Data")
-    st.write("Preview of the filtered data:")
-    st.dataframe(filtered_df.head())
+    
 
     # Determine the target variable
     target_variable_present = None
@@ -624,7 +638,7 @@ def main():
         }).reset_index()
 
         # Plot Predicted_Target and Profitability_GBP vs. Origination_Year
-        st.subheader("Predicted Target vs. Profitability (Grouped by Origination Year)")
+        st.subheader("Predicted Profitability vs. Actual Profitability (Grouped by Origination Year)")
         fig = go.Figure()
 
         # Add Predicted_Target line
@@ -632,7 +646,7 @@ def main():
             x=grouped_df['Origination_Year'],
             y=grouped_df['Predicted_Target'],
             mode='lines+markers',
-            name='Predicted Target'
+            name='Predicted Profitability'
         ))
 
         # Add Profitability_GBP line
@@ -640,12 +654,12 @@ def main():
             x=grouped_df['Origination_Year'],
             y=grouped_df['Profitability_GBP'],
             mode='lines+markers',
-            name='Profitability'
+            name='Actual Profitability'
         ))
 
         # Update layout
         fig.update_layout(
-            title="Predicted Target vs. Profitability (Grouped by Origination Year)",
+            title="Predicted Profitability vs. Actual Profitability (Grouped by Origination Year)",
             xaxis_title="Origination Year",
             yaxis_title="Total Profitability",
             template="plotly_white"
@@ -656,27 +670,26 @@ def main():
     else:
         # Add a button to show the ROC curve for other target variables
         if target_variable_present in ['COF_EVENT_LABEL', 'PREPAYMENT_EVENT_LABEL']:
-            if st.button("Show ROC Curve"):
                 # Display ROC AUC Curve
-                if target_variable_present in filtered_df.columns and 'Predicted_Probability' in filtered_df.columns:
-                    y_true = filtered_df[target_variable_present]
-                    y_pred_proba = filtered_df['Predicted_Probability']
+            if target_variable_present in filtered_df.columns and 'Predicted_Probability' in filtered_df.columns:
+                y_true = filtered_df[target_variable_present]
+                y_pred_proba = filtered_df['Predicted_Probability']
 
-                    if len(y_true.unique()) <= 2:  # Ensure binary classification
-                        fpr, tpr, _ = roc_curve(y_true, y_pred_proba)
-                        auc = roc_auc_score(y_true, y_pred_proba)
+                if len(y_true.unique()) <= 2:  # Ensure binary classification
+                    fpr, tpr, _ = roc_curve(y_true, y_pred_proba)
+                    auc = roc_auc_score(y_true, y_pred_proba)
 
-                        # Plot ROC Curve
-                        fig = go.Figure()
-                        fig.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines', name=f'ROC Curve (AUC = {auc:.2f})'))
-                        fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines', name='Random Guess', line=dict(dash='dash', color='gray')))
-                        fig.update_layout(
-                            title=f"ROC Curve for {target_variable_present} - {data_source_name}",
-                            xaxis_title='False Positive Rate',
-                            yaxis_title='True Positive Rate',
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                        st.write(f"ROC AUC Score: {auc:.4f}")
+                    # Plot ROC Curve
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines', name=f'ROC Curve (AUC = {auc:.2f})'))
+                    fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines', name='Random Guess', line=dict(dash='dash', color='gray')))
+                    fig.update_layout(
+                        title=f"ROC Curve for {target_variable_present} - {data_source_name}",
+                        xaxis_title='False Positive Rate',
+                        yaxis_title='True Positive Rate',
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.write(f"ROC AUC Score: {auc:.4f}")
 
         # Process and store combined_df for COF and Prepayment models
         if target_variable_present == 'COF_EVENT_LABEL':
@@ -723,84 +736,84 @@ def main():
 
     # --- 5. Button to Show Results ---
     st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
-    st.header("Step 4 : Results")
+    # st.header("Step 4 : Results")
 
-    # Debugging: Check if cof_event_df and prepayment_event_df are present
-    if 'cof_event_df' not in st.session_state:
-        st.warning("COF Event DataFrame is not available.")
-    if 'prepayment_event_df' not in st.session_state:
-        st.warning("Prepayment Event DataFrame is not available.")
+    # # Debugging: Check if cof_event_df and prepayment_event_df are present
+    # if 'cof_event_df' not in st.session_state:
+    #     st.warning("COF Event DataFrame is not available.")
+    # if 'prepayment_event_df' not in st.session_state:
+    #     st.warning("Prepayment Event DataFrame is not available.")
 
-    # Display the Show Results button if at least one of the models is processed
-    if 'cof_event_df' in st.session_state or 'prepayment_event_df' in st.session_state:
-        if st.button("Show Results"):
-            # Ensure the COF combined_df is available
-            if 'cof_combined_df' not in st.session_state or st.session_state.cof_combined_df is None:
-                # Attempt to retrieve the COF combined_df from the pickle file
-                try:
-                    with open("combined_df.pkl", "rb") as f:
-                        st.session_state.cof_combined_df = pickle.load(f)
+    # # Display the Show Results button if at least one of the models is processed
+    # if 'cof_event_df' in st.session_state or 'prepayment_event_df' in st.session_state:
+    #     if st.button("Show Results"):
+    #         # Ensure the COF combined_df is available
+    #         if 'cof_combined_df' not in st.session_state or st.session_state.cof_combined_df is None:
+    #             # Attempt to retrieve the COF combined_df from the pickle file
+    #             try:
+    #                 with open("combined_df.pkl", "rb") as f:
+    #                     st.session_state.cof_combined_df = pickle.load(f)
                         
-                except FileNotFoundError:
-                    st.error("The combined DataFrame for the COF model is not available. Please ensure the COF model is selected and processed.")
-                    return
+    #             except FileNotFoundError:
+    #                 st.error("The combined DataFrame for the COF model is not available. Please ensure the COF model is selected and processed.")
+    #                 return
 
-            # Use the COF combined_df for plotting
-            combined_df_to_use = st.session_state.cof_combined_df
+    #         # Use the COF combined_df for plotting
+    #         combined_df_to_use = st.session_state.cof_combined_df
 
-            # Check if combined_df_to_use is valid
-            if combined_df_to_use is None:
-                st.error("The combined DataFrame is not available. Please ensure the COF model is selected and processed.")
-                return
+    #         # Check if combined_df_to_use is valid
+    #         if combined_df_to_use is None:
+    #             st.error("The combined DataFrame is not available. Please ensure the COF model is selected and processed.")
+    #             return
 
-            # Filter rows where OPB is not None
-            filtered_combined_df = combined_df_to_use[combined_df_to_use['OPB'].notna()]
+    #         # Filter rows where OPB is not None
+    #         filtered_combined_df = combined_df_to_use[combined_df_to_use['OPB'].notna()]
 
-            # Group data by Month and calculate the mean for plotting
-            grouped_df = filtered_combined_df.groupby('Month').agg({
-                'Outstanding_Principal': 'mean',
-                'Charge_Off_Bal': 'mean'
-            }).reset_index()
+    #         # Group data by Month and calculate the mean for plotting
+    #         grouped_df = filtered_combined_df.groupby('Month').agg({
+    #             'Outstanding_Principal': 'mean',
+    #             'Charge_Off_Bal': 'mean'
+    #         }).reset_index()
 
-            # Plot Outstanding_Principal vs. Month
-            st.subheader("Outstanding Principal vs. Month")
-            fig1 = go.Figure()
-            fig1.add_trace(go.Scatter(
-                x=grouped_df['Month'],
-                y=grouped_df['Outstanding_Principal'],
-                mode='lines+markers',
-                name='Outstanding Principal'
-            ))
-            fig1.update_layout(
-                title="Outstanding Principal vs. Month",
-                xaxis_title="Month",
-                yaxis_title="Outstanding Principal",
-                template="plotly_white"
-            )
-            st.plotly_chart(fig1, use_container_width=True)
+    #         # Plot Outstanding_Principal vs. Month
+    #         st.subheader("Outstanding Principal vs. Month")
+    #         fig1 = go.Figure()
+    #         fig1.add_trace(go.Scatter(
+    #             x=grouped_df['Month'],
+    #             y=grouped_df['Outstanding_Principal'],
+    #             mode='lines+markers',
+    #             name='Outstanding Principal'
+    #         ))
+    #         fig1.update_layout(
+    #             title="Outstanding Principal vs. Month",
+    #             xaxis_title="Month",
+    #             yaxis_title="Outstanding Principal",
+    #             template="plotly_white"
+    #         )
+    #         st.plotly_chart(fig1, use_container_width=True)
 
-            # Plot Charge Off Amount vs. Month
-            st.subheader("Charge Off Amount vs. Month")
-            fig2 = go.Figure()
-            fig2.add_trace(go.Scatter(
-                x=grouped_df['Month'],
-                y=grouped_df['Charge_Off_Bal'],
-                mode='lines+markers',
-                name='Charge Off Amount'
-            ))
-            fig2.update_layout(
-                title="Charge Off Amount vs. Month",
-                xaxis_title="Month",
-                yaxis_title="Charge Off Amount",
-                template="plotly_white"
-            )
-            st.plotly_chart(fig2, use_container_width=True)
+    #         # Plot Charge Off Amount vs. Month
+    #         st.subheader("Charge Off Amount vs. Month")
+    #         fig2 = go.Figure()
+    #         fig2.add_trace(go.Scatter(
+    #             x=grouped_df['Month'],
+    #             y=grouped_df['Charge_Off_Bal'],
+    #             mode='lines+markers',
+    #             name='Charge Off Amount'
+    #         ))
+    #         fig2.update_layout(
+    #             title="Charge Off Amount vs. Month",
+    #             xaxis_title="Month",
+    #             yaxis_title="Charge Off Amount",
+    #             template="plotly_white"
+    #         )
+    #         st.plotly_chart(fig2, use_container_width=True)
 
-            # Pass the COF combined_df to the next page
-            st.session_state.final_combined_df = filtered_combined_df
-            store_processed_data(filtered_combined_df, "Combined_COFPREPAYMENT")
-    else:
-        st.warning("Please select all three models to generate the combined DataFrame.")
+    #         # Pass the COF combined_df to the next page
+    #         st.session_state.final_combined_df = filtered_combined_df
+    #         store_processed_data(filtered_combined_df, "Combined_COFPREPAYMENT")
+    # else:
+    #     st.warning("Please select all three models to generate the combined DataFrame.")
 
 def map_credit_risk_params(credit_score, delinquency_count):
     """

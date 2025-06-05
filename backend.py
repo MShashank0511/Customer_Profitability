@@ -46,8 +46,45 @@ def process_models_from_session():
     confirmed_models_data = st.session_state.get("confirmed_model_outputs")
     source_of_config = "User Confirmed (Model Development)"  # Default assumption
 
+    # New block: Try loading specific parquet files from data_registry/selected_iterations dynamically
     if not confirmed_models_data:
-        st.info("No user-confirmed models found. Attempting to generate and use default configurations.")
+        st.info("No user-confirmed models found. Attempting to load predefined parquet files from data_registry/selected_iterations...")
+        
+        DATA_REGISTRY_BASE_DIR = "data_registry"
+        SELECTED_ITERATIONS_SUBFOLDER = "selected_iterations"
+        
+        predefined_filenames = {
+            "COF_EVENT_LABEL": "COF_EVENT_LABEL_test_data_task_Charge-Off_Model_for_COF_task_iter_1.parquet",
+            "PREPAYMENT_EVENT_LABEL": "PREPAYMENT_EVENT_LABEL_test_data_task_Prepayment_Model_for_Prepayment_task_iter_1.parquet",
+            "Profitability_GBP": "Profitability_GBP_test_data_task_Forecast_Model_for_Profitability_task_iter_1.parquet"
+        }
+        
+        loaded_models = {}
+        
+        for key, filename in predefined_filenames.items():
+            constructed_path = os.path.join(DATA_REGISTRY_BASE_DIR, SELECTED_ITERATIONS_SUBFOLDER, filename)
+            if os.path.exists(constructed_path):
+                try:
+                    df = pd.read_parquet(constructed_path)
+                    loaded_models[key] = {
+                        "test_data_path": constructed_path,
+                        "target_variable": None,       # Update these if you know the target variables
+                        "selected_features": list(df.columns),
+                        "model_name": None,            # Update if known
+                        "hyperparameters": {}
+                    }
+                except Exception as e:
+                    st.warning(f"Failed to load {constructed_path}: {e}")
+            else:
+                st.warning(f"File not found: {constructed_path}")
+        
+        if loaded_models:
+            confirmed_models_data = loaded_models
+            source_of_config = "Predefined Parquet Files"
+
+    # If still no data, fallback to default config
+    if not confirmed_models_data:
+        st.info("Attempting to generate and use default configurations.")
         confirmed_models_data = generate_default_confirmed_outputs()
         source_of_config = "Default Configuration"
         if not confirmed_models_data:
@@ -133,7 +170,6 @@ def process_models_from_session():
             processed_dataframes_list.append(df_source_for_task)
 
         except Exception as e_task_proc:
-         
             continue
 
     return processed_dataframes_list
