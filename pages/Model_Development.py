@@ -414,11 +414,12 @@ for model_index, model_name in enumerate(modeling_tasks):
     y = df_full[target_column]
     original_indices = df_full.index
 
-    default_test_size = model_config.get("test_size", 0.2)
-    test_size = st.slider(
-        "Select test size for splitting the data", 0.01, 0.5,
-        default_test_size, key=f"test_size_{active_model_suffix_for_path}"
-    )
+    with st.expander("🔀 Train-Test Split Settings", expanded=False):
+        default_test_size = model_config.get("test_size", 0.2)
+        test_size = st.slider(
+            "Select test size for splitting the data", 0.01, 0.5,
+            default_test_size, key=f"test_size_{active_model_suffix_for_path}"
+        )
     model_config["test_size"] = test_size
 
     if len(X) != len(y) or len(X) != len(original_indices):
@@ -440,13 +441,12 @@ for model_index, model_name in enumerate(modeling_tasks):
     
     st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
     # --- Hyperparameter Iterations & Model Training ---
-    st.subheader("🏆 Step 3 :Hyperparameter Iterations")
-
+    
     task_key = f"{model_name.replace(' ', '_')}_task"
     selected_model_task_name = model_name  # <-- Define this before use
 
     if is_mvp:
-        st.info("This section is not available in Ready to Use Model")
+        # st.info("This section is not available in Ready to Use Model")
         # Prepare default parameters for the selected model
         param_dist = {
             "Logistic Regression": {"C": [1.0], "solver": ["lbfgs"], "max_iter": [100]},
@@ -563,7 +563,8 @@ for model_index, model_name in enumerate(modeling_tasks):
     else:
         # --- (copy your original multi-iteration code here) ---
         # --- Hyperparameter Iterations & Model Training ---
-        
+        st.subheader("🏆 Step 3 :Hyperparameter Iterations")
+
         param_dist = {
             "Logistic Regression": {"C": [0.001, 0.01, 0.1, 1.0, 10.0, 100.0], "solver": ["liblinear", "lbfgs"], "max_iter": [100, 200, 300]},
             "LGBM Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, -1], "learning_rate": [0.01, 0.05, 0.1]},
@@ -739,7 +740,7 @@ for model_index, model_name in enumerate(modeling_tasks):
 
     # --- Select Iteration and Save Data/Metadata ---
     if feature_columns and iteration_results_for_task_display:
-        st.subheader(f"💾 Select Best Iteration for {selected_model_task_name}")
+        
         selectable_iterations_data = []
         if is_mvp:
             # In MVP, only one result, auto-select it
@@ -768,7 +769,7 @@ for model_index, model_name in enumerate(modeling_tasks):
             if is_mvp:
                 selected_original_idx_confirm = selectable_iterations_data[0][1]
                 selected_iteration_details_confirm = iteration_results_for_task_display[selected_original_idx_confirm]
-                if st.button(f"Confirm Selection for {selected_model_task_name} (Iteration {selected_iteration_details_confirm['iteration_num']})", key=f"confirm_{task_key}"):
+                if st.button(f"Confirm Selection for {selected_model_task_name} )", key=f"confirm_{task_key}"):
                     test_indices_for_iteration_save = selected_iteration_details_confirm.get("test_indices")
                     if test_indices_for_iteration_save is None or not isinstance(test_indices_for_iteration_save, list) or len(test_indices_for_iteration_save) == 0:
                         st.error("Could not retrieve valid test set indices for this iteration. Cannot save test data.")

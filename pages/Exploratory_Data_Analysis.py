@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 from datetime import datetime, timedelta
 import os
+
 # import shutil # Not used in the provided snippet after clearing function was simplified
 # import uuid # No longer needed for historical_insights keys
 # Set page config must be the first Streamlit command
@@ -13,6 +14,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+for key in ["loan_level_data", "loan_level_data_path", "bureau_data", "bureau_data_path", "installments_data", "installments_data_path"]:
+    if key in st.session_state:
+        del st.session_state[key]
 col1, col2, col3 = st.columns([1, 20, 5])
 
 with col1:
@@ -121,36 +125,34 @@ st.markdown("""
 # Path to the default data directory
 DEFAULT_DATA_DIR = "default_data" # Not actively used in this script, but defined
 DATA_REGISTRY_DIR = "data_registry"
-
-# Clear the data_registry directory at the start of a new session
-def clear_data_registry():
-    if os.path.exists(DATA_REGISTRY_DIR):
-        for root, dirs, files in os.walk(DATA_REGISTRY_DIR, topdown=False):
-            for file_name in files:
-                file_path = os.path.join(root, file_name)
-                try:
-                    os.unlink(file_path)
-                except Exception as e:
-                    st.error(f"Failed to delete file {file_path}: {e}")
-            for dir_name in dirs:
-                dir_path = os.path.join(root, dir_name)
-                try:
-                    os.rmdir(dir_path)
-                except Exception as e:
-                    st.error(f"Failed to delete directory {dir_path}: {e}")
-        try:
-            os.rmdir(DATA_REGISTRY_DIR)
-        except Exception as e:
-            st.error(f"Failed to delete directory {DATA_REGISTRY_DIR}: {e}")
+# def clear_data_registry():
+#     if os.path.exists(DATA_REGISTRY_DIR):
+#         for root, dirs, files in os.walk(DATA_REGISTRY_DIR, topdown=False):
+#             for file_name in files:
+#                 file_path = os.path.join(root, file_name)
+#                 try:
+#                     os.unlink(file_path)
+#                 except Exception as e:
+#                     st.error(f"Failed to delete file {file_path}: {e}")
+#             for dir_name in dirs:
+#                 dir_path = os.path.join(root, dir_name)
+#                 try:
+#                     os.rmdir(dir_path)
+#                 except Exception as e:
+#                     st.error(f"Failed to delete directory {dir_path}: {e}")
+#         try:
+#             os.rmdir(DATA_REGISTRY_DIR)
+#         except Exception as e:
+#             st.error(f"Failed to delete directory {DATA_REGISTRY_DIR}: {e}")
     
-    # Ensure the directory exists after attempting to clear it
-    os.makedirs(DATA_REGISTRY_DIR, exist_ok=True)
+#     # Ensure the directory exists after attempting to clear it
+#     os.makedirs(DATA_REGISTRY_DIR, exist_ok=True)
 
+# if 'data_registry_cleared' not in st.session_state:
+#     clear_data_registry()
+#     st.session_state.data_registry_cleared = True  # Set a flag to indicate the directory has been cleared
+# Clear the data_registry directory at the start of a new session
 
-# Clear the `data_registry` directory only once per session
-if "data_registry_cleared" not in st.session_state:
-    clear_data_registry()
-    st.session_state["data_registry_cleared"] = True
 
 # --- Helper Functions ---
 # def loaded_data(uploaded_file):
@@ -889,5 +891,4 @@ elif not (("loan_level_data" in st.session_state) or ("bureau_data" in st.sessio
   <tr><td>30-Day Delinquent Accounts (Total)</td><td>Number of accounts delinquent for 30 days.</td></tr>
 </table>
 """, unsafe_allow_html=True)
-
 
