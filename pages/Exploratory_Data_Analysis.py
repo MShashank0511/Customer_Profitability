@@ -845,7 +845,49 @@ required_data_uploaded = (
 if required_data_uploaded:
     if st.button("Proceed to Feature Engineering"):
         st.switch_page("pages/Feature_Engineering.py")
-else:
-    st.info("Please upload all required data files (Loan-Level, Bureau, and Payment-Data) to proceed to Feature Engineering.")
+elif not (("loan_level_data" in st.session_state) or ("bureau_data" in st.session_state) or ("installments_data" in st.session_state)):
+    st.info("""
+        Please refer below all the required data files along with Mandatory Features to be uploaded for Data Analysis.
+            """)
+    st.markdown("""
+<b>Loan-Level Data:</b>
+<table>
+  <tr><th>Feature</th><th>Description</th></tr>
+  <tr><td>Term of Loan</td><td>Total term of the loan in months.</td></tr>
+  <tr><td>Outstanding Principal Balance</td><td>Outstanding Principal Balance of the customer's loan.</td></tr>
+  <tr><td>Charge-Off Event</td><td>Charge-Off event indicator for the loan.</td></tr>
+  <tr><td>Prepayment Event</td><td>Prepayment event indicator for the loan.</td></tr>
+  <tr><td>Loan Status</td><td>Current status of the loan (approved/rejected/closed).</td></tr>
+  <tr><td>Profitability</td><td>Profit or loss from the loan.</td></tr>
+  <tr><td>Timestamp</td><td>Date and time when the record was created or last updated.</td></tr>
+</table>
+
+<br>
+<b>Payment Data:</b>
+<table>
+  <tr><th>Feature</th><th>Description</th></tr>
+  <tr><td>Payment Amount</td><td>Amount paid in each installment.</td></tr>
+  <tr><td>Payments Made (Total)</td><td>Total number of payments made.</td></tr>
+  <tr><td>Installment Current Balance (Total)</td><td>Current balance of all installment accounts.</td></tr>
+  <tr><td>Auto PTI (Total)</td><td>Payment-to-Income ratio for auto loans.</td></tr>
+  <tr><td>Derogatory Monthly Payment (Total)</td><td>Total monthly payment on derogatory accounts.</td></tr>
+</table>
+
+<br>
+<b>Bureau Data:</b>
+<table>
+  <tr><th>Feature</th><th>Description</th></tr>
+  <tr><td>Derogatory Tradelines (Total)</td><td>Total number of derogatory tradelines.</td></tr>
+  <tr><td>Credit Inquiries (Total)</td><td>Total number of credit inquiries.</td></tr>
+  <tr><td>Average Credit Score (Calc)</td><td>Average calculated credit score.</td></tr>
+  <tr><td>Cash Down at Contract</td><td>Cash down payment at contract signing.</td></tr>
+  <tr><td>Credit Card Credit Limit (Total)</td><td>Total credit limit on all credit cards.</td></tr>
+  <tr><td>Bank Card Credit Limit (Total)</td><td>Total credit limit on all bank cards.</td></tr>
+  <tr><td>Credit Card Current Balance (Open Total)</td><td>Current open balance on all credit cards.</td></tr>
+  <tr><td>Recent Credit Inquiries (Total)</td><td>Number of recent credit inquiries.</td></tr>
+  <tr><td>Derogatory Current Balance (Total)</td><td>Current balance on derogatory accounts.</td></tr>
+  <tr><td>30-Day Delinquent Accounts (Total)</td><td>Number of accounts delinquent for 30 days.</td></tr>
+</table>
+""", unsafe_allow_html=True)
 
 
