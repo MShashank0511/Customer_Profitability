@@ -2504,7 +2504,7 @@ else:
 st.subheader("Step 7 : Mandatory Features")
 
 if is_mvp:
-    # Define the features you want to show in MVP mode
+    # Backend logic for mandatory features (do NOT display the table)
     MVP_MANDATORY_FEATURES = [
         "TERM_OF_LOAN",
         "DEROG_TRDLN_TOTAL",
@@ -2528,22 +2528,12 @@ if is_mvp:
         "Loan_Status",
         "Profitability_GBP",
         "Timestamp_x"
-        # Add more as needed
     ]
     merged = st.session_state.get("mvp_merged_dataset", pd.DataFrame())
-    if not merged.empty:
-        present_mandatory_features = [f for f in MVP_MANDATORY_FEATURES if f in merged.columns]
-        if present_mandatory_features:
-            mandatory_features_df = pd.DataFrame({
-                "Mandatory Feature": present_mandatory_features,
-                "Description": [feature_desc_map.get(f, "No description available") for f in present_mandatory_features]
-            })
-            st.dataframe(mandatory_features_df, hide_index=True)
-            st.success("Mandatory attributes for Ready to Use Model are displayed from the merged dataset.")
-        else:
-            st.warning("None of the Ready to Use Model mandatory features are present in the merged dataset.")
-    else:
-        st.warning("Merged dataset is empty. Cannot display mandatory features.")
+    # (Optional: You can still prepare present_mandatory_features and mandatory_features_df here if needed for backend)
+    # present_mandatory_features = [f for f in MVP_MANDATORY_FEATURES if f in merged.columns]
+    # mandatory_features_df = pd.DataFrame({...})
+    st.info("🔒 Mandatory Features section is not available in Ready to Use Model.")
 else:
 
 
@@ -2747,8 +2737,6 @@ if st.button("📊 Show Selected Attributes"):
             # Only show mandatory features
             present_mandatory_features = [f for f in MVP_MANDATORY_FEATURES if f in merged.columns]
             filtered_merged = merged[present_mandatory_features].copy()
-            st.subheader("Mandatory Features Dataset (Ready to Use Model)")
-            st.dataframe(filtered_merged, use_container_width=True)
             # Assign filtered_merged to final_dataset for consistent parquet logic
             model_state["final_dataset"] = filtered_merged.copy()
 
@@ -2757,14 +2745,13 @@ if st.button("📊 Show Selected Attributes"):
             os.makedirs(data_registry_subfolder, exist_ok=True)
             # Use a default target for MVP if not set
             target_feature = model_state.get("target_feature") or "target"
-            final_dataset_path = os.path.join(data_registry_subfolder, "target_final_dataset.parquet")
-            merged.to_parquet(final_dataset_path, index=False)
+            final_dataset_path = os.path.join(data_registry_subfolder, f"{target_feature}_final_dataset.parquet")
+            filtered_merged.to_parquet(final_dataset_path, index=False)
             st.session_state[f"{active_model}_final_dataset_path"] = final_dataset_path
-            st.success(f"Feature selection for '{active_model}' completed successfully!")
+            st.info("🔒 Show Selected Attributes is not available in Ready to Use Model.")
         else:
             st.warning("No merged dataset available.")
     else:
-        # --- Existing logic for Customized version ---
         all_features_summary = []
         feature_types = []
 
