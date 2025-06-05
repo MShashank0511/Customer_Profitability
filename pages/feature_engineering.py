@@ -2321,7 +2321,7 @@ else:
                 # model_state["final_transformed_features"].to_parquet(combined_dataset_file, index=False)
                 # st.info(f"Transformed features saved to: {combined_dataset_file}")
 
-                # Clear the transform blocks after successful application
+                    # Clear the transform blocks after successful application
                 model_state["multi_transform_blocks"] = []
                 st.rerun() # Rerun to clear blocks and update UI (this will also trigger the success message display)
 
