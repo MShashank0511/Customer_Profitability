@@ -179,7 +179,26 @@ def preprocess_dataset(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 st.title("🔧 Model Development")
-st.markdown("""
+
+if is_mvp:
+    st.markdown("""
+    <div style="border: 2px solid #4CAF50; padding: 15px; border-radius: 10px; background-color: #f9f9f9; color: black;">
+        <h3 style="color: #4CAF50;">🔍 Steps to Follow on This Page</h3>
+        <ol>
+        <li><b>Select Model Type</b><br>
+            Choose the appropriate model type for your selected dataset.</li>
+        <li><b>Run the Model and Confirm Selection</b><br>
+            Run the selected model and Confirm your Model Selection.</li>
+        <li><b>Repeat for All Models</b><br>
+            Once you've completed these steps for one model, repeat the same process for the remaining models.</li>
+        <li><b>Proceed to Performance Monitoring Page</b><br>
+            After configuring all three models, continue to the next page to move forward with the project workflow.</li>
+        </ol>
+        <p style="color: red; font-weight: bold;">Review the remaining two models to prepare their input data and features.</p>        
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
 <div style="border: 2px solid #4CAF50; padding: 15px; border-radius: 10px; background-color: #f9f9f9; color: black;">
     <h3 style="color: #4CAF50;">📊 Steps to Follow on This Page</h3>
     <ol>
@@ -197,7 +216,8 @@ st.markdown("""
     
 </div>
 """, unsafe_allow_html=True)
-if "confirmed_model_outputs" not in st.session_state:
+
+
     st.session_state["confirmed_model_outputs"] = {}
 
 if "model_development_state" not in st.session_state:
@@ -572,7 +592,7 @@ for model_index, model_name in enumerate(modeling_tasks):
             "XGBoost Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.05, 0.1], 'use_label_encoder': [False], 'eval_metric': ['logloss', 'auc']},
             "Linear Regression": {"fit_intercept": [True, False]},
         }
-        default_n_iterations = model_config.get("n_iterations", 5 if target_type == "Classification" else 1)
+        default_n_iterations = model_config.get("n_iterations", 3 if target_type == "Classification" else 1)
         task_key = f"{model_name.replace(' ', '_')}_task"
         n_iterations_to_run = st.number_input("Number of hyperparameter iterations to try", min_value=1, max_value=50, value=default_n_iterations, key=f"n_iter_{task_key}")
         model_config["n_iterations"] = n_iterations_to_run
@@ -769,7 +789,11 @@ for model_index, model_name in enumerate(modeling_tasks):
             if is_mvp:
                 selected_original_idx_confirm = selectable_iterations_data[0][1]
                 selected_iteration_details_confirm = iteration_results_for_task_display[selected_original_idx_confirm]
+                if "confirmed_model_outputs" not in st.session_state:
+                        st.session_state.confirmed_model_outputs = {}
                 if st.button(f"Confirm Selection for {selected_model_task_name} )", key=f"confirm_{task_key}"):
+                    
+
                     test_indices_for_iteration_save = selected_iteration_details_confirm.get("test_indices")
                     if test_indices_for_iteration_save is None or not isinstance(test_indices_for_iteration_save, list) or len(test_indices_for_iteration_save) == 0:
                         st.error("Could not retrieve valid test set indices for this iteration. Cannot save test data.")
@@ -783,6 +807,7 @@ for model_index, model_name in enumerate(modeling_tasks):
                             os.makedirs(output_data_dir, exist_ok=True)
                             output_file_path_save = os.path.join(output_data_dir, output_file_name_save)
                             df_test_slice_save.to_parquet(output_file_path_save, index=False)
+
                             st.session_state.confirmed_model_outputs[task_key] = {
                                 "task_name": selected_model_task_name,
                                 "target_variable": target_column,
@@ -793,11 +818,14 @@ for model_index, model_name in enumerate(modeling_tasks):
                                 "key_metrics": {k: v for k, v in selected_iteration_details_confirm["metrics"].items() if not (isinstance(v, (np.ndarray, list)) or k == "Error" or k == "Parameters")},
                                 "iteration_number": selected_iteration_details_confirm['iteration_num'],
                             }
+
                             model_config["selected_iteration_global_index"] = selected_original_idx_confirm
                             st.session_state.model_development_state[task_key] = model_config
+
                         except Exception as save_e_final:
                             st.error(f"Error creating/saving test data or updating session state for {selected_model_task_name}: {save_e_final}")
                             st.exception(save_e_final)
+
             else:
                 selected_iteration_display_name_confirm = st.selectbox(
                     f"Select Best Iteration for {selected_model_task_name}",

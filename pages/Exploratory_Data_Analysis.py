@@ -444,19 +444,41 @@ def display_insights(data, dataset_name, feature_mapping):
         approved_change = calculate_change(current_approved_pct, previous_approved_pct)
         rejected_change = calculate_change(current_rejected_pct, previous_rejected_pct)
 
-        col2.metric(
-            label="Approved Loan % (Yesterday)",
-            value=f"{current_approved_pct:.2f}%",
-            delta=f"vs {previous_approved_pct:.2f}% ({comparison_period}, {approved_change:+.2f}%)",
-            delta_color="normal" if approved_change >= 0 else "inverse"
-        )
+        # Custom styling for Approved Loan %
+        with col2:
+            if approved_change >= 0:
+                arrow = "▲"
+                delta_color = "green"
+            else:
+                arrow = "▼"
+                delta_color = "red"
 
-        col3.metric(
-            label="Rejected Loan % (Yesterday)",
-            value=f"{current_rejected_pct:.2f}%",
-            delta=f"vs {previous_rejected_pct:.2f}% ({comparison_period}, {rejected_change:+.2f}%)",
-            delta_color="inverse" if rejected_change >= 0 else "normal"
-        )
+            col2.markdown(f"""
+                <div style="font-size:18px; font-weight:600;">Approved Loan % (Yesterday)</div>
+                <div style="font-size:28px; font-weight:bold;">{current_approved_pct:.2f}%</div>
+                <div style="font-size:16px; color:{delta_color}; font-weight:600;">
+                    {arrow} {abs(approved_change):.2f}% vs ({comparison_period}) : {previous_approved_pct:.2f}% 
+                </div>
+            """, unsafe_allow_html=True)
+
+        # Custom styling for Rejected Loan %
+        with col3:
+            if rejected_change >= 0:
+                arrow = "▲"
+                delta_color = "red"  # More rejections = worse
+            else:
+                arrow = "▼"
+                delta_color = "green"
+
+            col3.markdown(f"""
+                <div style="font-size:18px; font-weight:600;">Rejected Loan % (Yesterday)</div>
+                <div style="font-size:28px; font-weight:bold;">{current_rejected_pct:.2f}%</div>
+                <div style="font-size:16px; color:{delta_color}; font-weight:600;">
+                    {arrow} {abs(rejected_change):.2f}% vs ({comparison_period}) : {previous_rejected_pct:.2f}% 
+                </div>
+            """, unsafe_allow_html=True)
+
+
     st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
 
     display_historical_insights(data, dataset_name, feature_mapping)

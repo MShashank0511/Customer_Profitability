@@ -336,17 +336,17 @@ def add_opb_column(df, loan_data_path='loan_data.csv'):
             # Map OPB values if not present
             if 'OPB' not in df.columns:
                 df = df.merge(loan_data[['Timestamp_x', 'OPB']], on='Timestamp_x', how='left')
-                st.write("Added OPB column to the DataFrame using loan_data.csv.")
+                
             
             # Map CREDIT_SCORE_AVG_CALC values if not present
             if 'CREDIT_SCORE_AVG_CALC' not in df.columns:
                 df = df.merge(loan_data[['Timestamp_x', 'CREDIT_SCORE_AVG_CALC']], on='Timestamp_x', how='left')
-                st.write("Added CREDIT_SCORE_AVG_CALC column to the DataFrame using loan_data.csv.")
+                
             
             # Map DELINQ_CNT_30_DAY_TOTAL values if not present
             if 'DELINQ_CNT_30_DAY_TOTAL' not in df.columns:
                 df = df.merge(loan_data[['Timestamp_x', 'DELINQ_CNT_30_DAY_TOTAL']], on='Timestamp_x', how='left')
-                st.write("Added DELINQ_CNT_30_DAY_TOTAL column to the DataFrame using loan_data.csv.")
+                
             
     except FileNotFoundError:
         st.error(f"Error: The file '{loan_data_path}' was not found. Please ensure it exists.")
@@ -449,7 +449,7 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     # --- 1. Model Selection ---
-    st.header("Step 1 : Model Selection")
+    st.header("Step 1 : Select Model for Evaluation")
 
     # Attempt to retrieve processed dataframes
     try:
@@ -514,13 +514,16 @@ def main():
 
     # --- Display Data Preview ---
     st.subheader("Data Preview")
-    st.write("Preview of the data for selected Model:")
+    with st.expander("Click to view the Data for selected Model", expanded=False):
+    
+        st.write("Preview of the data for selected Model:")
 
-    # Ensure Origination_Year is displayed correctly without commas
-    if 'Origination_Year' in selected_df.columns:
-        selected_df['Origination_Year'] = selected_df['Origination_Year'].astype(int)
+        # Ensure Origination_Year is displayed correctly without commas
+        if 'Origination_Year' in selected_df.columns:
+            selected_df['Origination_Year'] = selected_df['Origination_Year'].astype(int)
 
-    st.dataframe(selected_df.head())
+        st.dataframe(selected_df.head())
+
 
     # --- Check for Missing Columns ---
     required_columns = ['OPB', 'TERM_OF_LOAN', 'Timestamp_x']
