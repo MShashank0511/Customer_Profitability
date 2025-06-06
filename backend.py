@@ -21,13 +21,13 @@ DEFAULT_DATA_DIR = "default_data"
 def create_model_instance(model_name, hyperparameters):
     try:
         model_classes = {
-            "Linear Regression": LinearRegression,
-            "Logistic Regression": LogisticRegression,
-            "XGBoost Classifier": XGBClassifier,
-            "XGBoost Regressor": XGBRegressor,
-            "LGBM Classifier": LGBMClassifier,
-            "LGBM Regressor": LGBMRegressor,
-            "Random Forest Classifier": RandomForestClassifier
+            
+            "Logistic Survival Model": LogisticRegression,
+            "XGBoost Survival Model": XGBClassifier,
+            
+            "LGBM Survival Model": LGBMClassifier,
+            
+            "Random Forest Survival Model": RandomForestClassifier
         }
         model_class = model_classes.get(model_name)
         if model_class:
@@ -143,7 +143,7 @@ def process_models_from_session():
             model_instance_proc.fit(X_train_here, y_train_here)
 
             # Predictions on the *entire* X_data
-            if model_name_proc in ["Logistic Regression", "XGBoost Classifier", "LGBM Classifier", "Random Forest Classifier"]:
+            if model_name_proc in ["Logistic Survival Model", "XGBoost Survival Model", "LGBM Survival Model", "Random Forest Survival Model"]:
                 try:
                     y_proba_full_task = model_instance_proc.predict_proba(X_data)[:, 1]
                     df_source_for_task['Predicted_Probability'] = y_proba_full_task
@@ -156,7 +156,7 @@ def process_models_from_session():
                 df_source_for_task['Predicted_Target'] = y_pred_full_task
 
             # Remove irrelevant columns based on task type
-            if model_name_proc in ["Logistic Regression", "XGBoost Classifier", "LGBM Classifier", "Random Forest Classifier"]:
+            if model_name_proc in ["Logistic Survival Model", "XGBoost Survival Model", "LGBM Survival Model", "Random Forest Survival Model"]:
                 if 'Predicted_Target' in df_source_for_task.columns:
                     df_source_for_task.drop(columns=['Predicted_Target'], inplace=True)
             elif model_name_proc in ["Linear Regression", "XGBoost Regressor", "LGBM Regressor"]:

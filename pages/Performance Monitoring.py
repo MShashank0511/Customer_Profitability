@@ -435,17 +435,17 @@ def main():
         <h3 style="color: #4CAF50;">📊 Steps to Follow on This Page</h3>
         <ol>
             <li><b>Select a Model</b><br>
-                Choose any one of the three models (as defined in the Model Development page) using the Model Selection section.</li>
+                Choose any one of the two models (as defined in the Model Development page) using the Model Selection section.</li>
             <li><b>Explore Evaluation Metrics</b><br>
                 Once a model is selected, explore its evaluation metrics across different segments to understand its performance in detail.</li>
             <li><b>Repeat for All Models</b><br>
                 After evaluating the first model, repeat the model selection and evaluation steps for the remaining two models.</li>
             <li><b>Review Profitability Metrics</b><br>
-                Once all three models are selected, view the calculated metrics related to profitability predictions for the given dataset.</li>
+                Once all two models are selected, view the calculated metrics related to profitability predictions for the given dataset.</li>
             <li><b>Proceed to Results Page</b><br>
                 After reviewing the evaluation outcomes, move to the Results page to explore profitability insights and simulation options.</li>
         </ol>
-        <p style="color: red; font-weight: bold;">Note: Please select all three models in the Model Selection section to check the results generated for Profitability Calculation.</p>
+        <p style="color: red; font-weight: bold;">Note: Please select all two models in the Model Selection section to check the results generated for Profitability Calculation.</p>
     </div>
     """, unsafe_allow_html=True)
     # --- 1. Model Selection ---
@@ -530,7 +530,7 @@ def main():
     missing_columns = [col for col in required_columns if col not in selected_df.columns]
 
     if missing_columns:
-        st.warning(f"Warning: The selected model does not contain the required columns: {missing_columns}. Please select all three models in the Data Source section to avoid errors.")
+        st.warning(f"Warning: The selected model does not contain the required columns: {missing_columns}. Please select both models in the Data Source section to avoid errors.")
         return
     
     # --- 2. Data Preprocessing ---
@@ -849,3 +849,5 @@ if __name__ == "__main__":
     if combined_df is not None:
         print("Combined DataFrame is ready and stored globally.")
 
+if st.button("Proceed to Results Page"):
+        st.switch_page("pages/Results.py")

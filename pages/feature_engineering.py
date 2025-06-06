@@ -17,6 +17,112 @@ import sys
 import os
 import datetime
 
+col1, col2, col3 = st.columns([1, 20, 5])
+
+with col1:
+    st.image("cropped-Sigmoid_logo_3x.png", width=100)
+
+with col2:
+    st.markdown(
+        """
+        <style>
+        .dynamic-title {
+            text-align: center;
+            margin-left: auto;
+            margin-right: auto;
+            font-size: 32px; /* Reduced font size */
+            font-weight: bold;
+        }
+        </style>
+        <h1 class="dynamic-title"> Loan Profitability AI engine</h1>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col3:
+    # Dropdown-style contact bubble
+    st.markdown("""
+    <style>
+    .dropdown {
+        position: relative;
+        display: inline-block;
+        margin-top: 10px;
+        float: right;
+    }
+
+    .dropdown-button {
+        background-color: #E9F5FE;
+        color: #0A2540;
+        padding: 10px 16px;
+        font-size: 14px;
+        border: none;
+        cursor: pointer;
+        border-radius: 18px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .dropdown-content {
+        display: none;
+        position: absolute;
+        right: 0;
+        background-color: #F9FAFB;
+        min-width: 180px;
+        padding: 10px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        z-index: 1;
+    }
+
+    .dropdown:hover .dropdown-content {
+        display: block;
+    }
+
+    .dropdown-content a {
+        color: #0A2540;
+        text-decoration: none;
+        display: block;
+        font-size: 14px;
+        margin-top: 5px;
+    }
+    </style>
+
+    <div class="dropdown">
+      <button class="dropdown-button">📞 Contact Us</button>
+      <div class="dropdown-content">
+        <b>Ravi Bajagur</b><br>
+        <a href="tel:8959896843">8959896843</a>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Adjust spacing dynamically based on sidebar visibility
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] + div {
+        margin-left: 150px; /* Adjust this value to control spacing */
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown("""
+    <style>
+    .intro-text {
+        font-size: 21px;
+        font-weight: 600;
+        color: #000000;
+        line-height: 1.7;
+        background-color: #f5f7fa;
+        border-radius: 16px;
+        padding: 30px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        margin-top: 20px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 
 app_version = st.session_state.get("app_version", "Customized")
 is_mvp = app_version == "MVP"
@@ -156,7 +262,7 @@ if is_mvp:
 
 
 # --- Model Definitions ---
-MODEL_NAMES = ["Forecast Model", "Charge-Off Model", "Prepayment Model"]
+MODEL_NAMES = ["Charge-Off Survival Model", "Preclosure Survival Model"]
 
 def initialize_new_model_state(model_name):
     """Initialize a fresh state for a new model."""
@@ -194,7 +300,7 @@ def initialize_new_model_state(model_name):
 
     # Initialize raw_datasets and filtered_datasets dictionaries
     raw_datasets = {
-        "Loan Data": initial_loan_data.copy(),
+        # "Loan Data": initial_loan_data.copy(),
         "Bureau Data": initial_bureau_data.copy(),
         "Loan-Level Data": initial_loan_level_data.copy(),
         "Payment Data": initial_installments_data.copy(),
@@ -205,7 +311,7 @@ def initialize_new_model_state(model_name):
     st.session_state[f"{model_name}_state"] = {
         "raw_datasets": raw_datasets,
         "filtered_datasets": filtered_datasets,
-        "loan_data": raw_datasets["Loan Data"], # Point to the raw_datasets version
+        # "loan_data": raw_datasets["Loan Data"], # Point to the raw_datasets version
         "bureau_data": raw_datasets["Bureau Data"], # Point to the raw_datasets version
         "loan_level_data": raw_datasets["Loan-Level Data"], # Point to the raw_datasets version
         "installments_data": raw_datasets["Payment Data"], # Point to the raw_datasets version
@@ -349,7 +455,7 @@ def load_model_state(model_name):
     # Store the currently uploaded raw datasets before clearing session state
     # These are assumed to be present in st.session_state from initial user uploads
     current_raw_datasets = {
-        "Loan Data": st.session_state.get("uploaded_loan_data", pd.DataFrame()),
+        # "Loan Data": st.session_state.get("uploaded_loan_data", pd.DataFrame()),
         "Bureau Data": st.session_state.get("uploaded_bureau_data", pd.DataFrame()),
         "Loan-Level Data": st.session_state.get("uploaded_loan_level_data", pd.DataFrame()),
         "Installments Data": st.session_state.get("uploaded_installments_data", pd.DataFrame()),
@@ -401,7 +507,7 @@ def load_model_state(model_name):
                     # After loading, ensure individual DataFrame pointers refer to the raw_datasets
                     # This is crucial for consistency
                     if "raw_datasets" in st.session_state[session_key]:
-                        st.session_state[session_key]["loan_data"] = st.session_state[session_key]["raw_datasets"].get("Loan Data", pd.DataFrame())
+                        # st.session_state[session_key]["loan_data"] = st.session_state[session_key]["raw_datasets"].get("Loan Data", pd.DataFrame())
                         st.session_state[session_key]["bureau_data"] = st.session_state[session_key]["raw_datasets"].get("Bureau Data", pd.DataFrame())
                         st.session_state[session_key]["loan_level_data"] = st.session_state[session_key]["raw_datasets"].get("Loan-Level Data", pd.DataFrame())
                         st.session_state[session_key]["installments_data"] = st.session_state[session_key]["raw_datasets"].get("Installments Data", pd.DataFrame())
@@ -661,7 +767,7 @@ if is_mvp:
             <li><b>Save all Attributes</b><br>
                 Save all attributes for model development.</li>
         </ol>
-        <p style="color: red; font-weight: bold;">Review the remaining two models to prepare their input data and features.</p>        
+        <p style="color: red; font-weight: bold;">Review the remaining model to prepare their input data and features.</p>        
     </div>
     """, unsafe_allow_html=True)
 else:
@@ -686,7 +792,7 @@ else:
             <li><b>Select Additional Features</b><br>
                 Optionally, choose additional features that may help improve the model’s predictive performance in the Good to have Features section.</li>
         </ol>
-        <p style="color: red; font-weight: bold;">Note: Complete the same steps for the remaining two models to prepare their input data and features.</p>        
+        <p style="color: red; font-weight: bold;">Note: Complete the same steps for the remaining model to prepare their input data and features.</p>        
     </div>
     """, unsafe_allow_html=True)
 
@@ -1834,16 +1940,16 @@ if not is_mvp:
                             else:
                                 dataset_description = summarize_dataset_columns(current_dataset.head())  # Use head() for brevity
                                 
-                                st.markdown("#### Dataset Summary Sent to AI:")
-                                st.text_area("Input to AI", dataset_description, height=100, disabled=True)
+                                # st.markdown("#### Dataset Summary Sent to AI:")
+                                # st.text_area("Input to AI", dataset_description, height=100, disabled=True)
 
                                 recommendations_text = get_recommended_features_gemini(dataset_description)
 
                                 if recommendations_text.startswith("Error:") or "An error occurred" in recommendations_text:
                                     st.error(f"Failed to get recommendations: {recommendations_text}")
                                 else:
-                                    st.markdown("#### Raw AI Response:")
-                                    st.text_area("Gemini Raw Output", recommendations_text, height=150, disabled=True)
+                                    # st.markdown("#### Raw AI Response:")
+                                    # st.text_area("Gemini Raw Output", recommendations_text, height=150, disabled=True)
                                     
                                     recommended_features_df = parse_gemini_recommendations(recommendations_text)
 
@@ -2023,7 +2129,7 @@ if not is_mvp:
             if not model_state["transform_blocks"]:
                 model_state["transform_blocks"] = [{
                     "feature": input_features[0] if input_features else "",
-                    "operation": "Addition", # Default operation
+                    "operation": "Log", # Default operation
                     "value": 1.0, # Default value
                     "output_name": ""
                 }]
@@ -2141,7 +2247,7 @@ if not is_mvp:
                 if input_features:
                     model_state["transform_blocks"].append({
                         "feature": input_features[0],
-                        "operation": "Addition",
+                        "operation": "Log",
                         "value": 1.0,
                         "output_name": ""
                     })
@@ -2376,9 +2482,9 @@ if not is_mvp:
     else:
         # Hardcoded mapping for each model
         MODEL_TARGET_MAP = {
-            "Forecast Model": "Profitability_GBP",
-            "Charge-Off Model": "COF_EVENT_LABEL",
-            "Prepayment Model": "PREPAYMENT_EVENT_LABEL"
+            # "Forecast Model": "Profitability_GBP",
+            "Charge-Off Survival Model": "COF_EVENT_LABEL",
+            "Preclosure Survival Model": "PREPAYMENT_EVENT_LABEL"
         }
 
         input_df_for_target = model_state.get("final_transformed_features", pd.DataFrame())
@@ -2732,7 +2838,7 @@ if st.button("📊 Save Attributes"):
                 st.warning("Final dataset is empty, cannot save Parquet file.")
 
         
-required_model_folders = ["Charge-Off Model", "Prepayment Model", "Forecast Model"]
+required_model_folders = ["Charge-Off Survival Model", "Preclosure Survival Model"]
 data_registry_base = "data_registry"
 
 all_files_exist = all(

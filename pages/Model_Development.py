@@ -134,21 +134,17 @@ DEFAULT_DATA_DIR = "default_data"
 DATA_REGISTRY_BASE_DIR = "data_registry"
 
 MODEL_INPUT_SOURCES = {
-    "Charge-Off Model (for COF)": {
-        "session_state_key_suffix": "Charge-Off Model",
+    "Charge-Off Survival Model (for COF)": {
+        "session_state_key_suffix": "Charge-Off Survival Model",
         "target_column_primary": "COF_EVENT_LABEL",
-        "data_registry_subfolder_actual": "Charge-Off Model"
+        "data_registry_subfolder_actual": "Charge-Off Survival Model"
     },
-    "Prepayment Model (for Prepayment)": {
+    "Preclosure Survival Model (for Prepayment)": {
         "session_state_key_suffix": "Prepayment Model",
         "target_column_primary": "PREPAYMENT_EVENT_LABEL",
-        "data_registry_subfolder_actual": "Prepayment Model"
+        "data_registry_subfolder_actual": "Preclosure Survival Model"
     },
-    "Forecast Model (for Profitability)": {
-        "session_state_key_suffix": "Forecast_Model",
-        "target_column_primary": "Profitability_GBP",
-        "data_registry_subfolder_actual": "Forecast Model"
-    }
+    
 }
 def load_default_data():
     default_files = {
@@ -192,7 +188,7 @@ if is_mvp:
         <li><b>Repeat for All Models</b><br>
             Once you've completed these steps for one model, repeat the same process for the remaining models.</li>
         <li><b>Proceed to Performance Monitoring Page</b><br>
-            After configuring all three models, continue to the next page to move forward with the project workflow.</li>
+            After configuring all the models, continue to the next page to move forward with the project workflow.</li>
         </ol>
         <p style="color: red; font-weight: bold;">Review the remaining two models to prepare their input data and features.</p>        
     </div>
@@ -211,13 +207,13 @@ else:
         <li><b>Repeat for All Models</b><br>
             Once you've completed these steps for one model, repeat the same process for the remaining models.</li>
         <li><b>Proceed to Performance Monitoring Page</b><br>
-            After configuring all three models, continue to the next page to move forward with the project workflow.</li>
+            After configuring all the models, continue to the next page to move forward with the project workflow.</li>
     </ol>
     
 </div>
 """, unsafe_allow_html=True)
 
-
+if "confirmed_model_outputs" not in st.session_state:
     st.session_state["confirmed_model_outputs"] = {}
 
 if "model_development_state" not in st.session_state:
@@ -225,12 +221,13 @@ if "model_development_state" not in st.session_state:
 
 modeling_tasks = list(MODEL_INPUT_SOURCES.keys())
 
-# --- Track which model sections to show ---
+# Track which model sections to show ---
 if "model_dev_visible_sections" not in st.session_state:
     st.session_state["model_dev_visible_sections"] = {modeling_tasks[0]: True}
 for m in modeling_tasks[1:]:
     if m not in st.session_state["model_dev_visible_sections"]:
         st.session_state["model_dev_visible_sections"][m] = False
+
 
 for model_index, model_name in enumerate(modeling_tasks):
     # Only show this section if visible
@@ -332,13 +329,13 @@ for model_index, model_name in enumerate(modeling_tasks):
     # Model selection UI
     if target_type == "Classification":
         models = {
-            "Logistic Regression": LogisticRegression,
-            "LGBM Classifier": LGBMClassifier,
-            "Random Forest Classifier": RandomForestClassifier,
-            "XGBoost Classifier": XGBClassifier
+            "Logistic Survival Model": LogisticRegression,
+            "LGBM Survival Model": LGBMClassifier,
+            "Random Forest Survival Model": RandomForestClassifier,
+            "XGBoost Survival Model": XGBClassifier
         }
-    else:
-        models = {"Linear Regression": LinearRegression}
+    # else:
+    #     models = {"Linear Regression": LinearRegression}
 
     default_model_name = list(models.keys())[0]
     if "selected_model" in model_config and model_config["selected_model"] in models:
@@ -469,11 +466,11 @@ for model_index, model_name in enumerate(modeling_tasks):
         # st.info("This section is not available in Ready to Use Model")
         # Prepare default parameters for the selected model
         param_dist = {
-            "Logistic Regression": {"C": [1.0], "solver": ["lbfgs"], "max_iter": [100]},
-            "LGBM Classifier": {"n_estimators": [100], "max_depth": [-1], "learning_rate": [0.1]},
-            "Random Forest Classifier": {"n_estimators": [100], "max_depth": [None]},
-            "XGBoost Classifier": {"n_estimators": [100], "max_depth": [3], "learning_rate": [0.1], 'use_label_encoder': [False], 'eval_metric': ['logloss']},
-            "Linear Regression": {"fit_intercept": [True]},
+            "Logistic Survival Model": {"C": [1.0], "solver": ["lbfgs"], "max_iter": [100]},
+            "LGBM Survival Model": {"n_estimators": [100], "max_depth": [-1], "learning_rate": [0.1]},
+            "Random Forest Survival Model": {"n_estimators": [100], "max_depth": [None]},
+            "XGBoost Survival Model": {"n_estimators": [100], "max_depth": [3], "learning_rate": [0.1], 'use_label_encoder': [False], 'eval_metric': ['logloss']},
+            
         }
         sampled_params = [ {k: v[0] for k, v in param_dist[selected_model].items()} ]
 
@@ -586,11 +583,11 @@ for model_index, model_name in enumerate(modeling_tasks):
         st.subheader("🏆 Step 3 :Hyperparameter Iterations")
 
         param_dist = {
-            "Logistic Regression": {"C": [0.001, 0.01, 0.1, 1.0, 10.0, 100.0], "solver": ["liblinear", "lbfgs"], "max_iter": [100, 200, 300]},
-            "LGBM Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, -1], "learning_rate": [0.01, 0.05, 0.1]},
-            "Random Forest Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, 10, None]},
-            "XGBoost Classifier": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.05, 0.1], 'use_label_encoder': [False], 'eval_metric': ['logloss', 'auc']},
-            "Linear Regression": {"fit_intercept": [True, False]},
+            "Logistic Survival Model": {"C": [0.001, 0.01, 0.1, 1.0, 10.0, 100.0], "solver": ["liblinear", "lbfgs"], "max_iter": [100, 200, 300]},
+            "LGBM Survival Model": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, -1], "learning_rate": [0.01, 0.05, 0.1]},
+            "Random Forest Survival Model": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7, 10, None]},
+            "XGBoost Survival Model": {"n_estimators": [50, 100, 150, 200], "max_depth": [3, 5, 7], "learning_rate": [0.01, 0.05, 0.1], 'use_label_encoder': [False], 'eval_metric': ['logloss', 'auc']},
+            
         }
         default_n_iterations = model_config.get("n_iterations", 3 if target_type == "Classification" else 1)
         task_key = f"{model_name.replace(' ', '_')}_task"
@@ -776,6 +773,7 @@ for model_index, model_name in enumerate(modeling_tasks):
                         metric_val_iter_loop = f"{metric_val_iter_loop:.2f}"
                     display_name_iter_loop = f"Iteration {res_iter_loop['iteration_num']} ({selected_metric_eval}: {metric_val_iter_loop})"
                     selectable_iterations_data.append((display_name_iter_loop, idx_iter_loop))
+       
         if selectable_iterations_data:
             iteration_options_display_names = [item[0] for item in selectable_iterations_data]
             default_selection_display_idx = 0
@@ -821,7 +819,7 @@ for model_index, model_name in enumerate(modeling_tasks):
 
                             model_config["selected_iteration_global_index"] = selected_original_idx_confirm
                             st.session_state.model_development_state[task_key] = model_config
-
+                            
                         except Exception as save_e_final:
                             st.error(f"Error creating/saving test data or updating session state for {selected_model_task_name}: {save_e_final}")
                             st.exception(save_e_final)
@@ -870,18 +868,26 @@ for model_index, model_name in enumerate(modeling_tasks):
     st.session_state.model_development_state[task_key] = model_config
 
     # --- Proceed to Next Model Button (appears after confirmation) ---
+    # --- Proceed to Next Model Button (appears after confirmation) ---
+    # Use full modeling task list to determine current position
+    full_index = modeling_tasks.index(model_name)
+
     if task_key in st.session_state.get("confirmed_model_outputs", {}):
         st.success(f"✅ Configuration for {model_name} has been confirmed.")
-        if model_index < len(modeling_tasks) - 1:
-            next_model_name = modeling_tasks[model_index + 1]
-            if st.button(f"Proceed to {next_model_name}", key=f"proceed_{task_key}"):
-                # Show the next model section
+
+        # Now check if there's a next model in the full list
+        if full_index < len(modeling_tasks) - 1:
+            next_model_name = modeling_tasks[full_index + 1]
+
+            # Show proceed button
+            # import pdb ; pdb.set_trace()
+            if st.button(f"➡️ Proceed to {next_model_name}", key=f"proceed_{model_name}"):
                 st.session_state["model_dev_visible_sections"][next_model_name] = True
-                st.query_params["scroll_to"] = f"{next_model_name.replace(' ', '_')}"
+                st.query_params["scroll_to"] = next_model_name.replace(" ", "_")
+
                 st.info(f"Scroll down to configure: {next_model_name}")
-        
     else:
-        st.warning(f"Please confirm the selection for {model_name} to proceed.")
+        st.warning(f"⚠️ Please confirm the selection for {selected_model_task_name} to proceed.")
 
 # --- Finalize and Overview ---
 st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)

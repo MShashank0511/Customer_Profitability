@@ -266,7 +266,7 @@ def today_rates(df):
     if df_cleaned['Loan_Status'].isnull().all():
         st.warning("Information regarding loan status is not available: 'Loan_Status' contains only missing values.")
         return 0.0, 0.0
-
+    # import pdb ; pdb.set_trace()
     latest_status_per_customer = df_cleaned.dropna(subset=['Loan_Status']).sort_values(by='Timestamp', ascending=True).groupby('Application_ID')['Loan_Status'].last().reset_index()
 
     total_unique_customers_with_status = len(latest_status_per_customer)
@@ -871,7 +871,7 @@ if required_data_uploaded:
         st.switch_page("pages/Feature_Engineering.py")
 elif not (("loan_level_data" in st.session_state) or ("bureau_data" in st.session_state) or ("installments_data" in st.session_state)):
     st.info("""
-        Please refer below all the required data files along with Mandatory Features to be uploaded for Data Analysis.
+        Please attach all the required data files with all Mandatory Features to be uploaded for Data Analysis.
             """)
     st.markdown("""
 <b>Loan-Level Data:</b>
@@ -913,4 +913,3 @@ elif not (("loan_level_data" in st.session_state) or ("bureau_data" in st.sessio
   <tr><td>30-Day Delinquent Accounts (Total)</td><td>Number of accounts delinquent for 30 days.</td></tr>
 </table>
 """, unsafe_allow_html=True)
-

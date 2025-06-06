@@ -307,7 +307,7 @@ profitability_change = total_profitability_yesterday - profitability_comparison
 def format_to_millions(value):
     return f"${value / 1_000_000:.2f}M"
 def format_to_thousands(value):
-    return f"${value / 1_000:.2f}k"
+    return f"${value / 1_00_000:.2f}k"
 # Display metrics side by side
 with st.container():
     col1, col2 = st.columns(2)
