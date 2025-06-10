@@ -716,7 +716,7 @@ if "multi_transform_success" not in st.session_state:
     st.session_state.multi_transform_success = None  # Initialize multi_transform_success
 
 # --- Model Selection (Replace your existing Model Selection section) ---
-st.sidebar.title("Model Selection")
+st.sidebar.title("Model based Feature Selection")
 
 # Initialize 'active_model' in session state if not already present
 if "active_model" not in st.session_state:
