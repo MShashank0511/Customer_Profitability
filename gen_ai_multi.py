@@ -26,10 +26,12 @@ class GenAIAgent:
         Configures the Gemini API using an API key from Streamlit secrets or environment variables.
         """
         # Load environment variables from .env file
-        load_dotenv()
+        
+
+        api_key = st.secrets["api_keys"]["gemini"]
 
         # Retrieve the API key from Streamlit secrets or environment variables
-        GEMINI_API_KEY =  os.getenv("GEMINI_API_KEY")
+        GEMINI_API_KEY =  api_key
 
         if not GEMINI_API_KEY:
             st.error("Gemini API Key not found. Please set it in Streamlit secrets or as an environment variable.")

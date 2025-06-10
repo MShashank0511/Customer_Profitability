@@ -10,9 +10,12 @@ import streamlit as st
 from typing import List, Dict, Any
 import google.generativeai as genai
 import time
+import streamlit as st
+
+api_key = st.secrets["api_keys"]["gemini"]
 # Load environment variables and configure Gemini API
-load_dotenv()
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# load_dotenv()
+GEMINI_API_KEY = api_key
 GEMINI_API_KEY_CONFIGURED = False
 GEMINI_MODELS = {
     'gemini-2.0-flash': {
