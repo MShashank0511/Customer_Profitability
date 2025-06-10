@@ -47,31 +47,42 @@ except Exception as e:
     # GEMINI_API_KEY_CONFIGURED remains False
 '''
 
-def get_session_variable(GEMINI_API_KEY):
-    """Get a session variable from Snowflake"""
+import streamlit as st
+from snowflake.snowpark.context import get_active_session
+
+def get_session_variable(variable_name):
+    """Get a session variable from Snowflake - CORRECTED VERSION"""
     try:
-        session = st.connection("snowflake").session
-        result = session.sql(f"SELECT ${GEMINI_API_KEY}").collect()
-        if result and len(result) > 0:
+        # Method 1: Try to get active session (works in Snowflake Streamlit)
+        session = get_active_session()
+        result = session.sql(f"SELECT ${variable_name}").collect()
+        if result and len(result) > 0 and result[0][0] is not None:
             return result[0][0]
     except Exception as e:
-        st.error(f"Error accessing session variable {GEMINI_API_KEY}: {e}")
+        try:
+            # Method 2: Try st.connection approach (newer versions)
+            conn = st.connection("snowflake")
+            result = conn.query(f"SELECT ${variable_name}")
+            if not result.empty:
+                return result.iloc[0, 0]
+        except Exception as e2:
+            st.warning(f"Could not access session variable {variable_name}: {e2}")
+    
     return None
-# --- Configure Gemini API if key was successfully loaded ---
-GEMINI_API_KEY = get_session_variable("GEMINI_API_KEY")
-if GEMINI_API_KEY: # This checks if api_key was successfully retrieved from secrets.toml
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        GEMINI_API_KEY_CONFIGURED = True
-        st.success("✅ Gemini API configured successfully.")
-    except Exception as e:
-        st.error(f"❌ Error configuring Gemini API: {e}")
-        st.warning("Please check your Gemini API key's validity and your network access configuration.")
-        GEMINI_API_KEY_CONFIGURED = False
+
+# Set session variables in Snowflake first (run this in Snowflake SQL)
+# SET GEMINI_API_KEY = 'your_actual_api_key_here';
+
+# Then access in Streamlit
+gemini_api_key = get_session_variable("GEMINI_API_KEY")
+
+if gemini_api_key:
+    st.success(f"✅ API key loaded from session variable")
+    GEMINI_API_KEY = gemini_api_key
+    GEMINI_API_KEY_CONFIGURED = True
 else:
-    # This block will be reached if the secret was not found or an error occurred during loading
-    st.warning("⚠️ GEMINI_API_KEY could not be loaded. Gemini API features may not function.")
-    # GEMINI_API_KEY_CONFIGURED remains False
+    st.error("❌ API key not found in session variables")
+    GEMINI_API_KEY_CONFIGURED = False
 
 # --- Your GEMINI_MODELS dictionary (no changes needed here) ---
 GEMINI_MODELS = {
