@@ -124,7 +124,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 # Path to the default data directory
 DEFAULT_DATA_DIR = "default_data" # Not actively used in this script, but defined
-DATA_REGISTRY_DIR = "data_registry"
+DATA_REGISTRY_DIR = "./data_registry"
 # def clear_data_registry():
 #     if os.path.exists(DATA_REGISTRY_DIR):
 #         for root, dirs, files in os.walk(DATA_REGISTRY_DIR, topdown=False):
