@@ -20,6 +20,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 
 # --- API Key Loading and Configuration ---
 # Initialize variables
+'''
 api_key = None
 GEMINI_API_KEY = None # This will hold the key for genai.configure
 GEMINI_API_KEY_CONFIGURED = False
@@ -44,8 +45,20 @@ except Exception as e:
     st.error(f"❌ An unexpected error occurred while accessing secrets: {e}")
     st.warning("Please check your `secrets.toml` file format.")
     # GEMINI_API_KEY_CONFIGURED remains False
+'''
 
+def get_session_variable(GEMINI_API_KEY):
+    """Get a session variable from Snowflake"""
+    try:
+        session = st.connection("snowflake").session
+        result = session.sql(f"SELECT ${GEMINI_API_KEY}").collect()
+        if result and len(result) > 0:
+            return result[0][0]
+    except Exception as e:
+        st.error(f"Error accessing session variable {GEMINI_API_KEY}: {e}")
+    return None
 # --- Configure Gemini API if key was successfully loaded ---
+GEMINI_API_KEY = get_session_variable("GEMINI_API_KEY")
 if GEMINI_API_KEY: # This checks if api_key was successfully retrieved from secrets.toml
     try:
         genai.configure(api_key=GEMINI_API_KEY)
