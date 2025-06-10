@@ -14,11 +14,53 @@ import streamlit as st
 
 
 
-api_key = st.secrets["api_keys"]["gemini"]
-# Load environment variables and configure Gemini API
-# load_dotenv()
-GEMINI_API_KEY = api_key
+import streamlit as st
+import google.generativeai as genai
+from streamlit.errors import StreamlitSecretNotFoundError
+
+# --- API Key Loading and Configuration ---
+# Initialize variables
+api_key = None
+GEMINI_API_KEY = None # This will hold the key for genai.configure
 GEMINI_API_KEY_CONFIGURED = False
+
+# Try to load the API key from secrets.toml
+try:
+    # This line attempts to access the secret.
+    # It expects secrets.toml to have:
+    # [api_keys]
+    # GEMINI_API_KEY = "YOUR_ACTUAL_API_KEY_HERE"
+    api_key = st.secrets["api_keys"]["GEMINI_API_KEY"]
+    GEMINI_API_KEY = api_key # Assign to the variable used for genai.configure
+
+except StreamlitSecretNotFoundError:
+    # Specific error if the secret or its path in secrets.toml is incorrect/missing
+    st.error("❌ Gemini API key not found in `secrets.toml`.")
+    st.warning("Please ensure your `.streamlit/secrets.toml` file is correctly deployed, "
+               "contains a section `[api_keys]`, and has a key named `GEMINI_API_KEY`.")
+    # GEMINI_API_KEY_CONFIGURED remains False
+except Exception as e:
+    # Catch any other unexpected issues during secret access (e.g., malformed TOML)
+    st.error(f"❌ An unexpected error occurred while accessing secrets: {e}")
+    st.warning("Please check your `secrets.toml` file format.")
+    # GEMINI_API_KEY_CONFIGURED remains False
+
+# --- Configure Gemini API if key was successfully loaded ---
+if GEMINI_API_KEY: # This checks if api_key was successfully retrieved from secrets.toml
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        GEMINI_API_KEY_CONFIGURED = True
+        st.success("✅ Gemini API configured successfully.")
+    except Exception as e:
+        st.error(f"❌ Error configuring Gemini API: {e}")
+        st.warning("Please check your Gemini API key's validity and your network access configuration.")
+        GEMINI_API_KEY_CONFIGURED = False
+else:
+    # This block will be reached if the secret was not found or an error occurred during loading
+    st.warning("⚠️ GEMINI_API_KEY could not be loaded. Gemini API features may not function.")
+    # GEMINI_API_KEY_CONFIGURED remains False
+
+# --- Your GEMINI_MODELS dictionary (no changes needed here) ---
 GEMINI_MODELS = {
     'gemini-2.0-flash': {
         'model': 'gemini-2.0-flash',
