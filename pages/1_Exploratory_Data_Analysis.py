@@ -868,7 +868,7 @@ required_data_uploaded = (
 
 if required_data_uploaded:
     if st.button("Proceed to Feature Engineering"):
-        st.switch_page("pages/Feature_Engineering.py")
+        st.switch_page("pages/2_Feature_Engineering.py")
 elif not (("loan_level_data" in st.session_state) or ("bureau_data" in st.session_state) or ("installments_data" in st.session_state)):
     st.info("""
         Please attach all the required data files with all Mandatory Features to be uploaded for Data Analysis.
