@@ -240,7 +240,7 @@ if st.button("Ready to Use Model", key="mvp_version_btn", use_container_width=Tr
         clear_data_registry()
     
     st.session_state["app_version"] = "MVP"
-    st.switch_page("pages/Exploratory_Data_Analysis.py")
+    st.switch_page("pages/1_Exploratory_Data_Analysis.py")
 
 st.markdown("---")
 
@@ -256,4 +256,4 @@ if st.button("Customized Version", key="custom_version_btn", use_container_width
         clear_data_registry()
     
     st.session_state["app_version"] = "Customized"
-    st.switch_page("pages/Exploratory_Data_Analysis.py")
+    st.switch_page("pages/1_Exploratory_Data_Analysis.py")
