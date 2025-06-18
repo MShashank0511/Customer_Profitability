@@ -77,12 +77,18 @@ def load_and_bucket_data():
             labels=['Low', 'Medium', 'High']
         )
 
+    if 'Credit_Score_Range' in df.columns:
+        # Confirm it's a categorical or string
+        df['Credit_Score_Range'] = df['Credit_Score_Range'].astype(str)
+    else:
+        st.error("Credit_Score_Range column not found in pickle")
+
     return df
 
 
 
 data = load_and_bucket_data()
-
+# st.dataframe(data.head(100))  # Display the first few rows of the DataFrame
 
 if data is None:
     st.stop()  # Stop if data loading fails
@@ -262,6 +268,7 @@ yesterday_date_obj = today - timedelta(days=1)
 # Filter data for yesterday based on Timestamp_x
 if 'Timestamp_x' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Timestamp_x']):
     yesterday_data = data[data['Timestamp_x'].dt.date == yesterday_date_obj]
+      # Debugging line to inspect yesterday_data
 else:
     yesterday_data = pd.DataFrame()  # Empty if no valid timestamp
     st.warning("Cannot calculate yesterday's insights due to missing or invalid Timestamp_x column.")
@@ -345,7 +352,9 @@ with st.container():
 # -----------------------
 st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
 st.subheader("📌 Analyze Profitability by Segments")
-
+if 'LOAN_ID' in data.columns:
+    data = data.copy()
+    data['LOAN_ID'] = data['LOAN_ID'].astype(int)
 # Feature selection
 available_bucket_features = [col for col in data.columns if col.endswith('_BUCKET')] + ['LOAN_ID']
 feature_display_names = {col: col.replace("_BUCKET", "") for col in available_bucket_features}
@@ -467,5 +476,207 @@ else:
     st.warning("Please select at least one feature and corresponding bucket to proceed.")
 
 
+# import streamlit as st
+# import plotly.express as px
+# import pandas as pd
+# import seaborn as sns
+# import matplotlib.pyplot as plt
+
+# def view_pnl_report_new(df):
+#     st.title("P&L Report (Simulating P&L View)")
+
+#     # Multi-select for year
+#     available_years = df['Origination_Year'].unique().tolist()
+#     selected_years = st.multiselect("Select Origination Year(s)", 
+#                                    available_years, 
+#                                    default=available_years,
+#                                    key='selected_years_pnl_report_new')
+
+#     # Multi-select for Credit Score Range
+#     available_ranges = df['Credit_Score_Range'].unique().tolist()
+#     selected_ranges = st.multiselect("Select Credit Score Range(s)", 
+#                                       available_ranges, 
+#                                       default=available_ranges,
+#                                       key='selected_ranges_pnl_report_new')
+
+#     df_filtered = df[
+#         (df['Origination_Year'].isin(selected_years)) & 
+#         (df['Credit_Score_Range'].isin(selected_ranges))
+#     ]
+
+#     st.subheader("P&L by Vintage")
+#     vintage_df = compute_vintage_pnl_report_new(
+#         df_filtered
+#     )
+
+#     # Plotting by Credit Score Range
+#     income_chart = px.bar(vintage_df,
+#                            x='Credit_Score_Range',
+#                            y='Pre_Tax_Income',
+#                            color='Credit_Score_Range',
+#                            barmode='group',
+#                            hover_data=['Pred_APR',
+#                                       'Effective_APR',
+#                                       'Yield',
+#                                       'Cost_Of_Funds',
+#                                       'Net_Credit_Loss',
+#                                       'Marginal_Opex',
+#                                       'Volume_Mix',
+#                                       'Average_Loan_Size'], 
+#                            title='Pre Tax Income by Credit Score Range')
+#     st.plotly_chart(income_chart)
+
+
+# def compute_vintage_pnl_report_new(df, 
+#                                    cost_of_funds=0.028, 
+#                                    opex=0.0175):
+#     """
+#     Computes P&L by vintage with approximate metrics.
+#     """
+#     df = df.copy()
+#     # Calculate financial metrics with Remaining_Balance as principal base
+    
+
+#     # APR should be annualized (depending on your business), 
+#     # but normally it's (interest + fees) divided by principal
+#     df['Pred_APR'] = (df['Interest_Amount'] + df['Fees']) / df['Remaining_Balance']
+
+#     # Allocate fees
+#     df['Dealer_Fee'] = df['Fees'] * 0.5
+#     df['DAC_Fee'] = df['Fees'] * 0.3
+#     df['Document_Fee'] = df['Fees'] * 0.2
+
+#     #Effective APR = Pred_APR minus funding and opex
+#     df['Effective_APR'] = df['Pred_APR'] - cost_of_funds - opex
+
+#     # Yield = (interest + fees + recovery) divided by principal
+#     df['Yield'] = (df['Interest_Amount'] + df['Fees'] + df['Recovery_Amount']) / df['Remaining_Balance']
+
+#     # Cost of Funds (annual %) 
+#     df['Cost_Of_Funds'] = cost_of_funds
+
+#     # Net Credit Loss % of principal
+#     df['Net_Credit_Loss'] = (df['Charge_Off_Bal'] - df['Recovery_Amount']) / df['Remaining_Balance']
+
+#     # OPEX % of principal
+#     df['Marginal_Opex'] = opex
+
+#     # Pre Tax Income = (interest + fees + recovery) - (charge-off - recovery) - opex* principal - funding* principal
+#     df['Pre_Tax_Income'] = (
+#         (df['Interest_Amount'] + df['Fees'] + df['Recovery_Amount']) - 
+#         (df['Charge_Off_Bal'] - df['Recovery_Amount']) - 
+#         (opex * df['Remaining_Balance']) - 
+#         (cost_of_funds * df['Remaining_Balance'])
+
+#     )
+
+#     # Now group by
+#     df_vintage = df.groupby(['Origination_Year', 'Credit_Score_Range'], as_index=False).agg({ 
+#         'Pred_APR': 'mean',
+#         'Dealer_Fee': 'mean',
+#         'DAC_Fee': 'mean',
+#         'Document_Fee': 'mean',
+#         'Effective_APR': 'mean',
+#         'Yield': 'mean',
+#         'Cost_Of_Funds': 'mean',
+#         'Net_Credit_Loss': 'mean',
+#         'Marginal_Opex': 'mean',
+#         'Pre_Tax_Income': 'mean',
+#         'Remaining_Balance': 'sum'
+#     })
+
+#     df_vintage = df_vintage.copy()
+#     df_vintage['Volume_Mix'] = df_vintage['Remaining_Balance'] / df_vintage['Remaining_Balance'].sum()
+#     df_vintage['Average_Loan_Size'] = df_vintage['Remaining_Balance'] / df_vintage['Remaining_Balance'].sum()
+
+#     return df_vintage
+
+
+# # Uncomment this to view in Streamlit
+# # view_pnl_report_new(data)
+
+
+# st.title("P&L View by Credit Score Range")
+
+# # Filter by vintage first
+# vintages = data['Origination_Year'].unique().tolist()
+# selected_vintages = st.multiselect(
+#     "Select Origination Year(s)", 
+#     vintages, 
+#     default=vintages,
+#     key='selected_vintages_report_new'
+# )
+
+# filtered_df = data[data['Origination_Year'].isin(selected_vintages)]
+
+# filtered_df_vintage = compute_vintage_pnl_report_new(filtered_df)
+
+# # Now group by Credit Score Range
+# # First compute grouped metrics by Credit Score Range
+# grouped = filtered_df_vintage.groupby('Credit_Score_Range').agg(
+#     Pred_APR=('Pred_APR', 'mean'),
+#     Yield=('Yield', 'mean'),
+#     Net_Credit_Loss=('Net_Credit_Loss', 'mean'),
+#     Cost_Of_Funds=('Cost_Of_Funds', 'mean'),
+#     Marginal_Opex=('Marginal_Opex', 'mean'),
+#     Pre_Tax_Income=('Pre_Tax_Income', 'mean'),
+#     Remaining_Balance=('Remaining_Balance', 'sum')
+# ).reset_index()
+
+# # Calculate additional metrics
+# grouped = grouped.copy()
+# grouped['Volume_Mix'] = grouped['Remaining_Balance'] / grouped['Remaining_Balance'].sum()
+# grouped['Average_Loan_Size'] = grouped['Remaining_Balance'] / grouped['Volume_Mix']
+
+# # RoR(ex LR) might be Pre Tax Income divided by principal
+# grouped['RoR(ex LR)'] = grouped['Pre_Tax_Income'] / grouped['Remaining_Balance']
+
+# # Display the results
+# grouped_transpose = grouped.copy().set_index('Credit_Score_Range').transpose()
+
+# # Display this in Streamlit
+
+# st.markdown(
+#     "<h2 style='font-size: 30px;'>P&L View by Credit Score Range</h2>",
+#     unsafe_allow_html=True
+# )
+# st.dataframe(
+#     grouped_transpose,
+#     height=500,  # adjust to your preferred size
+#     width=1000   # adjust to your preferred size
+# )
+
+
+# # Plotting with Plotly (bar plot)
+# bar = px.bar(
+#     grouped,
+#     x='Credit_Score_Range',
+#     y='Pre_Tax_Income',
+#     hover_data=['Yield', 'Net_Credit_Loss', 'Cost_Of_Funds', 'Marginal_Opex'],  # additional info on hover
+#     title='Pre Tax Income by Credit Score Range',
+#     color='Credit_Score_Range'
+# )
+# st.plotly_chart(bar)
+
+
+# # Plotting with Plotly (heatmap)
+# heatmap = px.imshow(
+#     grouped.copy().set_index('Credit_Score_Range'),
+#     text_auto=True,
+#     aspect='auto',
+#     color_continuous_scale='Blues',
+#     title='P&L Metrics by Credit Score Range'
+# )
+# st.plotly_chart(heatmap)
+
+
+# --- Your DataFrame should already exist with these columns:
+# df['OPB'], df['Profitability_Cal'], df['Credit_Score_Range']
+
+
+
+
+
+
 if st.button("Proceed to Simulator Page"):
-        st.switch_page("pages/6_Loan_Simulator.py")
+        st.switch_page("pages/6_Simulator.py")

@@ -420,7 +420,11 @@ def apply_cumulative_columns(df, loan_id_cols=['OPB', 'TERM_OF_LOAN']):
 
     return df
 
-
+def assign_credit_score_range(row, ranges):
+    for label, (lower, upper) in ranges.items():
+        if lower <= row['CREDIT_SCORE_AVG_CALC'] < upper:
+            return label
+    return "Unknown"
 
 # --- Main App ---
 def main():
@@ -718,7 +722,7 @@ def main():
             combined_df = combined_df.merge(
                 df_edited[['Timestamp_x', 'OPB', 'Origination_Year', 'TERM_OF_LOAN']].drop_duplicates(),
                 on='Timestamp_x',
-                how='left'
+                how='inner'
             )
 
             # Populate COF_EVENT_LABEL and PREPAYMENT_EVENT_LABEL
@@ -728,6 +732,19 @@ def main():
             # Calculate Total_Probability
             combined_df['Total_Probability'] = combined_df[['Distributed_Probability_COF', 'Distributed_Probability_PREPAYMENT']].sum(axis=1)
 
+            if 'CREDIT_SCORE_AVG_CALC' in df_edited.columns:
+                combined_df = combined_df.merge(
+                    df_edited[['Timestamp_x', 'CREDIT_SCORE_AVG_CALC']].drop_duplicates(), 
+                    on='Timestamp_x',
+                    how='inner'
+                )
+
+                combined_df['Credit_Score_Range'] = combined_df.apply(
+                    assign_credit_score_range, 
+                    axis=1, 
+                    ranges=credit_score_ranges
+                )
+
             # Add Loan Metrics
             combined_df = add_loan_metrics_updated(combined_df)
 
@@ -736,6 +753,9 @@ def main():
 
             # Store the combined DataFrame globally
             store_processed_data(combined_df, "Combined_COFPREPAYMENT")
+            print("COMBINED DATAFRAME")
+            print(combined_df.head())
+
 
     # --- 5. Button to Show Results ---
     st.markdown("<hr style='border: 2px solid black;'>", unsafe_allow_html=True)
@@ -848,6 +868,7 @@ if __name__ == "__main__":
     # Ensure combined_df is stored globally
     if combined_df is not None:
         print("Combined DataFrame is ready and stored globally.")
+# st.dataframe(combined_df.head())  # Display the combined DataFrame for debugging
 
 if st.button("Proceed to Results Page"):
         st.switch_page("pages/5_Results.py")

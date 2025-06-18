@@ -17,6 +17,8 @@ st.set_page_config(
 for key in ["loan_level_data", "loan_level_data_path", "bureau_data", "bureau_data_path", "installments_data", "installments_data_path"]:
     if key in st.session_state:
         del st.session_state[key]
+
+
 col1, col2, col3 = st.columns([1, 20, 5])
 
 with col1:
@@ -124,7 +126,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 # Path to the default data directory
 DEFAULT_DATA_DIR = "default_data" # Not actively used in this script, but defined
-DATA_REGISTRY_DIR = "./data_registry"
+DATA_REGISTRY_DIR = "data_registry"
+REQUIRED_FIELDS = {
+    "Loan-Level": ["Application_ID", "Term of Loan", "Outstanding Principal Balance", 
+                   "Charge-Off Event", "Prepayment Event", "Loan Status", "Profitability", "Timestamp"],
+    "Bureau": ["Derogatory Tradelines (Total)", "Credit Inquiries (Total)", "Average Credit Score (Calc)", 
+               "Cash Down at Contract", "Credit Card Credit Limit (Total)", "Bank Card Credit Limit (Total)",
+               "Credit Card Current Balance (Open Total)", "Recent Credit Inquiries (Total)", 
+               "Derogatory Current Balance (Total)", "30-Day Delinquent Accounts (Total)", "Timestamp"],
+    "Payment": ["Payment Amount", "Payments Made (Total)", "Installment Current Balance (Total)",
+                "Auto PTI (Total)", "Derogatory Monthly Payment (Total)", "Timestamp"]
+}
+
+
 # def clear_data_registry():
 #     if os.path.exists(DATA_REGISTRY_DIR):
 #         for root, dirs, files in os.walk(DATA_REGISTRY_DIR, topdown=False):
@@ -229,6 +243,58 @@ def load_data(uploaded_file, feature_mapping):
         st.warning("The dataset does not contain a 'Application_ID' column. Some insights may be limited.")
 
     return data
+
+def get_column_mapping_ui(data, dataset_name):
+    st.subheader(f"{dataset_name} Column Mapping")
+    mapping = {}
+
+    selected_columns = set()
+    required_fields = REQUIRED_FIELDS[dataset_name]
+
+    for i, required_col in enumerate(required_fields):
+        available_options = [col for col in data.columns if col not in selected_columns]
+
+        default_index = 0
+        if f"{dataset_name}_{required_col}" in st.session_state:
+            previously_selected = st.session_state[f"{dataset_name}_{required_col}"]
+            if previously_selected in data.columns:
+                default_index = available_options.index(previously_selected) if previously_selected in available_options else 0
+
+        selected = st.selectbox(
+            f"Map '{required_col}' to:",
+            options=available_options,
+            index=default_index,
+            key=f"{dataset_name}_{required_col}"
+        )
+
+        mapping[required_col] = selected
+        selected_columns.add(selected)
+
+    return mapping
+
+
+def validate_mapping(data, mapping, dataset_name):
+    issues = []
+    for required, user_col in mapping.items():
+        col_data = data[user_col]
+
+        if "Date" in required or "Timestamp" in required:
+            if not pd.api.types.is_datetime64_any_dtype(pd.to_datetime(col_data, errors='coerce')):
+                issues.append(f"'{user_col}' doesn't look like a datetime for '{required}'.")
+
+        elif "Amount" in required or "Balance" in required or "Score" in required:
+            if not pd.api.types.is_numeric_dtype(col_data):
+                issues.append(f"'{user_col}' is not numeric, but expected for '{required}'.")
+
+        elif "ID" in required:
+            if col_data.nunique() / len(col_data) < 0.1:  # ID should have high uniqueness
+                issues.append(f"'{user_col}' seems to have low uniqueness for '{required}'.")
+
+    return issues
+
+def apply_column_mapping(data, mapping):
+    return data.rename(columns=mapping)
+
 
 def filter_data_by_date(df, start_date, end_date):
     if 'Timestamp' not in df.columns or df['Timestamp'].isnull().all(): # Added check for all null Timestamps
@@ -365,7 +431,10 @@ def display_insights(data, dataset_name, feature_mapping):
                 val_counts = series.value_counts(dropna=True)
                 if not val_counts.empty:
                     most_common = val_counts.idxmax()
-                    return f"{most_common} ({val_counts.max()})"
+                    count = val_counts.max()
+                    if isinstance(most_common, (int, float)):
+                        return f"{round(most_common, 3)} ({count})"
+                    return f"{most_common} ({count})"
             except Exception:  # Catch a broad exception if idxmax fails or other issues
                 return ''
             return ''
@@ -380,9 +449,9 @@ def display_insights(data, dataset_name, feature_mapping):
                 "Most Repeating Value": get_most_repeating_value(data_no_timestamp[col])
             }
             if pd.api.types.is_numeric_dtype(data_no_timestamp[col].dtype):
-                col_summary["Min"] = data_no_timestamp[col].min()
-                col_summary["Max"] = data_no_timestamp[col].max()
-                col_summary["Avg"] = data_no_timestamp[col].mean()
+                col_summary["Min"] = round(data_no_timestamp[col].min(), 3)
+                col_summary["Max"] = round(data_no_timestamp[col].max(), 3)
+                col_summary["Avg"] = round(data_no_timestamp[col].mean(), 3)
             else:
                 col_summary["Min"] = ''
                 col_summary["Max"] = ''
@@ -774,6 +843,7 @@ elif "loan_level_data" in st.session_state:
     # Load persisted data from session state
     loan_level_data = st.session_state["loan_level_data"]
     display_insights(loan_level_data, "Loan-Level", feature_mapping)
+
 
 # else :
 #     # Load On-Us_data.csv by default
