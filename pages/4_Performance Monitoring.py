@@ -215,6 +215,143 @@ def split_and_distribute_with_credit_risk(df, prob_col='Predicted_Probability', 
 
     return pd.DataFrame(expanded_rows)
 
+def distribute_probabilities_for_cof(
+    df, features, time_bins, n_neighbors=30, test_size=0.2, random_state=42, ci_width=0.99
+):
+    """
+    Distributes probabilities for COF_EVENT_LABEL across the loan term using survival model predictions.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame containing loan data.
+        features (list): List of feature column names for the survival model.
+        time_bins (np.ndarray): Array of time bins for survival predictions.
+        n_neighbors (int): Number of neighbors for Kaplan-Meier survival model.
+        test_size (float): Fraction of data to use for validation.
+        random_state (int): Random seed for reproducibility.
+        ci_width (float): Width of confidence intervals.
+
+    Returns:
+        pd.DataFrame: Expanded DataFrame with distributed probabilities for each month.
+    """
+    from xgbse import XGBSEKaplanNeighbors
+    from xgbse.converters import convert_to_structured
+    from sklearn.model_selection import train_test_split
+
+    # Prepare features and targets
+    X = df[features]
+    y = convert_to_structured(df['time_to_event_cof'], df['COF_EVENT_LABEL'])
+
+    # Split data into training and validation sets
+    X_train, X_valid, y_train, y_valid = train_test_split(
+        X, y, test_size=test_size, random_state=random_state
+    )
+
+    # Fit the survival model
+    model = XGBSEKaplanNeighbors(n_neighbors=n_neighbors)
+    model.fit(
+        X_train, y_train,
+        validation_data=(X_valid, y_valid),
+        early_stopping_rounds=10,
+        time_bins=time_bins,
+    )
+
+    # Predict survival probabilities
+    mean_surv, upper_ci, lower_ci = model.predict(
+        X_valid,
+        time_bins=time_bins,
+        return_ci=True,
+        ci_width=ci_width,
+    )
+
+    # Align indices between mean_surv and X_valid
+    mean_surv = mean_surv.reset_index(drop=True)
+    X_valid = X_valid.reset_index(drop=True)
+
+    # Expand rows for each month in the loan term
+    expanded_rows = []
+    for idx, row in X_valid.iterrows():
+        term = int(row['TERM_OF_LOAN'])
+        survival_probs = mean_surv.loc[idx].values[:term]  # Get survival probabilities for the loan term
+        distributed_probs = 1 - survival_probs  # Convert survival probabilities to event probabilities
+
+        for month in range(1, term + 1):
+            new_row = row.to_dict()
+            new_row['Month'] = month
+            new_row['Distributed_Probability'] = distributed_probs[month - 1]
+            new_row['Timestamp_x'] = df.loc[idx, 'Timestamp_x']  # Include Timestamp_x
+            expanded_rows.append(new_row)
+    
+    return pd.DataFrame(expanded_rows)
+
+
+def distribute_probabilities_for_prepayment(
+    df, features, time_bins, n_neighbors=30, test_size=0.2, random_state=42, ci_width=0.99
+):
+    """
+    Distributes probabilities for PREPAYMENT_EVENT_LABEL across the loan term using survival model predictions.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame containing loan data.
+        features (list): List of feature column names for the survival model.
+        time_bins (np.ndarray): Array of time bins for survival predictions.
+        n_neighbors (int): Number of neighbors for Kaplan-Meier survival model.
+        test_size (float): Fraction of data to use for validation.
+        random_state (int): Random seed for reproducibility.
+        ci_width (float): Width of confidence intervals.
+
+    Returns:
+        pd.DataFrame: Expanded DataFrame with distributed probabilities for each month.
+    """
+    from xgbse import XGBSEKaplanNeighbors
+    from xgbse.converters import convert_to_structured
+    from sklearn.model_selection import train_test_split
+
+    # Prepare features and targets
+    X = df[features]
+    y = convert_to_structured(df['time_to_event_prepay'], df['PREPAYMENT_EVENT_LABEL'])
+
+    # Split data into training and validation sets
+    X_train, X_valid, y_train, y_valid = train_test_split(
+        X, y, test_size=test_size, random_state=random_state
+    )
+
+    # Fit the survival model
+    model = XGBSEKaplanNeighbors(n_neighbors=n_neighbors)
+    model.fit(
+        X_train, y_train,
+        validation_data=(X_valid, y_valid),
+        early_stopping_rounds=10,
+        time_bins=time_bins,
+    )
+
+    # Predict survival probabilities
+    mean_surv, upper_ci, lower_ci = model.predict(
+        X_valid,
+        time_bins=time_bins,
+        return_ci=True,
+        ci_width=ci_width,
+    )
+
+    # Align indices between mean_surv and X_valid
+    mean_surv = mean_surv.reset_index(drop=True)
+    X_valid = X_valid.reset_index(drop=True)
+
+    # Expand rows for each month in the loan term
+    expanded_rows = []
+    for idx, row in X_valid.iterrows():
+        term = int(row['TERM_OF_LOAN'])
+        survival_probs = mean_surv.loc[idx].values[:term]  # Get survival probabilities for the loan term
+        distributed_probs = 1 - survival_probs  # Convert survival probabilities to event probabilities
+
+        for month in range(1, term + 1):
+            new_row = row.to_dict()
+            new_row['Month'] = month
+            new_row['Distributed_Probability'] = distributed_probs[month - 1]
+            new_row['Timestamp_x'] = df.loc[idx, 'Timestamp_x']  # Include Timestamp_x
+            expanded_rows.append(new_row)
+
+    return pd.DataFrame(expanded_rows)
+
 # st.set_page_config(layout="wide")
 st.title("Comprehensive Model Monitoring: Profitability, Charge-Off, Prepayment")
 
@@ -515,7 +652,7 @@ def main():
     # Set the selected DataFrame
     selected_df = available_data_sources[data_source_name]
     st.session_state.data_source = data_source_name
-
+    
     # --- Display Data Preview ---
     st.subheader("Data Preview")
     with st.expander("Click to view the Data for selected Model", expanded=False):
@@ -583,6 +720,7 @@ def main():
 
     # Apply filters to the preprocessed data
     filtered_df = df_edited.copy()
+    
 
     # Apply Origination Year filter
     if selected_years:
@@ -699,39 +837,43 @@ def main():
                     st.write(f"ROC AUC Score: {auc:.4f}")
 
         # Process and store combined_df for COF and Prepayment models
+        
+        # Add a button to choose the distribution method
+        # use_survival_model = st.button("Use Survival Model for Probability Distribution")
+
+        # if use_survival_model:
         if target_variable_present == 'COF_EVENT_LABEL':
-            st.session_state.cof_event_df = split_and_distribute_with_normalization(filtered_df)
+            max_term = filtered_df['TERM_OF_LOAN'].max()
+            time_bins = np.arange(1, max_term + 1)
+                # Assuming loan terms up to 84 months
+            features = ['CREDIT_SCORE_AVG_CALC', 'DELINQ_CNT_30_DAY_TOTAL', 'OPB', 'TERM_OF_LOAN']  # Adjust features as needed
+
+            st.session_state.cof_event_df = distribute_probabilities_for_cof(filtered_df, features, time_bins)
+
+        # Process PREPAYMENT_EVENT_LABEL
         elif target_variable_present == 'PREPAYMENT_EVENT_LABEL':
-            st.session_state.prepayment_event_df = split_and_distribute_with_normalization(filtered_df)
+            
+            max_term = filtered_df['TERM_OF_LOAN'].max()
+            time_bins = np.arange(1, max_term + 1) # Assuming loan terms up to 84 months
+            features = ['CREDIT_SCORE_AVG_CALC', 'DELINQ_CNT_30_DAY_TOTAL', 'OPB', 'TERM_OF_LOAN']  # Adjust features as needed
 
-        # --- Combine DataFrames for COF and Prepayment Models ---
-        if 'cof_event_df' in st.session_state and 'prepayment_event_df' in st.session_state:
-            cof_event_df = st.session_state.cof_event_df
-            prepayment_event_df = st.session_state.prepayment_event_df
+            st.session_state.prepayment_event_df = distribute_probabilities_for_prepayment(filtered_df, features, time_bins)
 
-            # Merge COF and Prepayment DataFrames
+        # Merge COF and Prepayment distributed probabilities
+        cof_distributed_df = st.session_state.get('cof_event_df')
+        prepayment_distributed_df = st.session_state.get('prepayment_event_df')
+        
+        if cof_distributed_df is not None and prepayment_distributed_df is not None:
             combined_df = pd.merge(
-                cof_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
-                prepayment_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
+                cof_distributed_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
+                prepayment_distributed_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
                 on=['Timestamp_x', 'Month'],
                 how='outer',
                 suffixes=('_COF', '_PREPAYMENT')
             )
 
-            # Merge with additional columns from df_edited
-            combined_df = combined_df.merge(
-                df_edited[['Timestamp_x', 'OPB', 'Origination_Year', 'TERM_OF_LOAN']].drop_duplicates(),
-                on='Timestamp_x',
-                how='inner'
-            )
-
-            # Populate COF_EVENT_LABEL and PREPAYMENT_EVENT_LABEL
-            combined_df['COF_EVENT_LABEL'] = combined_df['Distributed_Probability_COF'].fillna(0)
-            combined_df['PREPAYMENT_EVENT_LABEL'] = combined_df['Distributed_Probability_PREPAYMENT'].fillna(0)
-
-            # Calculate Total_Probability
+            # Add additional columns and calculations
             combined_df['Total_Probability'] = combined_df[['Distributed_Probability_COF', 'Distributed_Probability_PREPAYMENT']].sum(axis=1)
-
             if 'CREDIT_SCORE_AVG_CALC' in df_edited.columns:
                 combined_df = combined_df.merge(
                     df_edited[['Timestamp_x', 'CREDIT_SCORE_AVG_CALC']].drop_duplicates(), 
@@ -745,16 +887,130 @@ def main():
                     ranges=credit_score_ranges
                 )
 
-            # Add Loan Metrics
-            combined_df = add_loan_metrics_updated(combined_df)
+                # Debugging breakpoint
+            # Add OPB and TERM_OF_LOAN columns
+            combined_df = combined_df.merge(
+                df_edited[['Timestamp_x', 'OPB', 'Origination_Year', 'TERM_OF_LOAN']].drop_duplicates(),
+                on='Timestamp_x',
+                how='inner'
+            )   
+            #  Populate COF_EVENT_LABEL and PREPAYMENT_EVENT_LABEL
+            combined_df['COF_EVENT_LABEL'] = combined_df['Distributed_Probability_COF'].fillna(0)
+            combined_df['PREPAYMENT_EVENT_LABEL'] = combined_df['Distributed_Probability_PREPAYMENT'].fillna(0)
 
-            # Apply Cumulative Columns
+            
+            combined_df = add_loan_metrics_updated(combined_df)
             combined_df = apply_cumulative_columns(combined_df)
 
-            # Store the combined DataFrame globally
+            # Save the combined DataFrame
             store_processed_data(combined_df, "Combined_COFPREPAYMENT")
-            print("COMBINED DATAFRAME")
-            print(combined_df.head())
+            # else:
+            #     st.warning("COF or Prepayment distributed DataFrame is not available in session state.")
+        # else:
+        #     # Use split_and_distribute_with_normalization for COF event
+        #     if target_variable_present == 'COF_EVENT_LABEL':
+        #         st.session_state.cof_event_df = split_and_distribute_with_normalization(filtered_df)
+        #     elif target_variable_present == 'PREPAYMENT_EVENT_LABEL':
+        #         st.session_state.prepayment_event_df = split_and_distribute_with_normalization(filtered_df)
+        #     # Combine COF and Prepayment DataFrames
+        #     if 'cof_event_df' in st.session_state and 'prepayment_event_df' in st.session_state:
+        #         cof_event_df = st.session_state.cof_event_df
+        #         prepayment_event_df = st.session_state.prepayment_event_df
+
+        #         combined_df = pd.merge(
+        #             cof_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
+        #             prepayment_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
+        #             on=['Timestamp_x', 'Month'],
+        #             how='outer',
+        #             suffixes=('_COF', '_PREPAYMENT')
+        #         )
+
+        #         # Merge with additional columns from df_edited
+        #         combined_df = combined_df.merge(
+        #             df_edited[['Timestamp_x', 'OPB', 'Origination_Year', 'TERM_OF_LOAN']].drop_duplicates(),
+        #             on='Timestamp_x',
+        #             how='inner'
+        #         )
+
+        #         # Populate COF_EVENT_LABEL and PREPAYMENT_EVENT_LABEL
+        #         combined_df['COF_EVENT_LABEL'] = combined_df['Distributed_Probability_COF'].fillna(0)
+        #         combined_df['PREPAYMENT_EVENT_LABEL'] = combined_df['Distributed_Probability_PREPAYMENT'].fillna(0)
+
+        #         # Calculate Total_Probability
+        #         combined_df['Total_Probability'] = combined_df[['Distributed_Probability_COF', 'Distributed_Probability_PREPAYMENT']].sum(axis=1)
+
+        #         if 'CREDIT_SCORE_AVG_CALC' in df_edited.columns:
+        #             combined_df = combined_df.merge(
+        #                 df_edited[['Timestamp_x', 'CREDIT_SCORE_AVG_CALC']].drop_duplicates(), 
+        #                 on='Timestamp_x',
+        #                 how='inner'
+        #             )
+
+        #             combined_df['Credit_Score_Range'] = combined_df.apply(
+        #                 assign_credit_score_range, 
+        #                 axis=1, 
+        #                 ranges=credit_score_ranges
+        #             )
+
+        #         # Add Loan Metrics
+        #         combined_df = add_loan_metrics_updated(combined_df)
+
+        #         # Apply Cumulative Columns
+        #         combined_df = apply_cumulative_columns(combined_df)
+
+        #         # Store the combined DataFrame globally
+        #         store_processed_data(combined_df, "Combined_COFPREPAYMENT")
+        #         # --- Combine DataFrames for COF and Prepayment Models ---
+        #         if 'cof_event_df' in st.session_state and 'prepayment_event_df' in st.session_state:
+        #             cof_event_df = st.session_state.cof_event_df
+        #             prepayment_event_df = st.session_state.prepayment_event_df
+
+        #             # Merge COF and Prepayment DataFrames
+        #             combined_df = pd.merge(
+        #                 cof_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
+        #                 prepayment_event_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
+        #                 on=['Timestamp_x', 'Month'],
+        #                 how='outer',
+        #                 suffixes=('_COF', '_PREPAYMENT')
+        #             )
+
+        #             # Merge with additional columns from df_edited
+        #             combined_df = combined_df.merge(
+        #                 df_edited[['Timestamp_x', 'OPB', 'Origination_Year', 'TERM_OF_LOAN']].drop_duplicates(),
+        #                 on='Timestamp_x',
+        #                 how='inner'
+        #             )
+
+        #             # Populate COF_EVENT_LABEL and PREPAYMENT_EVENT_LABEL
+        #             combined_df['COF_EVENT_LABEL'] = combined_df['Distributed_Probability_COF'].fillna(0)
+        #             combined_df['PREPAYMENT_EVENT_LABEL'] = combined_df['Distributed_Probability_PREPAYMENT'].fillna(0)
+
+        #             # Calculate Total_Probability
+        #             combined_df['Total_Probability'] = combined_df[['Distributed_Probability_COF', 'Distributed_Probability_PREPAYMENT']].sum(axis=1)
+
+        #             if 'CREDIT_SCORE_AVG_CALC' in df_edited.columns:
+        #                 combined_df = combined_df.merge(
+        #                     df_edited[['Timestamp_x', 'CREDIT_SCORE_AVG_CALC']].drop_duplicates(), 
+        #                     on='Timestamp_x',
+        #                     how='inner'
+        #                 )
+
+        #                 combined_df['Credit_Score_Range'] = combined_df.apply(
+        #                     assign_credit_score_range, 
+        #                     axis=1, 
+        #                     ranges=credit_score_ranges
+        #                 )
+
+        #             # Add Loan Metrics
+        #             combined_df = add_loan_metrics_updated(combined_df)
+
+        #             # Apply Cumulative Columns
+        #             combined_df = apply_cumulative_columns(combined_df)
+
+        #             # Store the combined DataFrame globally
+        #             store_processed_data(combined_df, "Combined_COFPREPAYMENT")
+        #             print("COMBINED DATAFRAME")
+        #             print(combined_df.head())
 
 
     # --- 5. Button to Show Results ---
@@ -862,6 +1118,107 @@ def map_credit_risk_params(credit_score, delinquency_count):
     end_wt = 1.0 - combined_risk * 1.0      # down to 0x
 
     return (start_wt, middle_wt, end_wt)
+
+def distribute_probabilities_with_survival_model(
+    df, features, target_time, target_event, time_bins, n_neighbors=30, test_size=0.2, random_state=42, ci_width=0.99
+):
+    """
+    Distributes probabilities for each event across the loan term using survival model predictions.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame containing loan data.
+        features (list): List of feature column names for the survival model.
+        target_time (str): Column name for time-to-event (e.g., 'time_to_event_cof').
+        target_event (str): Column name for event indicator (e.g., 'COF_EVENT_LABEL').
+        time_bins (np.ndarray): Array of time bins for survival predictions.
+        n_neighbors (int): Number of neighbors for Kaplan-Meier survival model.
+        test_size (float): Fraction of data to use for validation.
+        random_state (int): Random seed for reproducibility.
+        ci_width (float): Width of confidence intervals.
+
+    Returns:
+        pd.DataFrame: Expanded DataFrame with distributed probabilities for each month.
+    """
+    from xgbse import XGBSEKaplanNeighbors
+    from xgbse.converters import convert_to_structured
+    from sklearn.model_selection import train_test_split
+
+    # Prepare features and targets
+    X = df[features]
+    y = convert_to_structured(df[target_time], df[target_event])
+
+    # Split data into training and validation sets
+    X_train, X_valid, y_train, y_valid = train_test_split(
+        X, y, test_size=test_size, random_state=random_state
+    )
+
+    # Fit the survival model
+    model = XGBSEKaplanNeighbors(n_neighbors=n_neighbors)
+    model.fit(
+        X_train, y_train,
+        validation_data=(X_valid, y_valid),
+        early_stopping_rounds=10,
+        time_bins=time_bins,
+    )
+
+    # Predict survival probabilities
+    mean_surv, upper_ci, lower_ci = model.predict(
+        X_valid,
+        time_bins=time_bins,
+        return_ci=True,
+        ci_width=ci_width,
+    )
+
+    # Align indices between mean_surv and X_valid
+    mean_surv = mean_surv.reset_index(drop=True)
+    X_valid = X_valid.reset_index(drop=True)
+
+    # Expand rows for each month in the loan term
+    expanded_rows = []
+    for idx, row in X_valid.iterrows():
+        term = int(row['TERM_OF_LOAN'])
+        survival_probs = mean_surv.loc[idx].values[:term]  # Get survival probabilities for the loan term
+        distributed_probs = 1 - survival_probs  # Convert survival probabilities to event probabilities
+
+        for month in range(1, term + 1):
+            new_row = row.to_dict()
+            new_row['Month'] = month
+            new_row['Distributed_Probability'] = distributed_probs[month - 1]
+            expanded_rows.append(new_row)
+
+    return pd.DataFrame(expanded_rows)
+
+
+
+# Example usage for COF event:
+# The following block requires filtered_df, which is only defined inside main().
+# To avoid NameError, move this block inside the main() function after filtered_df is defined and filtered.
+
+# Example usage for COF and PREPAYMENT event with survival model:
+# Uncomment and move the following code inside main() after filtered_df is created and filtered.
+
+# max_term = filtered_df['TERM_OF_LOAN'].max()
+# time_bins = np.arange(1, max_term + 1)
+# features = ['CREDIT_SCORE_AVG_CALC', 'DELINQ_CNT_30_DAY_TOTAL', 'OPB', 'TERM_OF_LOAN']  # Adjust features as needed
+
+# cof_distributed_df = distribute_probabilities_with_survival_model(
+#     filtered_df, features, 'time_to_event_cof', 'COF_EVENT_LABEL', time_bins
+# )
+
+# prepayment_distributed_df = distribute_probabilities_with_survival_model(
+#     filtered_df, features, 'time_to_event_prepay', 'PREPAYMENT_EVENT_LABEL', time_bins
+# )
+
+# combined_df = pd.merge(
+#     cof_distributed_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
+#     prepayment_distributed_df[['Timestamp_x', 'Month', 'Distributed_Probability']],
+#     on=['Timestamp_x', 'Month'],
+#     how='outer',
+#     suffixes=('_COF', '_PREPAYMENT')
+# )
+
+# combined_df['Total_Probability'] = combined_df[['Distributed_Probability_COF', 'Distributed_Probability_PREPAYMENT']].sum(axis=1)
+# store_processed_data(combined_df, "Combined_COFPREPAYMENT")
 
 if __name__ == "__main__":
     main()

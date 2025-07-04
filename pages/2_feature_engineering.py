@@ -2536,7 +2536,9 @@ if not is_mvp:
             "PREPAYMENT_EVENT_LABEL",
             "Loan_Status",
             "Profitability_GBP",
-            "Timestamp"
+            "Timestamp",
+            "time_to_event_cof",
+            "time_to_event_prepay"
             # Add more as needed
         ]
         merged = st.session_state.get("mvp_merged_dataset", pd.DataFrame())
@@ -2751,7 +2753,9 @@ if st.button("📊 Save Attributes"):
                 "PREPAYMENT_EVENT_LABEL",
                 "Loan_Status",
                 "Profitability_GBP",
-                "Timestamp_x"
+                "Timestamp_x",
+                "time_to_event_cof",
+                "time_to_event_prepay"
             ]
 
 

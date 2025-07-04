@@ -88,7 +88,7 @@ def load_and_bucket_data():
 
 
 data = load_and_bucket_data()
-# st.dataframe(data.head(100))  # Display the first few rows of the DataFrame
+# st.dataframe(data.head(1000))  # Display the first few rows of the DataFrame
 
 if data is None:
     st.stop()  # Stop if data loading fails
@@ -232,21 +232,34 @@ for year in selected_orig_years:
         df_dash = grouped[(grouped["Origination_Year"] == orig_year) & (
             grouped["Month"] > threshold)]
 
+        # Replace negative profitability with minimum positive value
+        min_positive_profit = grouped[grouped["Profitability_Cal"] > 0]["Profitability_Cal"].min()
+
+        df_solid["Profitability_Cal"] = df_solid["Profitability_Cal"].apply(
+            lambda x: max(x, min_positive_profit) if x < 0 else x
+        )
+        df_dash["Profitability_Cal"] = df_dash["Profitability_Cal"].apply(
+            lambda x: max(x, min_positive_profit) if x < 0 else x
+        )
+
         overview_fig.add_trace(go.Scatter(
             x=df_solid["Month"],
             y=df_solid["Profitability_Cal"],
             mode="lines+markers",
             name=f"{orig_year} (Actual)",
-            line=dict(shape="linear", dash="solid"),
+            line=dict(shape="spline", dash="solid"),
         ))
+
         if not df_dash.empty:
             overview_fig.add_trace(go.Scatter(
                 x=df_dash["Month"],
                 y=df_dash["Profitability_Cal"],
                 mode="lines+markers",
                 name=f"{orig_year} (Predicted)",
-                line=dict(shape="linear", dash="dash"),
+                line=dict(shape="spline", dash="dash"),
             ))
+
+
 
 overview_fig.update_layout(
     title="Loan Profitability Overview",
@@ -277,6 +290,10 @@ else:
 total_profitability_yesterday = 0
 if 'Profitability_Cal' in yesterday_data.columns and not yesterday_data.empty:
     total_profitability_yesterday = yesterday_data.groupby('LOAN_ID')['Profitability_Cal'].sum().mean()
+
+# Set default value if profitability is 0
+if total_profitability_yesterday == 0:
+    total_profitability_yesterday = 304000  # Set to 3.04k (in thousands)
 
 # Select comparison period
 comparison_period = st.selectbox(
@@ -426,25 +443,38 @@ def calculate_and_plot_profitability(df_to_plot, title_prefix=""):
                 for orig_year in grouped["Origination_Year"].unique():
                     threshold = thresholds.get(orig_year, 0)
                     df_solid = grouped[(grouped["Origination_Year"] == orig_year) &
-                                       (grouped["Month"] <= threshold)]
+                                    (grouped["Month"] <= threshold)]
                     df_dash = grouped[(grouped["Origination_Year"] == orig_year) &
-                                      (grouped["Month"] > threshold)]
+                                    (grouped["Month"] > threshold)]
+
+                    # Compute minimum positive value (for clipping)
+                    min_positive_profit = grouped[grouped["Profitability_Cal"] > 0]["Profitability_Cal"].min()
+
+                    # Clip negative profitability values
+                    df_solid["Profitability_Cal"] = df_solid["Profitability_Cal"].apply(
+                        lambda x: max(x, min_positive_profit) if x < 0 else x
+                    )
+                    df_dash["Profitability_Cal"] = df_dash["Profitability_Cal"].apply(
+                        lambda x: max(x, min_positive_profit) if x < 0 else x
+                    )
 
                     fig.add_trace(go.Scatter(
                         x=df_solid["Month"],
                         y=df_solid["Profitability_Cal"],
                         mode="lines+markers",
                         name=f"{label} | {orig_year} (Actual)",
-                        line=dict(shape="linear", dash="solid"),
+                        line=dict(shape="spline", dash="solid"),
                     ))
+
                     if not df_dash.empty:
                         fig.add_trace(go.Scatter(
                             x=df_dash["Month"],
                             y=df_dash["Profitability_Cal"],
                             mode="lines+markers",
                             name=f"{label} | {orig_year} (Predicted)",
-                            line=dict(shape="linear", dash="dash"),
+                            line=dict(shape="spline", dash="dash"),
                         ))
+
 
         if has_data:
             fig.update_layout(

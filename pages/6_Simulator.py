@@ -72,6 +72,13 @@ def load_and_bucket_data():
             bins=[-np.inf, percentiles[0], percentiles[1], np.inf],
             labels=['Low', 'Medium', 'High']
         )
+    # Calculate rates
+    if 'OPB' in df.columns:
+        df['Recovery_Rate'] = df['Recovery_Amount'] / df['OPB']
+        df['Interest_Rate'] = df['Interest_Amount'] / df['OPB']
+        df['Fee'] = df['Fees'] / df['OPB']
+        df['Charge_Off_Rate'] = df['Charge_Off_Bal'] / df['OPB']
+
 
     return df
 
@@ -210,7 +217,7 @@ for feat in selected_features:
     unique_vals = sorted(data[feat].dropna().unique())
     # Set default values for Origination_Year_BUCKET and TERM_OF_LOAN_BUCKET
     if feat == 'Origination_Year_BUCKET':
-        default_vals = [str(val) for val in ['2022', '2023'] if str(val) in unique_vals]
+        default_vals = [str(val) for val in ['2019', '2021'] if str(val) in unique_vals]
     elif feat == 'TERM_OF_LOAN_BUCKET':
         default_vals = [str(60)] if '60' in unique_vals else []
     else:
@@ -315,7 +322,7 @@ with st.expander("ℹ️ Parameter Descriptions"):
     - **Recovery_Amount**: The amount recovered after a loan has been charged off.
     - **Fees**: The total charges applied to the loan, primarily including late payment fees.
     """)
-new_columns = ['Charge_Off_Bal', 'Interest_Amount', 'Recovery_Amount', 'Fees']
+new_columns = ['Recovery_Rate', 'Interest_Rate', 'Fee', 'Charge_Off_Rate']
 
 if 'simulation_rows' not in st.session_state:
     st.session_state.simulation_rows = [0]
@@ -474,9 +481,12 @@ if proceed_button:
 
     # Recalculate Profitability_Cal after applying all adjustments
     modified_data['Profitability_Cal'] = (
-        modified_data['Interest_Amount'] + modified_data['Fees'] +
-        modified_data['Recovery_Amount'] - modified_data['Charge_Off_Bal']
+        modified_data['Interest_Rate'] * modified_data['OPB'] +
+        modified_data['Fee'] * modified_data['OPB'] +
+        modified_data['Recovery_Rate'] * modified_data['OPB'] -
+        modified_data['Charge_Off_Rate'] * modified_data['OPB']
     )
+
 
     # Store the modified data in session state
     st.session_state.modified_data = modified_data
